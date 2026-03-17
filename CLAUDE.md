@@ -723,3 +723,22 @@ Deliverables:
 - ✅ Fix: install pytest-asyncio and resolve test_qllm.py async test failures — Backend Developer (◈ Standard, 3 SP)
 
 ---
+### Milestone 2 — Isolation Verification & End-to-End Integration Testing | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: Isolation Verification & End-to-End Integration Testing]
+Implement the automated isolation verification test suite and run end-to-end scenarios against real or mock tools. Verify all three isolation invariants: no tool output in P-LLM context, no free-form Q-LLM output in P-LLM context, and redaction completeness. Validate multi-backend swappability and execute the full set of representative task scenarios required by the exit criteria.
+
+Deliverables:
+- Automated isolation test harness: intercepts all LLMBackend.complete() calls and asserts no tool return value content appears in any P-LLM prompt across 50 execution runs
+- Automated free-form Q-LLM output test: confirms raw Q-LLM response never reaches P-LLM context
+- Redaction completeness test suite: 10 adversarial cases with untrusted-origin exception triggers
+- End-to-end execution of 10 representative task scenarios (mix of single-step and multi-step) producing correct execution traces without security policies active
+- Multi-backend swap test: Claude and Gemini backends interchangeable without code changes beyond configuration
+- Exit criteria sign-off report documenting pass/fail status of all M2 exit criteria
+
+**Delivered:**
+- ✅ Design isolation test harness architecture and E2E scenario inventory — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement isolation verification test harness (3 invariants, 50 runs, redaction suite) — Backend Developer (◉ Deep, 5 SP)
+- ✅ Implement E2E scenario runner and multi-backend swap test — Backend Developer (◉ Deep, 5 SP)
+- ✅ Author M2 exit criteria sign-off report — Qa Engineer (⚡ Quick, 2 SP)
+
+---
