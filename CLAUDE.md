@@ -543,3 +543,22 @@ Deliverables:
 - ✅ Write tests/test_dependency_graph.py — ≥20 hand-crafted programs covering NORMAL and STRICT correctness — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Sprint 2 — Milestone 1 Integration & Exit Criteria Validation | 2026-03-17 | ✅ done | 13 SP
+**Goal:** [Phase: Milestone 1 Integration & Exit Criteria Validation]
+Integrate all Milestone 1 components into a coherent, release-ready foundation package. Execute the full exit criteria checklist: 100% unit test pass rate, 20+ dependency graph programs verified, CaMeLValue round-trip fidelity across all operations, ≥15 negative syntax tests, session persistence across 3 sequential runs, and STRICT mode loop-dependency confirmation. Produce developer documentation covering the interpreter's supported grammar, CaMeLValue schema, capability propagation rules, and the dependency graph API. This phase gates entry to Milestone 2.
+
+Deliverables:
+- Integrated camel package (interpreter, value, dependency_graph modules) passing full CI pipeline
+- Exit criteria sign-off checklist with test evidence for each criterion
+- Developer documentation: supported Python grammar reference, CaMeLValue schema, propagation rules table, dependency graph query API
+- Performance baseline: interpreter overhead measured and confirmed ≤100ms per simulated tool-call step (NFR-4 baseline)
+- Release tag v0.1.0 — Milestone 1 Foundation
+- Milestone 2 readiness notes: interface contracts for tool executor and P-LLM integration
+
+**Delivered:**
+- ✅ Integrate camel package and define v0.1.0 release structure — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Set up CI pipeline and performance baseline measurement — Devops Engineer (◈ Standard, 3 SP)
+- ✅ Implement exit criteria validation test suite and sign-off checklist — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Write developer documentation: grammar reference, CaMeLValue schema, propagation rules, dependency graph API, and Milestone 2 readiness notes — Software Architect (◈ Standard, 3 SP)
+
+---

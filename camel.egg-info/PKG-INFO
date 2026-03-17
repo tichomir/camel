@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: camel
+Version: 0.1.0
+Summary: CaMeL — Capabilities for Machine Learning: a security layer protecting LLM-based agentic systems from prompt injection attacks.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.0
+Requires-Dist: typing-extensions>=4.0
+Requires-Dist: anthropic>=0.25
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: mypy>=1.9; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0; extra == "dev"
+
+# camel
+
+Project initialised by PersonaForge.
