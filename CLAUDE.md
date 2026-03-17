@@ -201,9 +201,12 @@ Isolation guarantee: Q-LLM cannot communicate free-form text back to P-LLM.
 Custom Python interpreter operating over a restricted Python subset.
 Built on Python's ast library (recursive AST node interpretation).
 Maintains a data flow graph: for every variable, tracks all upstream dependencies.
-Supports two execution modes:
-NORMAL mode: Dependencies tracked only via direct data assignments.
-STRICT mode: Control-flow constructs (if/for) add their test/iterable as a dependency on all variables assigned within the block, closing side-channel vectors.
+Supports two execution modes (STRICT is the default as of v0.4.0 — Milestone 4, M4-F5):
+STRICT mode (default): Closes control-flow and Q-LLM side-channel vectors via three propagation rules:
+  (M4-F1) For-loop iterable — the iterable's capability and dependency set is merged into every assignment inside the loop body, including nested blocks.
+  (M4-F2) If/else test — the condition's capability and dependency set is merged into every assignment in both the true and false branches.
+  (M4-F3/F4) Post-query_quarantined_llm() remainder — all assignments following a Q-LLM call in the same code block inherit the Q-LLM result's capabilities as additional context dependencies; the flag is scoped to the current block and resets on block exit.
+NORMAL mode (explicit opt-in: pass mode=ExecutionMode.NORMAL to CaMeLInterpreter): Dependencies tracked only via direct data assignments; no control-flow taint propagation. Use only for debugging or non-security-sensitive scenarios.
 Before each tool call: evaluates security policy against the tool name, arguments, and the full dependency graph of each argument.
 On policy violation: blocks execution and (in production) surfaces a user consent prompt.
 6.4 Capabilities
@@ -877,5 +880,27 @@ Where needed updaet the software version
 - ✅ Fix: Create Milestone 3 exit criteria checklist and sign-off report — Software Architect (◈ Standard, 3 SP)
 - ✅ Fix: Update architecture.md to cover Milestone 3 components — Software Architect (◈ Standard, 3 SP)
 - ✅ Fix: Add Milestone 3 entry to CHANGELOG.md — Software Architect (◈ Standard, 3 SP)
+
+---
+### Milestone 4 — STRICT Mode Validation & Hardening | 2026-03-17 | ✅ done | 20 SP
+**Goal:** [Phase: STRICT Mode Validation & Hardening]
+Fully validate, extend, and test the STRICT mode execution path in the CaMeL interpreter. This phase covers: confirming that for-loop iterables and if/else conditional test expressions propagate dependencies to all statements within those blocks (M4-F1, M4-F2); extending STRICT mode to cover all statements following a query_quarantined_llm() call for the remainder of the current code block (M4-F3, M4-F4); and enforcing STRICT mode as the default execution mode with NORMAL mode requiring explicit opt-in (M4-F5). Automated unit and integration tests are written to prove each dependency propagation rule is correctly applied.
+
+Deliverables:
+- Extended CaMeL interpreter: for-loop iterable dependency propagation (M4-F1)
+- Extended CaMeL interpreter: if/else conditional test dependency propagation (M4-F2)
+- Extended CaMeL interpreter: post-Q-LLM-call statement dependency propagation (M4-F3, M4-F4)
+- Configuration flag: STRICT mode as default, NORMAL mode as explicit opt-in (M4-F5)
+- Unit test suite: STRICT mode dependency propagation covering all three propagation rules
+- Integration test: end-to-end execution trace confirming STRICT mode dependency graph correctness
+- Updated PRD Section 6.3 (CaMeL Interpreter) documenting STRICT mode default behaviour
+- Updated Milestone 4 design document reflecting STRICT mode extension scope
+
+**Delivered:**
+- ✅ Design STRICT mode extension: for-loop, if/else, post-Q-LLM propagation, and default-mode flag — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement STRICT mode propagation rules and default-mode configuration flag in CaMeL interpreter — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write unit and integration test suite for STRICT mode dependency propagation — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Update all project documentation for Milestone 4 STRICT mode changes — Software Architect (⚡ Quick, 2 SP)
+- ✅ Fix: STRICT mode propagation rules M4-F1 through M4-F4 not verified as implemented — Backend Developer (◈ Standard, 3 SP)
 
 ---

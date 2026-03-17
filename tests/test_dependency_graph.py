@@ -8,6 +8,10 @@ Coverage
 - NORMAL mode: tuple-unpacking deps
 - NORMAL mode: tool call with no var-ref RHS (no deps)
 - NORMAL mode: tool call whose return is then used in expressions
+- M4-F3/F4 STRICT mode: post-Q-LLM-call statement dependency propagation
+- M4-F3/F4 STRICT mode: Q-LLM flag scoped to current block only
+- M4-F3/F4 STRICT mode: multiple Q-LLM calls accumulate deps
+- M4-F3/F4 NORMAL mode: Q-LLM calls do NOT taint subsequent statements
 - STRICT mode: if-condition variables propagate to body assignments
 - STRICT mode: else-branch also carries test deps
 - STRICT mode: for-iterable variables propagate to body assignments
@@ -19,7 +23,7 @@ Coverage
 - NORMAL mode: control flow does NOT add deps (negative STRICT test)
 - get_dependency_graph() returns correct DependencyGraph snapshots
 - set_mode() switches mode mid-session
-- Mode defaults to NORMAL
+- Mode defaults to STRICT (M4-F5)
 - Transitive all_upstream computation
 - Variables unknown to graph → empty DependencyGraph
 - Multiple assignments to same var accumulate deps (union semantics)
@@ -484,14 +488,18 @@ if flag:
 
 
 # ---------------------------------------------------------------------------
-# Test 20 — mode defaults to NORMAL
+# Test 20 — mode defaults to STRICT (M4-F5)
 # ---------------------------------------------------------------------------
 
 
-def test_default_mode_is_normal():
-    """CaMeLInterpreter defaults to NORMAL mode."""
+def test_default_mode_is_strict():
+    """CaMeLInterpreter defaults to STRICT mode (M4-F5).
+
+    STRICT is the recommended production default.  NORMAL mode must be passed
+    explicitly via ``mode=ExecutionMode.NORMAL``.
+    """
     interp = CaMeLInterpreter()
-    assert interp._mode == ExecutionMode.NORMAL
+    assert interp._mode == ExecutionMode.STRICT
 
 
 # ---------------------------------------------------------------------------
@@ -710,3 +718,120 @@ def test_get_dependency_graph_no_var_deps():
     assert dg.direct_deps == frozenset()
     assert dg.all_upstream == frozenset()
     assert dg.edges == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# M4-F3/F4 Tests — post-Q-LLM-call STRICT mode tainting
+# ---------------------------------------------------------------------------
+
+def _qllm_tool(raw_value, sources=None):
+    """Tool that registers as a query_quarantined_llm entry point."""
+    def _fn(*args, **kwargs):
+        return wrap(
+            raw_value,
+            sources=frozenset(sources) if sources else frozenset({"qllm"}),
+        )
+    return _fn
+
+
+# ---------------------------------------------------------------------------
+# Test 32 — M4-F3/F4 STRICT mode: post-Q-LLM-call propagates to next stmts
+# ---------------------------------------------------------------------------
+
+
+def test_strict_post_qllm_taints_subsequent_statements():
+    """STRICT mode: statements after query_quarantined_llm() carry its deps.
+
+    After a Q-LLM call, all subsequent statements in the same block must
+    inherit the Q-LLM result's capability envelope (M4-F3).  The dependency
+    graph must also record the Q-LLM variable as a dep on those statements
+    (M4-F4).
+    """
+    interp = CaMeLInterpreter(
+        tools={"query_quarantined_llm": _qllm_tool("extracted", sources=["qllm"])},
+        mode=ExecutionMode.STRICT,
+    )
+    interp.exec("raw_data = 1")
+    interp.exec("""
+result = query_quarantined_llm(raw_data)
+after = 42
+""")
+    # 'after' is a constant, but it was assigned AFTER the Q-LLM call in the
+    # same block, so its dependency graph must include 'result' (the Q-LLM var).
+    direct = _deps(interp, "after")
+    assert "result" in direct
+
+
+# ---------------------------------------------------------------------------
+# Test 33 — M4-F3/F4 STRICT mode: Q-LLM tainting scoped to current block
+# ---------------------------------------------------------------------------
+
+
+def test_strict_post_qllm_taint_scoped_to_block():
+    """STRICT mode: Q-LLM taint does NOT leak into sibling or parent blocks.
+
+    Statements in a separate exec() call (a different top-level block) must
+    NOT inherit the Q-LLM taint from a previous block.
+    """
+    interp = CaMeLInterpreter(
+        tools={"query_quarantined_llm": _qllm_tool("data", sources=["qllm"])},
+        mode=ExecutionMode.STRICT,
+    )
+    interp.exec("""
+result = query_quarantined_llm()
+""")
+    # Fresh exec() call: a separate block; 'other' must not depend on 'result'
+    interp.exec("other = 99")
+    direct = _deps(interp, "other")
+    assert "result" not in direct
+
+
+# ---------------------------------------------------------------------------
+# Test 34 — M4-F3/F4 STRICT mode: multiple Q-LLM calls accumulate deps
+# ---------------------------------------------------------------------------
+
+
+def test_strict_multiple_qllm_calls_accumulate():
+    """STRICT mode: multiple Q-LLM calls in same block accumulate dep context.
+
+    After two Q-LLM calls, a subsequent statement must depend on both Q-LLM
+    result variables.
+    """
+    interp = CaMeLInterpreter(
+        tools={"query_quarantined_llm": _qllm_tool("x", sources=["qllm"])},
+        mode=ExecutionMode.STRICT,
+    )
+    interp.exec("""
+first = query_quarantined_llm()
+second = query_quarantined_llm()
+after = 0
+""")
+    direct = _deps(interp, "after")
+    # 'after' must depend on both 'first' and 'second' (accumulated Q-LLM ctx)
+    assert "first" in direct
+    assert "second" in direct
+
+
+# ---------------------------------------------------------------------------
+# Test 35 — M4-F3/F4 NORMAL mode: Q-LLM calls do NOT taint subsequent stmts
+# ---------------------------------------------------------------------------
+
+
+def test_normal_qllm_does_not_taint_subsequent_statements():
+    """NORMAL mode: query_quarantined_llm() does NOT taint later statements.
+
+    The M4-F3/F4 tainting mechanism is STRICT-mode-only.  In NORMAL mode,
+    statements after a Q-LLM call depend only on their own RHS variables.
+    """
+    interp = CaMeLInterpreter(
+        tools={"query_quarantined_llm": _qllm_tool("x", sources=["qllm"])},
+        mode=ExecutionMode.NORMAL,
+    )
+    interp.exec("""
+result = query_quarantined_llm()
+after = 42
+""")
+    # NORMAL mode: 'after' is a constant with no variable deps.
+    direct = _deps(interp, "after")
+    assert "result" not in direct
+    assert direct == frozenset()

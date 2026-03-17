@@ -1,7 +1,7 @@
 # CaMeL — Capabilities for Machine Learning
 
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -77,7 +77,7 @@ mechanics, and the security model.
 
 ## Current Status
 
-**Milestone 3 — Capabilities & Policies (v0.3.0)** — released 2026-03-17
+**Milestone 4 — STRICT Mode Hardening (v0.4.0)** — released 2026-03-17
 
 | Component | Module | Status |
 |---|---|---|
@@ -94,6 +94,10 @@ mechanics, and the security model.
 | Reference policy library (6 policies) | `camel.policy.reference_policies` | ✅ Released |
 | Enforcement hook, consent flow, audit log | `camel.interpreter` | ✅ Released |
 | Policy testing harness (AgentDojo scenarios) | `tests/harness/policy_harness.py` | ✅ Released |
+| STRICT mode — for-loop iterable propagation (M4-F1) | `camel.interpreter` | ✅ Released |
+| STRICT mode — if/else test propagation (M4-F2) | `camel.interpreter` | ✅ Released |
+| STRICT mode — post-Q-LLM remainder propagation (M4-F3/F4) | `camel.interpreter` | ✅ Released |
+| STRICT mode as default execution mode (M4-F5) | `camel.interpreter` | ✅ Released |
 
 ---
 
@@ -113,10 +117,10 @@ from camel.value import CaMeLValue, wrap, Public
 def get_inbox_count() -> CaMeLValue:
     return wrap(42, sources=frozenset({"get_inbox_count"}), readers=Public)
 
-# Create an interpreter in STRICT mode (recommended for production)
+# Create an interpreter — STRICT mode is the default (recommended for production)
 interp = CaMeLInterpreter(
     tools={"get_inbox_count": get_inbox_count},
-    mode=ExecutionMode.STRICT,
+    # mode=ExecutionMode.STRICT is the default; no argument needed
 )
 
 # Execute a pseudo-Python plan
@@ -381,20 +385,31 @@ See the [Developer Guide — Grammar Reference](docs/developer_guide.md#1-suppor
 
 ---
 
-## NORMAL vs STRICT Mode
+## Execution Modes
 
-CaMeL tracks data flow dependencies in two modes, configurable per interpreter instance.
+CaMeL tracks data flow dependencies in two modes.  **`STRICT` is the default** as of v0.4.0.
 
-| Mode | Dependency tracking | Side-channel mitigation |
-|---|---|---|
-| `NORMAL` | Data assignments only | No control-flow taint |
-| `STRICT` | Data + control-flow (if-test, for-iterable) | Closes timing/control-flow channels |
+| Mode | Default | Dependency tracking | Side-channel mitigation |
+|---|---|---|---|
+| `STRICT` | **Yes** (v0.4.0+) | Data + control-flow (if-test, for-iterable, post-Q-LLM) | Closes timing/control-flow channels |
+| `NORMAL` | No — explicit opt-in | Data assignments only | No control-flow taint |
 
-**STRICT mode is recommended for production.**  It closes the timing side-channel
+**STRICT mode is the default for production.**  It closes the timing side-channel
 where an adversary could learn the value of a private boolean by observing which
-branch the agent takes (PRD §7.3).
+branch the agent takes (PRD §7.3), and additionally taints all assignments following
+a `query_quarantined_llm()` call in the same code block (M4-F3/F4).
 
-See [Architecture Reference — Interpreter Modes](docs/architecture.md#6-interpreter-execution-modes) for details.
+```python
+from camel import CaMeLInterpreter, ExecutionMode
+
+# Default — STRICT mode; no argument needed (recommended)
+interp = CaMeLInterpreter(tools=my_tools)
+
+# Explicit NORMAL mode opt-in (debugging / non-security-sensitive scenarios only)
+interp = CaMeLInterpreter(tools=my_tools, mode=ExecutionMode.NORMAL)
+```
+
+See [Architecture Reference — Interpreter Modes](docs/architecture.md#6-interpreter-execution-modes) for details on all three STRICT propagation rules.
 
 ---
 

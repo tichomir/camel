@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.3.0 (Milestone 3)
+**Version:** 0.4.0 (Milestone 4)
 **Date:** 2026-03-17
-**Source:** PRD v1.3 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.4 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -291,12 +291,30 @@ The `Public` sentinel indicates no reader restriction — data may flow to any r
 
 ## 6. Interpreter Execution Modes
 
-**Module:** `camel/dependency_graph.py` | **ADR:** [004](adr/004-dependency-graph-architecture.md)
+**Module:** `camel/dependency_graph.py`, `camel/interpreter.py` | **ADR:** [004](adr/004-dependency-graph-architecture.md)
+
+CaMeL supports two dependency-tracking modes.  **`ExecutionMode.STRICT` is the default**
+as of v0.4.0 (Milestone 4, M4-F5).  NORMAL mode requires explicit opt-in:
+
+```python
+from camel import CaMeLInterpreter, ExecutionMode
+
+# Default — STRICT mode; no argument needed
+interp = CaMeLInterpreter(tools=my_tools)
+
+# Explicit NORMAL mode opt-in (debugging / non-security-sensitive scenarios only)
+interp = CaMeLInterpreter(tools=my_tools, mode=ExecutionMode.NORMAL)
+```
+
+| Mode | Default | Dependency tracking | Side-channel mitigation |
+|------|---------|---------------------|------------------------|
+| `STRICT` | **Yes** (v0.4.0+) | Data + control-flow (if-test, for-iterable, post-Q-LLM) | Closes timing/control-flow channels |
+| `NORMAL` | No — explicit opt-in | Data assignments only | No control-flow taint |
 
 ### NORMAL Mode
 
 Dependencies are recorded only via **direct data assignment**.  Control-flow constructs
-(`if`, `for`) do not add dependency edges.
+(`if`, `for`) and Q-LLM calls do not add dependency edges.
 
 ```python
 # NORMAL: x's dependency on flag is NOT recorded
@@ -310,8 +328,9 @@ Use NORMAL mode only when control-flow taint is not a security concern.
 
 ### STRICT Mode
 
-In STRICT mode, variables referenced in `if` tests and `for` iterables become
-dependencies of **every variable assigned within that block**.
+In STRICT mode, variables referenced in `if` tests, `for` iterables, and statements
+following a `query_quarantined_llm()` call become dependencies of **every variable
+assigned within those blocks**.
 
 ```python
 # STRICT: x's dependency on flag IS recorded
@@ -326,7 +345,38 @@ by observing which branch the agent takes (control-flow side-channel, PRD §7.3)
 mode closes this by ensuring that any variable assigned inside a branch carries the
 branch condition as a dependency — which is then checked by the security policy engine.
 
-**Recommendation:** Use `ExecutionMode.STRICT` in all production deployments.
+### STRICT Mode Propagation Rules
+
+Three dependency-propagation rules apply exclusively in STRICT mode (delivered in Milestone 4):
+
+| Rule | ID | AST Node | Dependency propagated to |
+|------|----|----------|--------------------------|
+| For-loop iterable | M4-F1 | `ast.For` | Every assignment inside the loop body (including nested blocks) |
+| If/else test | M4-F2 | `ast.If` | Every assignment in both the `body` and `orelse` branches |
+| Post-Q-LLM remainder | M4-F3/F4 | `ast.Call` (`query_quarantined_llm`) | Every assignment in the same statement list after the Q-LLM call |
+
+**M4-F1 — For-loop iterable propagation:**  The capability set and variable-dependency set
+of the iterable expression are merged into every assignment inside the loop body.  This
+prevents an adversary who controls iteration order from influencing downstream tool arguments
+without detection.
+
+**M4-F2 — If/else test propagation:**  The capability set and variable-dependency set of
+the `if` condition are merged into every assignment in both the true and false branches.
+This closes the timing/branch-observation side channel (PRD §7.3).
+
+**M4-F3/F4 — Post-Q-LLM remainder propagation:**  When `query_quarantined_llm()` is called
+anywhere in a statement list, STRICT mode activates a "remainder flag" for the rest of that
+code block.  Every subsequent assignment in the same block (and nested blocks after the call)
+inherits the Q-LLM result's `CaMeLValue` as additional context capabilities.  The flag is
+scoped to the current `_exec_statements` frame and resets on block exit.
+
+**Dependency-graph mutation table:**
+
+| Rule | Graph mutation |
+|------|---------------|
+| M4-F1 | `record(target, direct ∪ iter_deps ∪ ctx_deps)` for all assignments in loop body |
+| M4-F2 | `record(target, direct ∪ test_deps ∪ ctx_deps)` for all assignments in both branches |
+| M4-F3/F4 | `record(target, direct ∪ qllm_deps ∪ ctx_deps)` for all subsequent assignments in block |
 
 ### Dependency Graph API
 

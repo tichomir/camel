@@ -69,14 +69,18 @@ reset automatically.
 
 Execution modes
 ---------------
-``ExecutionMode.NORMAL`` (default):
-    Capabilities propagate only via data assignments and operations.
+``ExecutionMode.STRICT`` (default):
+    In addition to data-flow tracking, the capability metadata of every
+    ``if`` test and every ``for`` iterable is merged into all assignments
+    within the respective block (closing timing side-channel vectors).
+    Furthermore, all statements following a ``query_quarantined_llm()`` call
+    in the same code block inherit the Q-LLM result's capabilities (M4-F3/F4).
+    See the ``ctx_caps`` parameter threading through ``_exec_*`` and
+    ``_eval_*`` methods.
 
-``ExecutionMode.STRICT``:
-    Additionally, whenever an ``if`` or ``for`` block is entered, the test /
-    iterable expression's capabilities are merged into every assignment within
-    the block (closing timing side-channel vectors).  See the ``ctx_caps``
-    parameter threading through ``_exec_*`` and ``_eval_*`` methods.
+``ExecutionMode.NORMAL``:
+    Capabilities propagate only via data assignments and operations.
+    Must be passed explicitly; STRICT is the recommended production default.
 
 Enforcement modes
 -----------------
@@ -490,6 +494,15 @@ class CaMeLInterpreter:
     every expression evaluation and assignment according to the rules in
     ``docs/adr/003-ast-interpreter-architecture.md``.
 
+    Class attributes
+    ----------------
+    _QLLM_TOOL_NAMES:
+        Frozenset of tool names recognised as Q-LLM calls for the purpose of
+        M4-F3/F4 post-Q-LLM tainting.  Defaults to
+        ``frozenset({"query_quarantined_llm"})``.  Extend this set (via
+        subclassing or monkey-patching) to register additional Q-LLM entry
+        points without changing the detection logic.
+
     Parameters
     ----------
     tools:
@@ -506,7 +519,10 @@ class CaMeLInterpreter:
         set.  Pass ``{}`` to suppress all defaults.
     mode:
         Execution mode controlling side-channel capability propagation.
-        Defaults to ``ExecutionMode.NORMAL``.
+        Defaults to ``ExecutionMode.STRICT`` (recommended for production use).
+        Pass ``ExecutionMode.NORMAL`` only for debugging or
+        performance-sensitive scenarios where side-channel mitigations are not
+        required.
     policy_engine:
         Optional policy engine instance.  Must implement::
 
@@ -548,11 +564,16 @@ class CaMeLInterpreter:
         assert interp.get("b").raw == 3
     """
 
+    # Tool names recognised as Q-LLM entry points for M4-F3/F4 post-call
+    # tainting.  Extend via subclassing or monkey-patching to add further
+    # Q-LLM tool names without modifying detection logic.
+    _QLLM_TOOL_NAMES: frozenset[str] = frozenset({"query_quarantined_llm"})
+
     def __init__(
         self,
         tools: Mapping[str, Callable[..., CaMeLValue]] | None = None,
         builtins: Mapping[str, Callable[..., Any]] | None = None,
-        mode: ExecutionMode = ExecutionMode.NORMAL,
+        mode: ExecutionMode = ExecutionMode.STRICT,
         policy_engine: Any | None = None,
         enforcement_mode: EnforcementMode = EnforcementMode.EVALUATION,
         consent_callback: ConsentCallback | None = None,
@@ -570,6 +591,9 @@ class CaMeLInterpreter:
           ``_consent_callback`` are stored as given.
         - ``ValueError`` is raised if ``enforcement_mode=PRODUCTION`` and
           ``consent_callback`` is ``None`` (security defect prevention).
+        - ``_last_qllm_result_cv`` is a one-shot signal field set by
+          ``_eval_Call`` when a Q-LLM tool returns, and consumed by
+          ``_exec_statements`` to update the M4-F3/F4 tainting context.
         """
         if enforcement_mode is EnforcementMode.PRODUCTION and consent_callback is None:
             raise ValueError(
@@ -597,6 +621,11 @@ class CaMeLInterpreter:
         # In STRICT mode, entering an if/for block pushes a new frozenset that
         # merges the test/iterable variable names with the enclosing entry.
         self._dep_ctx_stack: list[frozenset[str]] = [frozenset()]
+        # M4-F3/F4: one-shot signal set by _eval_Call when a Q-LLM tool
+        # returns.  _exec_statements consumes this signal to taint all
+        # subsequent statements in the same block.  Always None outside of
+        # an active _exec_statements frame that just completed a Q-LLM call.
+        self._last_qllm_result_cv: CaMeLValue | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -767,6 +796,30 @@ class CaMeLInterpreter:
         ``_exec_*`` method.  Raises :class:`UnsupportedSyntaxError` for any
         statement type not in the supported grammar.
 
+        **M4-F3 / M4-F4 — post-Q-LLM-call STRICT tainting:**
+        In STRICT mode, after each statement this method checks
+        ``_last_qllm_result_cv``.  If the signal is set (meaning the statement
+        just executed contained a ``query_quarantined_llm()`` call), the
+        method:
+
+        1. Merges the Q-LLM result's ``CaMeLValue`` into ``current_ctx`` so
+           that all subsequent statements in this block carry the Q-LLM's
+           capability envelope.
+        2. Pushes an extended entry onto ``_dep_ctx_stack`` containing the
+           Q-LLM variable name (if the call was bound to a name target) so
+           that the dependency graph records the taint on subsequent
+           assignments.
+
+        The signal is consumed immediately (set back to ``None``) and the
+        ``_dep_ctx_stack`` push is paired with a ``finally``-guarded pop to
+        ensure clean-up on both normal and exceptional block exits.  If
+        multiple Q-LLM calls occur in the same block, each one replaces the
+        previous stack entry (pop + push) so the accumulated dep context grows
+        monotonically.
+
+        The flag is scoped to this ``_exec_statements`` frame and does **not**
+        propagate to sibling or parent blocks.
+
         Parameters
         ----------
         stmts:
@@ -776,8 +829,45 @@ class CaMeLInterpreter:
             constructs.  ``None`` in NORMAL mode or at the top level in STRICT
             mode.
         """
-        for stmt in stmts:
-            self._exec_statement(stmt, ctx_caps)
+        current_ctx = ctx_caps
+        # Whether we have pushed a Q-LLM dep context entry onto the stack.
+        qllm_ctx_pushed = False
+        try:
+            for stmt in stmts:
+                self._exec_statement(stmt, current_ctx)
+                # M4-F3/F4: in STRICT mode, check for Q-LLM call signal.
+                if (
+                    self._mode is ExecutionMode.STRICT
+                    and self._last_qllm_result_cv is not None
+                ):
+                    qllm_cv = self._last_qllm_result_cv
+                    self._last_qllm_result_cv = None  # consume the signal
+                    # Update capability context for all subsequent statements.
+                    current_ctx = self._merge_ctx_caps(qllm_cv, current_ctx)
+                    # Determine the variable name the Q-LLM result was bound to
+                    # (if this was an assignment statement with a simple target).
+                    qllm_var_name: str | None = None
+                    if (
+                        isinstance(stmt, ast.Assign)
+                        and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], ast.Name)
+                    ):
+                        qllm_var_name = stmt.targets[0].id
+                    # Build the new dep context: extend the current top-of-stack
+                    # with the Q-LLM variable name (if available).
+                    new_dep_ctx = self._dep_ctx_stack[-1]
+                    if qllm_var_name:
+                        new_dep_ctx = new_dep_ctx | frozenset({qllm_var_name})
+                    # Replace any existing Q-LLM push from this frame, then
+                    # push the updated dep context.
+                    if qllm_ctx_pushed:
+                        self._dep_ctx_stack.pop()
+                    self._dep_ctx_stack.append(new_dep_ctx)
+                    qllm_ctx_pushed = True
+        finally:
+            # Always clean up any dep-ctx push made in this frame.
+            if qllm_ctx_pushed:
+                self._dep_ctx_stack.pop()
 
     def _exec_statement(
         self,
@@ -1458,6 +1548,13 @@ class CaMeLInterpreter:
                         f"Tool {name!r} returned {type(result_cv).__name__!r}; "
                         f"expected CaMeLValue"
                     )
+                # M4-F3/F4: if this is a Q-LLM tool, set the signal so that
+                # _exec_statements can taint subsequent statements in STRICT
+                # mode.  The signal is consumed by _exec_statements; setting it
+                # here even in NORMAL mode is harmless because _exec_statements
+                # only reads it when mode is STRICT.
+                if name in self._QLLM_TOOL_NAMES:
+                    self._last_qllm_result_cv = result_cv
                 return result_cv
 
             elif name in self._builtins:

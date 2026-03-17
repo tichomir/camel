@@ -7,6 +7,64 @@ CaMeL uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-03-17
+
+### Milestone 4 — STRICT Mode Validation & Hardening
+
+This release fully validates, extends, and hardens the STRICT execution mode in the
+CaMeL interpreter.  All five Milestone 4 features (M4-F1 through M4-F5) are delivered
+and verified by automated unit and integration tests.
+
+#### Changed
+
+**STRICT mode is now the default** (`camel/interpreter.py`)
+
+- **M4-F5** — `ExecutionMode.STRICT` is now the default value for the `mode` parameter
+  in `CaMeLInterpreter.__init__`.  Callers requiring NORMAL mode must pass
+  `mode=ExecutionMode.NORMAL` explicitly.  This is a **breaking change** for code that
+  relied on the previous NORMAL default.
+
+#### Added
+
+**Extended STRICT mode propagation rules** (`camel/interpreter.py`, `camel/dependency_graph.py`)
+
+- **M4-F1** — For-loop iterable dependency propagation: in STRICT mode the capability
+  set and variable-dependency set of the `for`-loop iterable are merged into every
+  assignment inside the loop body (including nested blocks), closing the iterable
+  control-flow side channel.
+- **M4-F2** — If/else conditional test dependency propagation: in STRICT mode the
+  capability set and variable-dependency set of the `if`-statement test are merged into
+  every assignment in both the true and false branches, closing the branch-observation
+  side channel (PRD §7.3).
+- **M4-F3** — Post-`query_quarantined_llm()` statement dependency propagation: when a
+  Q-LLM call appears anywhere in a statement list, STRICT mode activates a "remainder
+  flag" causing every subsequent assignment in the same code block to inherit the Q-LLM
+  result's `CaMeLValue` as additional context capabilities.
+- **M4-F4** — Block-scoped remainder flag: the post-Q-LLM taint flag is scoped to the
+  current `_exec_statements` frame; it propagates into nested blocks encountered after
+  the call but resets when the block exits.
+
+**Test coverage**
+
+- `tests/test_strict_mode.py` — unit tests covering all five M4 propagation rules.
+- `tests/test_dependency_graph.py` — extended with post-Q-LLM tainting scenarios.
+- `tests/integration/test_strict_mode_e2e.py` — end-to-end integration test confirming
+  STRICT mode dependency graph correctness across a complete execution-loop scenario.
+
+**Documentation**
+
+- `docs/architecture.md` — Section 6 rewritten: STRICT-as-default stated; STRICT Mode
+  Propagation Rules subsection added with per-rule descriptions and dependency-graph
+  mutation table.
+- `README.md` — Execution Modes section updated; `InterpreterConfig(mode='NORMAL')`
+  opt-in snippet added; version badge bumped to 0.4.0.
+- `docs/design/milestone4-strict-mode-extension.md` — status changed to Implemented;
+  Verification section added referencing test files.
+- `CLAUDE.md` PRD §6.3 — STRICT/NORMAL description rewritten to reflect STRICT as
+  default; all three new propagation rules documented.
+
+---
+
 ## [0.1.0] — 2026-03-17
 
 ### Milestone 1 — Foundation
