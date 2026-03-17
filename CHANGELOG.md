@@ -9,11 +9,12 @@ CaMeL uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.4.0] — 2026-03-17
 
-### Milestone 4 — STRICT Mode Validation & Hardening
+### Milestone 4 — STRICT Mode Validation & Hardening + Exception Hardening & Redaction
 
 This release fully validates, extends, and hardens the STRICT execution mode in the
-CaMeL interpreter.  All five Milestone 4 features (M4-F1 through M4-F5) are delivered
-and verified by automated unit and integration tests.
+CaMeL interpreter (M4-F1 through M4-F5) and delivers the complete exception hardening
+and redaction subsystem (M4-F6 through M4-F9, M4-F17).  All features are delivered and
+verified by automated unit and integration tests.
 
 #### Changed
 
@@ -44,14 +45,14 @@ and verified by automated unit and integration tests.
   current `_exec_statements` frame; it propagates into nested blocks encountered after
   the call but resets when the block exits.
 
-**Test coverage**
+**Test coverage — STRICT mode**
 
 - `tests/test_strict_mode.py` — unit tests covering all five M4 propagation rules.
 - `tests/test_dependency_graph.py` — extended with post-Q-LLM tainting scenarios.
 - `tests/integration/test_strict_mode_e2e.py` — end-to-end integration test confirming
   STRICT mode dependency graph correctness across a complete execution-loop scenario.
 
-**Documentation**
+**Documentation — STRICT mode**
 
 - `docs/architecture.md` — Section 6 rewritten: STRICT-as-default stated; STRICT Mode
   Propagation Rules subsection added with per-rule descriptions and dependency-graph
@@ -62,6 +63,89 @@ and verified by automated unit and integration tests.
   Verification section added referencing test files.
 - `CLAUDE.md` PRD §6.3 — STRICT/NORMAL description rewritten to reflect STRICT as
   default; all three new propagation rules documented.
+
+---
+
+### Milestone 4 — Exception Hardening & Redaction
+
+#### Added
+
+**Exception hardening subsystem** (`camel/execution_loop.py`, `camel/interpreter.py`,
+`camel/dependency_graph.py`)
+
+- **M4-F6** — Dependency-graph-aware taint check: `ExceptionRedactor.classify()` now
+  consults the full dependency graph for variables referenced in the failing statement.
+  Exception messages are omitted (`message=None` in `RedactedError`) when any upstream
+  source outside `{"User literal", "CaMeL"}` is found.  The string `[REDACTED]` appears
+  only in the audit log — never in the `RedactedError` data model.  This replaces the
+  earlier coarse store-scan which tainted on any untrusted store variable regardless of
+  the failing statement's actual dependencies.
+
+- **M4-F7** — `NotEnoughInformationError` (NEIE) handler hardened: NEIE is classified
+  with `error_type="NotEnoughInformationError"` and `lineno=<call-site line number>`;
+  `message` is always `None`.  The interpreter attaches the AST node's `lineno` to the
+  exception via `_attach_lineno()` before re-raising.  `RetryPromptBuilder` emits a
+  fixed advisory sentence containing only the line number and static text — zero bytes of
+  Q-LLM output reach the P-LLM (NFR-5 coverage).
+
+- **M4-F8** — STRICT mode annotation preservation across NEIE re-generation cycles:
+  `AcceptedState` gains two new fields — `dependency_graph_snapshot: dict[str,
+  frozenset[str]]` and `dep_ctx_stack_snapshot: list[frozenset[str]]`.  On NEIE, the
+  orchestrator snapshots the interpreter's dependency graph and context-dependency stack
+  before building the retry prompt, then restores them before the regenerated plan
+  executes.  This ensures all STRICT mode taint accumulated before the failing Q-LLM
+  call is available to regenerated code.  `DependencyGraph` gains `export()` and
+  `import_()` methods to support this.
+
+- **M4-F9** — Loop-body exception STRICT propagation: `_exec_For` wraps the loop body
+  in a `try/except`; when an exception propagates from a non-public-iterable loop body
+  in STRICT mode, the iterable's dependency set (`__loop_iter_deps__`) and capability
+  context (`__loop_iter_caps__`) are attached to the exception before re-raising.  The
+  orchestrator reads these fields and pre-seeds the interpreter's `_dep_ctx_stack` before
+  the regenerated plan executes, so the iterable's taint is never silently dropped across
+  retry cycles.  The `_is_non_public()` helper on `CaMeLInterpreter` encapsulates the
+  non-public check.
+
+- **M4-F17** — `RedactionAuditEvent` dataclass: emitted by `ExceptionRedactor.classify()`
+  for every exception it processes (redacted or not), providing a complete audit trail.
+  Fields: `timestamp` (ISO-8601 UTC), `line_number`, `redaction_reason` (`"untrusted_dependency"` |
+  `"not_enough_information"` | `"loop_body_exception"` | `"none"`), `dependency_chain`
+  (≤50 `(var_name, source_label)` pairs), `trust_level`, `error_type`,
+  `redacted_message_length`, `m4_f9_applied`.  The audit log sink is injected via
+  `ExceptionRedactor.__init__(audit_log=...)` (backward-compatible; `None` drops events
+  silently).  Extends NFR-6 coverage to include exception redaction events.
+
+**Test coverage — exception hardening**
+
+- `tests/test_exception_hardening.py` — comprehensive unit test suite: dependency-graph
+  deep taint scenarios (M4-F6), NEIE lineno extraction and advisory sentence (M4-F7),
+  annotation preservation across re-generation (M4-F8), loop-body exception propagation
+  (M4-F9), and `RedactionAuditEvent` emission for all four redaction reasons (M4-F17).
+- `tests/test_redaction_completeness.py` — extended with dependency-graph-deep taint
+  scenarios and NEIE line-number verification.
+- `tests/test_execution_loop.py` — extended with `RedactionAuditEvent` emission tests
+  and NEIE advisory sentence content tests.
+
+**Documentation — exception hardening**
+
+- `docs/architecture.md` — §3.2 (Q-LLM) updated: NEIE handler rows for M4-F7 and M4-F8
+  added to component property table.  §3.3 (CaMeL Interpreter) updated: exception
+  redaction, loop-body propagation, and redaction audit log rows added.  §7 (Exception
+  Redaction Logic) fully rewritten: dependency-graph-aware algorithm, M4-F7/F8/F9
+  subsections, `RedactionAuditEvent` schema, and updated trust classification algorithm.
+  Version bumped to 0.4.1.
+- `docs/design/milestone4-strict-mode-extension.md` — §10 status changed from
+  "Design — pending implementation" to "Implemented — all M4-F6 through M4-F9 and M4-F17
+  features delivered and verified"; §10.11 review checklist fully ticked; §10.12
+  Verification section added with test file references.
+- `CLAUDE.md` PRD §6.2 — updated: NEIE handler strips missing-info content, passes only
+  `error_type` + `lineno` to P-LLM (M4-F7); STRICT annotation preservation (M4-F8)
+  documented.  PRD §6.3 — updated: exception redaction engine, `[REDACTED]` rule, loop-
+  body propagation, and audit log emission documented.  NFR-6 updated to include exception
+  redaction events.  L3 (exception side-channel risk) severity reduced from Low-Medium to
+  Low; mitigation updated to list M4-F6 through M4-F9.
+- `README.md` — milestone status table updated with five new exception hardening rows
+  (M4-F6 through M4-F9, M4-F17).
 
 ---
 

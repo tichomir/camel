@@ -356,3 +356,618 @@ features in a complete execution-loop scenario with real capability propagation 
 policy evaluation.
 
 **Status:** All test suites pass.  STRICT mode is the production default as of v0.4.0.
+
+---
+
+## 10. Exception Hardening — M4-F6, M4-F7, M4-F8, M4-F9, M4-F17
+
+_Author: Software Architect | Date: 2026-03-17 | Status: Implemented — all M4-F6 through M4-F9 and M4-F17 features delivered and verified — 2026-03-17_
+
+### 10.1 Overview
+
+This section specifies the design for hardening all exception-handling pathways
+in the CaMeL interpreter and execution loop to eliminate exception-based
+information-leakage channels.  It covers five feature IDs:
+
+| Feature | Short description |
+|---------|-------------------|
+| M4-F6   | Dependency-aware exception message redaction → `[REDACTED]` |
+| M4-F7   | `NotEnoughInformationError` handler — strips content, exposes type + line only |
+| M4-F8   | STRICT mode annotation preservation across NEIE re-generation cycles |
+| M4-F9   | Loop-body exception STRICT propagation for non-public-iterable loops |
+| M4-F17  | Audit log event schema for every redaction event |
+
+These features extend the existing `ExceptionRedactor` class
+(`camel/execution_loop.py`) and the CaMeL interpreter
+(`camel/interpreter.py`), without altering the public API of either.
+
+---
+
+### 10.2 M4-F6 — Dependency-Aware Exception Message Redaction
+
+#### 10.2.1 Problem
+
+The current `ExceptionRedactor.classify()` inspects the interpreter store
+**snapshot** to decide whether any in-scope variable has untrusted provenance.
+That check (`_store_has_untrusted`) is coarse: it taints the whole exception
+message as soon as *any* store variable carries an untrusted source — even if
+the failing statement has no dependency on that variable.
+
+More critically, the check does not consult the **dependency graph**.  A
+variable whose `sources` field is `{"CaMeL"}` may still transitively depend on
+untrusted data through the graph.  In STRICT mode, the dependency graph is the
+authoritative record of taint propagation and must be the primary input to the
+redaction decision.
+
+#### 10.2.2 Taint Check Algorithm
+
+The enhanced taint check for a failing statement at line `L` is:
+
+```
+function is_tainted(exc, interpreter) -> bool:
+    # Step 1: collect variables referenced in the failing statement.
+    failing_vars = interpreter.get_variables_at_line(L)
+    # If line number is unavailable, fall back to the full store.
+    if not failing_vars:
+        failing_vars = set(interpreter.store.keys())
+
+    # Step 2: for each referenced variable, walk the dependency graph.
+    for var in failing_vars:
+        dep_graph = interpreter.get_dependency_graph(var)
+        for upstream_var in dep_graph.all_upstream():
+            cv = interpreter.store.get(upstream_var)
+            if cv is not None:
+                for src in cv.sources:
+                    if src not in TRUSTED_SOURCES:
+                        return True  # tainted
+
+    # Step 3: also check direct capability tags of variables in the failing stmt.
+    for var in failing_vars:
+        cv = interpreter.store.get(var)
+        if cv is not None:
+            for src in cv.sources:
+                if src not in TRUSTED_SOURCES:
+                    return True
+
+    return False
+```
+
+`TRUSTED_SOURCES` remains `frozenset({"User literal", "CaMeL"})`.
+
+#### 10.2.3 `[REDACTED]` Substitution Rule
+
+When `is_tainted()` returns `True`:
+
+- `RedactedError.message` is set to `None` (already the existing behaviour).
+- The `trust_level` field is set to `"untrusted"`.
+- The human-readable retry prompt produced by `RetryPromptBuilder` **must not**
+  include the literal exception message string.  The prompt builder already
+  omits `message` when it is `None`; no change is required there.
+
+The string literal `"[REDACTED]"` is **not** placed in `RedactedError.message`
+— `None` is the sentinel.  `[REDACTED]` appears only in the audit log entry
+(§10.6) to make the redaction visible to operators.
+
+#### 10.2.4 Traceback Scrubbing Scope
+
+Tracebacks are **never** forwarded to the P-LLM.  `RetryPromptBuilder.build()`
+accepts only `RedactedError` (a dataclass with no traceback field); the raw
+exception and its traceback are consumed entirely within
+`CaMeLOrchestrator._handle_exception()` and discarded after `classify()`
+returns.  No additional traceback-scrubbing logic is needed at the prompt layer.
+
+For the audit log (§10.6), a sanitised traceback summary may be included, but
+only the frame function names and line numbers — never local variable values or
+exception message text when the exception is tainted.
+
+---
+
+### 10.3 M4-F7 — `NotEnoughInformationError` Handler
+
+#### 10.3.1 Invariant
+
+When `NotEnoughInformationError` (either `camel.exceptions.NotEnoughInformationError`
+or `camel.llm.exceptions.NotEnoughInformationError`) propagates out of the
+interpreter, **zero bytes** of Q-LLM output may reach the P-LLM.  This applies
+regardless of whether the error was raised by the Q-LLM wrapper or re-raised
+inside the interpreter.
+
+The following table defines exactly which fields are populated in `RedactedError`
+for this case:
+
+| Field | Value | Rationale |
+|-------|-------|-----------|
+| `error_type` | `"NotEnoughInformationError"` | Exception class name; safe — it is a fixed string |
+| `lineno` | call-site line number from the AST node | Needed by P-LLM to locate the failing call; contains no untrusted data |
+| `message` | `None` | Never included — would risk exposing Q-LLM output |
+| `trust_level` | `"not_enough_information"` | Identifies the redaction rule applied |
+
+#### 10.3.2 Call-Site Line Number Extraction
+
+The current implementation sets `lineno=None` for NEIE.  This must change to
+`lineno=<AST line number of the query_quarantined_llm() call>`.
+
+The line number is obtained from the interpreter at the point the exception
+is caught, before the store snapshot is taken:
+
+```python
+# Inside CaMeLOrchestrator._handle_exception():
+lineno = getattr(exc, "lineno", None)
+if lineno is None:
+    # NEIE may carry a lineno if the interpreter attached it; fall back to None.
+    lineno = getattr(exc, "__lineno__", None)
+```
+
+To support this, the CaMeL interpreter **must** attach the AST node's
+`lineno` attribute to the `NotEnoughInformationError` before re-raising it
+from `_eval_Call`, when the call being evaluated is `query_quarantined_llm`.
+This is implemented via a lightweight `_attach_lineno` helper:
+
+```python
+def _attach_lineno(exc: BaseException, node: ast.AST) -> BaseException:
+    """Attach AST line number to exc without altering exc.args."""
+    exc.__lineno__ = getattr(node, "lineno", None)  # type: ignore[attr-defined]
+    return exc
+```
+
+The `ExceptionRedactor.classify()` method reads `exc.__lineno__` for NEIE
+(falling back to `getattr(exc, "lineno", None)` for other exception types).
+
+#### 10.3.3 Mapping to the P-LLM Retry Loop (NFR-5)
+
+NFR-5 requires the retry loop to handle up to 10 code-generation failures
+gracefully without exposing untrusted error content.  The NEIE path maps into
+the existing retry loop as follows:
+
+```
+NEIE caught by orchestrator
+  │
+  ├─ ExceptionRedactor.classify()  → RedactedError(
+  │                                     error_type="NotEnoughInformationError",
+  │                                     lineno=<call-site>,
+  │                                     message=None,
+  │                                     trust_level="not_enough_information"
+  │                                  )
+  │
+  ├─ AcceptedState snapshot taken  (see §10.4 for STRICT annotation preservation)
+  │
+  ├─ RetryPromptBuilder.build()    → user-turn message with:
+  │     • error_type only (no message, no Q-LLM content)
+  │     • call-site line number
+  │     • already-defined variable names (opaque handles)
+  │
+  └─ P-LLM regenerates remaining plan
+       (attempt count incremented; MaxRetriesExceededError after 10)
+```
+
+The P-LLM retry prompt for NEIE should include a short advisory sentence (added
+by `RetryPromptBuilder` when `trust_level == "not_enough_information"`):
+
+```
+The call to query_quarantined_llm() at line {lineno} reported that the provided
+context did not contain enough information to populate the requested schema.
+Consider restructuring the query or passing additional context variables.
+```
+
+This sentence contains **no untrusted data** — only the line number and a
+fixed advisory.
+
+---
+
+### 10.4 M4-F8 — STRICT Mode Annotation Preservation Across NEIE Re-generation
+
+#### 10.4.1 Problem
+
+When NEIE is raised and the orchestrator triggers a P-LLM re-generation, the
+interpreter is **not** reset.  The accepted state (variable names) is preserved
+so the P-LLM can reference already-computed values via opaque handles.  However,
+the interpreter's STRICT mode dependency annotations (dependency graph entries
+and `_dep_ctx_stack`) are part of its mutable state.
+
+If the interpreter's internal tracking state is partially in flight at the point
+NEIE is raised (e.g., inside a `for`-loop body or after a Q-LLM call that
+previously updated `_last_qllm_result_cv`), the annotations accumulated up to
+that point must be **preserved and restored** after re-generation, so that the
+regenerated code picks up the correct dependency context.
+
+#### 10.4.2 Variable Scopes Snapshotted
+
+The `AcceptedState` object is extended with two new fields:
+
+```python
+@dataclass(frozen=True)
+class AcceptedState:
+    variable_names: frozenset[str]
+    executed_statement_count: int
+    remaining_source: str
+    # New fields for M4-F8:
+    dependency_graph_snapshot: dict[str, frozenset[str]]
+    # Mapping: variable_name → frozenset of upstream dependency variable names.
+    # Taken by calling interpreter.snapshot_dependency_graph() at the moment of
+    # NEIE capture, before any retry-prompt construction.
+    dep_ctx_stack_snapshot: list[frozenset[str]]
+    # Copy of the interpreter's _dep_ctx_stack at the moment of NEIE capture.
+    # Used to restore the STRICT-mode context-dependency stack on re-entry.
+```
+
+`dependency_graph_snapshot` covers **all variables currently in the store** —
+i.e., every variable that was assigned before the NEIE-raising statement.
+
+`dep_ctx_stack_snapshot` captures the context-dependency stack at the NEIE
+capture point.  This is the stack used by STRICT mode to propagate dependencies
+from enclosing `for`/`if` blocks and post-Q-LLM remainders.
+
+#### 10.4.3 Snapshot and Restore Protocol
+
+```
+On NEIE caught by orchestrator:
+  1. Call interpreter.snapshot_accepted_state():
+       → dependency_graph_snapshot = interpreter.dep_graph.export()
+       → dep_ctx_stack_snapshot    = list(interpreter._dep_ctx_stack)
+       → variable_names            = frozenset(interpreter.store.keys())
+       → executed_statement_count  = <count before failing stmt>
+       → remaining_source          = <ast.unparse of unexecuted stmts>
+  2. Construct AcceptedState with all five fields.
+  3. Build retry prompt (see §10.3.3).
+  4. Obtain regenerated plan from P-LLM.
+  5. Before executing the regenerated plan, call:
+       interpreter.restore_accepted_state(accepted_state):
+         → interpreter.dep_graph.import(accepted_state.dependency_graph_snapshot)
+         → interpreter._dep_ctx_stack[:] = accepted_state.dep_ctx_stack_snapshot
+     The variable store is already intact (it was not cleared between retries).
+
+On successful plan completion after retry:
+  6. dep_ctx_stack_snapshot is discarded; the stack is managed normally by the
+     interpreter as the regenerated plan executes.
+```
+
+#### 10.4.4 Scope of Preservation
+
+Only NEIE triggers the snapshot-restore cycle.  Other exception types that
+trigger the retry loop do **not** use this mechanism:
+
+- **Trusted exceptions:** The interpreter may be reset (depending on the
+  orchestrator's retry strategy) or continue from the accepted state.  Either
+  way, the dependency graph and dep-ctx stack are reset or continue normally.
+- **Untrusted-dependency exceptions:** Same as trusted — no special snapshot
+  required beyond the existing `AcceptedState` mechanism.
+
+The rationale: NEIE is the only exception class where the interpreter's state
+is explicitly valid up to the failing Q-LLM call, and where re-generation is
+expected to produce code that references those accumulated variables.  Other
+exception types indicate plan logic errors where a full or partial re-plan is
+the correct response.
+
+---
+
+### 10.5 M4-F9 — Loop-Body Exception STRICT Propagation for Non-Public-Iterable Loops
+
+#### 10.5.1 Problem
+
+In STRICT mode, M4-F1 ensures that every **assignment** inside a `for`-loop
+body carries the iterable's dependency.  However, if an exception is raised
+inside the loop body, the statements that **would have executed after the
+exception** are never reached.  When the orchestrator retries with a regenerated
+plan, those post-exception statements in the regenerated code must still inherit
+the iterable's dependency — otherwise a partial execution followed by retry
+could silently drop the iterable's taint from downstream values.
+
+#### 10.5.2 Trigger Condition
+
+M4-F9 applies when ALL of the following are true:
+
+1. The exception originates inside a `for`-loop body (i.e., the call stack at
+   the point of exception includes an `_exec_For` frame).
+2. The loop's iterable expression has a **non-public** dependency — i.e., at
+   least one upstream source of the iterable `CaMeLValue` is not in
+   `TRUSTED_SOURCES` or the `readers` field is not `Public`.
+3. The interpreter is in `ExecutionMode.STRICT`.
+
+If any condition is false, M4-F9 does not apply and normal redaction rules
+(M4-F6/F7) govern the exception.
+
+#### 10.5.3 Implementation — Loop-Exception Context Annotation
+
+The `_exec_For` method in the interpreter is modified to wrap the loop body
+execution in a `try/except` block that, on exception, **attaches the iterable's
+dependency set** to the exception before re-raising:
+
+```python
+def _exec_For(self, node: ast.For, ctx_caps, dep_ctx) -> None:
+    iter_cv = self._eval(node.iter, ctx_caps)
+    iter_deps = self._collect_var_refs(node.iter)
+
+    if self._mode is ExecutionMode.STRICT:
+        inner_ctx = _merge_ctx_caps(iter_cv, ctx_caps)
+        inner_dep_ctx = dep_ctx | iter_deps
+    else:
+        inner_ctx = ctx_caps
+        inner_dep_ctx = dep_ctx
+
+    try:
+        for elem in iter_cv.raw:
+            # ... assign loop variable, exec body stmts ...
+    except Exception as exc:
+        if self._mode is ExecutionMode.STRICT and self._is_non_public(iter_cv):
+            # Attach loop-context dependency metadata to the exception.
+            exc.__loop_iter_deps__ = inner_dep_ctx          # type: ignore[attr-defined]
+            exc.__loop_iter_caps__ = inner_ctx               # type: ignore[attr-defined]
+        raise
+```
+
+#### 10.5.4 Use in Post-Exception Statement Annotation
+
+When the orchestrator catches an exception carrying `__loop_iter_deps__`, the
+`AcceptedState` snapshot is extended with:
+
+```python
+loop_iter_deps: frozenset[str] | None
+# Set to exc.__loop_iter_deps__ when M4-F9 applies; None otherwise.
+loop_iter_caps: CaMeLValue | None
+# Set to exc.__loop_iter_caps__ when M4-F9 applies; None otherwise.
+```
+
+On re-entry into the regenerated plan, the interpreter's `_dep_ctx_stack` is
+pre-seeded with `loop_iter_deps` and `_ctx_caps` is set to `loop_iter_caps`
+before the regenerated code executes.  This ensures the first assignment in the
+regenerated code already carries the iterable's dependency — exactly as if the
+loop body had continued executing.
+
+#### 10.5.5 `_is_non_public` Helper
+
+```python
+def _is_non_public(self, cv: CaMeLValue) -> bool:
+    """Return True if cv has any non-trusted source or non-Public readers."""
+    from camel.value import Public
+    if cv.readers is not Public and cv.readers:
+        return True
+    return any(src not in TRUSTED_SOURCES for src in cv.sources)
+```
+
+---
+
+### 10.6 M4-F17 — Audit Log Event Schema for Redaction Events
+
+#### 10.6.1 Overview
+
+Per NFR-6, every redaction event must be written to the security audit log.
+The existing audit log infrastructure (introduced in Milestone 3 Enforcement
+Integration) emits `AuditLogEntry` records for policy evaluation outcomes and
+user consent decisions.  M4-F17 extends this with a new event type:
+`RedactionAuditEvent`.
+
+#### 10.6.2 Event Schema
+
+```python
+@dataclass(frozen=True)
+class RedactionAuditEvent:
+    """Audit log entry emitted whenever exception message redaction occurs.
+
+    Emitted by ExceptionRedactor.classify() for every exception it processes,
+    regardless of whether redaction was applied (trust_level documents the
+    outcome). This provides a complete audit trail of all exception events.
+
+    Attributes
+    ----------
+    timestamp:
+        ISO-8601 UTC timestamp of the redaction decision.
+        Format: "YYYY-MM-DDTHH:MM:SS.ffffffZ"
+    line_number:
+        1-based AST source line number of the failing statement, or None
+        if unavailable.
+    redaction_reason:
+        Human-readable explanation of why redaction was applied (or "none"
+        if no redaction). One of:
+          - "untrusted_dependency"  — M4-F6 taint check returned True
+          - "not_enough_information" — M4-F7 NEIE handler applied
+          - "loop_body_exception"   — M4-F9 loop propagation applied
+          - "none"                  — trusted exception; no redaction
+    dependency_chain:
+        Ordered list of (variable_name, source_label) pairs representing
+        the taint propagation path that triggered redaction. Empty list
+        when redaction_reason is "none".
+        Example: [("email_body", "get_last_email"), ("summary", "CaMeL")]
+    trust_level:
+        The trust_level field from the resulting RedactedError. One of
+        "trusted", "untrusted", "not_enough_information".
+    error_type:
+        Exception class name (always included; never untrusted data).
+    redacted_message_length:
+        Length in characters of the original exception message before
+        redaction, or 0 if the message was empty or None. Allows operators
+        to gauge information-density of redacted content without
+        re-exposing the content itself.
+    m4_f9_applied:
+        True if M4-F9 loop-body exception STRICT propagation was applied
+        to this event.
+    """
+
+    timestamp: str                          # ISO-8601 UTC
+    line_number: int | None
+    redaction_reason: str                   # see docstring values above
+    dependency_chain: list[tuple[str, str]] # [(var_name, source_label), ...]
+    trust_level: str                        # "trusted" | "untrusted" | "not_enough_information"
+    error_type: str
+    redacted_message_length: int
+    m4_f9_applied: bool
+```
+
+#### 10.6.3 Emission Point
+
+`RedactionAuditEvent` is emitted inside `ExceptionRedactor.classify()`,
+immediately after the `RedactedError` is constructed and before the method
+returns.  The emitter is injected via a constructor parameter:
+
+```python
+class ExceptionRedactor:
+    def __init__(
+        self,
+        trusted_sources: frozenset[str] | None = None,
+        audit_log: AuditLog | None = None,   # NEW — injected sink
+    ) -> None: ...
+```
+
+`AuditLog` is the existing audit-log sink interface from Milestone 3.  If
+`audit_log` is `None`, the event is silently dropped (backward-compatible
+default for tests that do not configure a log).
+
+#### 10.6.4 Dependency Chain Population
+
+The `dependency_chain` field is populated by traversing the dependency graph
+for each variable involved in the failing statement:
+
+```
+dependency_chain = []
+for var in failing_vars:
+    dep_graph = interpreter.get_dependency_graph(var)
+    for upstream_var in dep_graph.all_upstream():
+        cv = interpreter.store.get(upstream_var)
+        if cv:
+            for src in cv.sources:
+                if src not in TRUSTED_SOURCES:
+                    dependency_chain.append((upstream_var, src))
+# Deduplicate while preserving order.
+dependency_chain = list(dict.fromkeys(dependency_chain))
+```
+
+The chain is truncated to a maximum of **50 entries** to prevent runaway log
+growth in deeply nested dependency graphs.
+
+---
+
+### 10.7 Interaction Summary
+
+The five features interact as follows during a single execution cycle:
+
+```
+Exception raised inside interpreter
+  │
+  ├─ [M4-F9] Is it inside a for-loop body with non-public iterable?
+  │     Yes → attach __loop_iter_deps__, __loop_iter_caps__ to exc
+  │
+  ├─ ExceptionRedactor.classify(exc, store_snapshot)
+  │     │
+  │     ├─ [M4-F7] isinstance(exc, NEIE)?
+  │     │     Yes → RedactedError(type, lineno, message=None, "not_enough_information")
+  │     │           emit RedactionAuditEvent(redaction_reason="not_enough_information") [M4-F17]
+  │     │
+  │     ├─ [M4-F6] is_tainted(exc, interpreter)?
+  │     │     Yes → RedactedError(type, lineno, message=None, "untrusted")
+  │     │           emit RedactionAuditEvent(redaction_reason="untrusted_dependency") [M4-F17]
+  │     │
+  │     └─ else → RedactedError(type, lineno, message, "trusted")
+  │               emit RedactionAuditEvent(redaction_reason="none") [M4-F17]
+  │
+  ├─ AcceptedState snapshot
+  │     [M4-F8] If NEIE: include dependency_graph_snapshot + dep_ctx_stack_snapshot
+  │     [M4-F9] If loop exc: include loop_iter_deps + loop_iter_caps
+  │
+  ├─ RetryPromptBuilder.build(accepted_state, redacted_error)
+  │     NEIE case: adds advisory sentence (no untrusted data) [M4-F7]
+  │
+  └─ Interpreter restore before re-execution
+        [M4-F8] Restore dep graph + dep-ctx stack if NEIE
+        [M4-F9] Pre-seed dep-ctx stack if loop exc
+```
+
+---
+
+### 10.8 Files to be Modified
+
+| File | Change |
+|------|--------|
+| `camel/execution_loop.py` | Enhance `ExceptionRedactor.classify()` with dependency-graph taint check (M4-F6); add `lineno` extraction for NEIE (M4-F7); extend `AcceptedState` with snapshot fields (M4-F8, M4-F9); add `RedactionAuditEvent` dataclass and emission (M4-F17); update `RetryPromptBuilder.build()` with NEIE advisory (M4-F7) |
+| `camel/interpreter.py` | Add `_attach_lineno` helper; modify `_exec_For` to catch and annotate loop-body exceptions (M4-F9); add `snapshot_dependency_graph()` and `restore_accepted_state()` methods (M4-F8); expose `dep_graph.export()` / `dep_graph.import()` surface |
+| `camel/dependency_graph.py` | Add `export() -> dict[str, frozenset[str]]` and `import_(snapshot)` methods for M4-F8 snapshot/restore |
+| `tests/test_redaction_completeness.py` | Add M4-F6 dependency-graph-deep taint scenarios; add M4-F7 NEIE lineno verification; add M4-F8 annotation-preservation test; add M4-F9 loop-exception propagation test |
+| `tests/test_execution_loop.py` | Add `RedactionAuditEvent` emission tests (M4-F17); add NEIE advisory sentence test |
+| `docs/api/execution_loop.md` | Document `RedactionAuditEvent`, updated `AcceptedState`, enhanced `ExceptionRedactor` |
+| `docs/api/interpreter.md` | Document `snapshot_dependency_graph()`, `restore_accepted_state()`, `_attach_lineno` |
+
+---
+
+### 10.9 PRD Cross-References
+
+This design updates the following PRD sections (to be reflected in
+`docs/architecture.md`):
+
+**PRD §6.2 — Q-LLM Wrapper:**
+> `have_enough_information` boolean field; if false, raises
+> `NotEnoughInformationError` — communicated to P-LLM **with call-site line
+> number only**; no missing-data content is ever forwarded (M4-F7).
+> STRICT mode annotation preservation (M4-F8) ensures re-generation cycles do
+> not lose dependency context accumulated before the failing Q-LLM call.
+
+**PRD §6.3 — CaMeL Interpreter:**
+> Exception messages are redacted via a dependency-graph-aware taint check
+> (M4-F6): if the failing statement's dependency graph includes any untrusted
+> upstream source, the message is replaced with `[REDACTED]`.  Loop-body
+> exceptions from non-public-iterable loops carry STRICT mode dependency
+> annotations into the retry cycle (M4-F9).  All redaction events are written
+> to the security audit log (M4-F17).
+
+---
+
+### 10.10 Open Questions
+
+1. **`dep_graph.export()` format:** Should the export format be a plain
+   `dict[str, frozenset[str]]` (variable → upstream set) or a full serialised
+   graph object?  Recommendation: plain dict, sufficient for snapshot/restore
+   and avoids coupling the format to internal graph representation.
+
+2. **Audit log sink availability:** The `ExceptionRedactor` currently has no
+   reference to the audit log.  The cleanest injection point is the constructor
+   (as specified in §10.6.3).  Alternative: use a module-level singleton.
+   Recommendation: constructor injection for testability (NFR-9).
+
+3. **`lineno` attachment for non-NEIE exceptions:** Should `_attach_lineno` be
+   called for all exceptions raised inside `_eval_Call`, not just NEIE?  This
+   would improve the line-number accuracy of M4-F6 redaction decisions.
+   Recommendation: yes — attach to all exceptions from `_eval_Call`.
+
+4. **M4-F9 and nested loops:** If a loop is nested inside another loop with a
+   non-public iterable, both iterables' deps should be merged.  The proposed
+   design attaches only the innermost loop's deps.  The outer loop's deps are
+   already in `dep_ctx_stack_snapshot` (M4-F8), so the combination is correct
+   for NEIE; for other exception types the outer loop's context is carried
+   by the existing `_dep_ctx_stack` machinery.
+
+---
+
+### 10.11 Review Checklist
+
+_Signed off post-implementation — all items verified._
+
+- [x] M4-F6: dependency taint check algorithm specified (§10.2.2)
+- [x] M4-F6: `[REDACTED]` substitution rule clarified — `None` in model,
+      `[REDACTED]` in audit log only (§10.2.3)
+- [x] M4-F6: traceback scrubbing scope confirmed — tracebacks never reach P-LLM (§10.2.4)
+- [x] M4-F7: exact fields populated in `RedactedError` for NEIE (§10.3.1 table)
+- [x] M4-F7: call-site lineno extraction mechanism specified (§10.3.2)
+- [x] M4-F7: mapping to P-LLM retry loop (NFR-5) with advisory sentence (§10.3.3)
+- [x] M4-F8: variable scopes snapshotted: dep graph + dep-ctx stack (§10.4.2)
+- [x] M4-F8: snapshot-restore protocol (§10.4.3)
+- [x] M4-F8: scope limited to NEIE; other exception types excluded with rationale (§10.4.4)
+- [x] M4-F9: trigger condition (3 conditions) specified (§10.5.2)
+- [x] M4-F9: `_exec_For` modification with `_is_non_public` helper (§10.5.3–§10.5.5)
+- [x] M4-F17: `RedactionAuditEvent` schema with all fields defined (§10.6.2)
+- [x] M4-F17: emission point and audit-log injection mechanism (§10.6.3)
+- [x] M4-F17: dependency chain population algorithm with 50-entry cap (§10.6.4)
+- [x] §10.7 interaction diagram covers all five features
+- [x] Files to be modified enumerated (§10.8)
+- [x] PRD §6.2 and §6.3 cross-references specified (§10.9)
+- [x] Open questions captured (§10.10)
+
+### 10.12 Verification
+
+_Added post-implementation to record test evidence for each delivered feature._
+
+| Feature | Test File | Key Test(s) |
+|---------|-----------|-------------|
+| M4-F6 — Dependency-graph-aware redaction | `tests/test_exception_hardening.py`, `tests/test_redaction_completeness.py` | `test_redaction_*_deep_graph`, `test_m4_f6_*` |
+| M4-F7 — NEIE handler (type + lineno only) | `tests/test_exception_hardening.py`, `tests/test_execution_loop.py` | `test_neie_lineno_*`, `test_neie_advisory_*` |
+| M4-F8 — STRICT annotation preservation on NEIE | `tests/test_exception_hardening.py` | `test_m4_f8_annotation_preservation_*` |
+| M4-F9 — Loop-body exception STRICT propagation | `tests/test_exception_hardening.py` | `test_m4_f9_loop_*` |
+| M4-F17 — RedactionAuditEvent emission | `tests/test_exception_hardening.py`, `tests/test_execution_loop.py` | `test_redaction_audit_event_*` |
+
+**Status:** All test suites pass.  Exception hardening is production-complete as of 2026-03-17.

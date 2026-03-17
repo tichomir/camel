@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.4.0 (Milestone 4)
+**Version:** 0.4.1 (Milestone 4 — Exception Hardening)
 **Date:** 2026-03-17
-**Source:** PRD v1.4 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -136,7 +136,8 @@ The Q-LLM extracts structured data from unstructured tool outputs.
 | Output | Schema-validated `CaMeLValue` (tagged as untrusted) |
 | Isolation guarantee | No tool-calling capability; cannot produce free-form text to P-LLM |
 | Schema injection | `have_enough_information: bool` field automatically injected into every schema |
-| Insufficient data | Raises `NotEnoughInformationError` — type only forwarded to P-LLM (content redacted) |
+| Insufficient data | Raises `NotEnoughInformationError` (NEIE) — `error_type` + call-site `lineno` forwarded to P-LLM; missing-information content is **never** included (M4-F7) |
+| Annotation preservation | On NEIE, the interpreter snapshots its dependency graph and dep-ctx stack before the retry cycle and restores them before the regenerated plan executes (M4-F8) |
 
 The Q-LLM is callable from within the execution plan via `query_quarantined_llm(data, Schema)`.
 
@@ -154,6 +155,9 @@ Custom AST-walking interpreter for a restricted Python subset.
 | Policy enforcement | Policy evaluated before every tool call; raises `PolicyViolationError` on denial |
 | Unsupported constructs | Raises `UnsupportedSyntaxError` with `node_type` and `lineno` |
 | Session state | Variable store persists across sequential `exec()` calls on the same instance |
+| Exception redaction | Dependency-graph-aware taint check (M4-F6): failing statement's dependency graph consulted; untrusted-tainted messages replaced with `[REDACTED]` (`message=None` in `RedactedError`) |
+| Loop-body propagation | In STRICT mode, exceptions inside a non-public-iterable `for`-loop body carry the iterable's dependency set into the retry cycle (M4-F9) |
+| Redaction audit log | Every redaction decision emitted as `RedactionAuditEvent` to the security audit log (M4-F17) |
 
 **Restricted grammar — supported:**
 
@@ -396,14 +400,15 @@ dg.all_upstream     # frozenset[str] — transitive upstream (recursive)
 
 When an exception occurs during plan execution, the orchestrator must decide what
 information is safe to forward to the P-LLM for re-planning.  The redaction decision
-is based on data-provenance trust.
+is based on data-provenance trust, using the **dependency graph** as the authoritative
+taint record (Milestone 4, M4-F6 through M4-F9, M4-F17).
 
 ### Three Redaction Cases
 
 #### Case 1 — Trusted-origin exception
 
-**Condition:** All variables in the interpreter store at failure time have sources
-exclusively in `{"User literal", "CaMeL"}`.
+**Condition:** No variable referenced by the failing statement has any upstream source
+outside `{"User literal", "CaMeL"}` (checked via the full dependency graph — M4-F6).
 
 **Information forwarded to P-LLM:**
 
@@ -421,8 +426,8 @@ Full error message is safe — it cannot echo attacker-controlled content.
 
 #### Case 2 — Untrusted-dependency exception
 
-**Condition:** At least one variable in the store has an upstream source outside
-`{"User literal", "CaMeL"}` (e.g. a tool return value).
+**Condition:** The dependency graph for any variable referenced in the failing statement
+contains an upstream source outside `{"User literal", "CaMeL"}` (M4-F6 taint check).
 
 **Information forwarded to P-LLM:**
 
@@ -431,8 +436,9 @@ Error type:    TypeError
 Location:      line 12
 ```
 
-Error **message is omitted**.  An adversary can craft tool return values that, when
-processed, produce an exception whose message echoes the crafted content back to the P-LLM.
+Error **message is omitted** (`message=None` in `RedactedError`; `[REDACTED]` appears in
+the audit log only).  An adversary can craft tool return values that, when processed,
+produce an exception whose message echoes the crafted content back to the P-LLM.
 
 **Example:** A document containing `"ignore previous instructions"` that causes a `TypeError`
 during processing — the error message must never reach the P-LLM.
@@ -441,16 +447,53 @@ during processing — the error message must never reach the P-LLM.
 
 #### Case 3 — `NotEnoughInformationError`
 
-**Condition:** The exception is `NotEnoughInformationError` raised by the Q-LLM.
+**Condition:** The exception is `NotEnoughInformationError` (NEIE) raised by the Q-LLM
+wrapper (M4-F7).
 
 **Information forwarded to P-LLM:**
 
 ```
 Error type:    NotEnoughInformationError
+Location:      line 9   ← call-site line number (M4-F7)
+Advisory:      The call to query_quarantined_llm() at line 9 reported that the
+               provided context did not contain enough information to populate
+               the requested schema.  Consider restructuring the query or
+               passing additional context variables.
 ```
 
-No location, no message.  The Q-LLM operates on untrusted data — even the reason why
-information was insufficient could contain adversary-controlled content.
+No message content.  The Q-LLM operates on untrusted data — even the reason why
+information was insufficient could contain adversary-controlled content.  The advisory
+sentence contains only the line number and a fixed string (no untrusted data).
+
+---
+
+### Exception Hardening — M4-F8 & M4-F9
+
+#### M4-F8 — STRICT Mode Annotation Preservation Across NEIE Re-generation
+
+When NEIE is raised and the orchestrator triggers P-LLM re-generation, the interpreter's
+STRICT mode state is preserved:
+
+1. The interpreter snapshots its `DependencyGraph` and `_dep_ctx_stack` into the
+   `AcceptedState` object (new fields: `dependency_graph_snapshot`, `dep_ctx_stack_snapshot`).
+2. After the regenerated plan is received from the P-LLM, the snapshot is restored into
+   the interpreter before execution begins.
+3. This ensures all STRICT mode taint annotations accumulated before the failing Q-LLM
+   call are available to the regenerated code.
+
+#### M4-F9 — Loop-Body Exception STRICT Propagation
+
+When an exception originates inside a `for`-loop body and all three conditions are met:
+
+1. The loop is in `ExecutionMode.STRICT`.
+2. The iterable's `CaMeLValue` has at least one non-trusted source or non-`Public` readers.
+3. The exception propagates out of `_exec_For`.
+
+Then `_exec_For` attaches the iterable's dependency set (`__loop_iter_deps__`) and
+capability context (`__loop_iter_caps__`) to the exception before re-raising.  The
+orchestrator reads these fields and pre-seeds the interpreter's `_dep_ctx_stack` before
+executing the regenerated plan, ensuring the iterable's taint is never silently dropped
+across retry cycles.
 
 ---
 
@@ -460,29 +503,66 @@ information was insufficient could contain adversary-controlled content.
 @dataclass(frozen=True)
 class RedactedError:
     error_type: str                                              # always present
-    lineno:     int | None                                       # None when redacted
-    message:    str | None                                       # None when redacted
+    lineno:     int | None                                       # None when redacted; call-site lineno for NEIE (M4-F7)
+    message:    str | None                                       # None when redacted; never set for NEIE
     trust_level: Literal["trusted", "untrusted",
                           "not_enough_information"]
 ```
 
-### Trust Classification Algorithm
+### `RedactionAuditEvent` Schema (M4-F17)
+
+Emitted by `ExceptionRedactor.classify()` for every exception processed — regardless
+of whether redaction was applied.  Injected into the audit log via
+`ExceptionRedactor.__init__(audit_log=...)`.
+
+```python
+@dataclass(frozen=True)
+class RedactionAuditEvent:
+    timestamp: str                          # ISO-8601 UTC
+    line_number: int | None
+    redaction_reason: str                   # "untrusted_dependency" | "not_enough_information"
+                                            # | "loop_body_exception" | "none"
+    dependency_chain: list[tuple[str, str]] # [(var_name, source_label), ...] — max 50 entries
+    trust_level: str                        # "trusted" | "untrusted" | "not_enough_information"
+    error_type: str
+    redacted_message_length: int            # length of original message before redaction, or 0
+    m4_f9_applied: bool
+```
+
+### Trust Classification Algorithm (M4-F6 — Dependency-Graph-Aware)
 
 ```
-classify(exc, store_snapshot):
+classify(exc, interpreter):
+    # M4-F7: NEIE is always fully redacted
     if isinstance(exc, NotEnoughInformationError):
-        → RedactedError(type, lineno=None, msg=None, trust="not_enough_information")
+        lineno = exc.__lineno__ or getattr(exc, "lineno", None)
+        emit RedactionAuditEvent(redaction_reason="not_enough_information", ...)
+        → RedactedError(type, lineno, msg=None, trust="not_enough_information")
 
-    for cv in store_snapshot.values():
-        if any source not in {"User literal", "CaMeL"}:
+    # M4-F6: dependency-graph-aware taint check
+    failing_vars = interpreter.get_variables_at_line(exc.lineno) or store.keys()
+    for var in failing_vars:
+        dep_graph = interpreter.get_dependency_graph(var)
+        for upstream_var in dep_graph.all_upstream():
+            cv = store.get(upstream_var)
+            if cv and any(src not in TRUSTED_SOURCES for src in cv.sources):
+                emit RedactionAuditEvent(redaction_reason="untrusted_dependency", ...)
+                → RedactedError(type, lineno, msg=None, trust="untrusted")
+        cv = store.get(var)
+        if cv and any(src not in TRUSTED_SOURCES for src in cv.sources):
+            emit RedactionAuditEvent(redaction_reason="untrusted_dependency", ...)
             → RedactedError(type, lineno, msg=None, trust="untrusted")
 
+    emit RedactionAuditEvent(redaction_reason="none", ...)
     → RedactedError(type, lineno, msg=str(exc), trust="trusted")
 ```
 
-Classification is **conservative**: if any variable in the entire store is untrusted,
-the exception is redacted — even if the failing statement only referenced trusted
-variables.  This avoids the complexity of per-statement dependency analysis.
+`TRUSTED_SOURCES = frozenset({"User literal", "CaMeL"})`.
+
+Classification is **dependency-graph-aware** (M4-F6): only variables referenced in the
+failing statement (and their transitive upstream) are inspected, rather than the entire
+store.  This is more precise than the earlier coarse store-scan approach, but retains
+a conservative bias — any untrusted upstream source triggers full redaction.
 
 ---
 

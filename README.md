@@ -77,7 +77,7 @@ mechanics, and the security model.
 
 ## Current Status
 
-**Milestone 4 — STRICT Mode Hardening (v0.4.0)** — released 2026-03-17
+**Milestone 4 — STRICT Mode Hardening + Exception Hardening & Redaction (v0.4.0)** — released 2026-03-17
 
 | Component | Module | Status |
 |---|---|---|
@@ -98,6 +98,11 @@ mechanics, and the security model.
 | STRICT mode — if/else test propagation (M4-F2) | `camel.interpreter` | ✅ Released |
 | STRICT mode — post-Q-LLM remainder propagation (M4-F3/F4) | `camel.interpreter` | ✅ Released |
 | STRICT mode as default execution mode (M4-F5) | `camel.interpreter` | ✅ Released |
+| Exception redaction — dependency-graph-aware taint check (M4-F6) | `camel.execution_loop` | ✅ Released |
+| NEIE handler — error type + call-site lineno only (M4-F7) | `camel.execution_loop` | ✅ Released |
+| STRICT annotation preservation across NEIE re-generation (M4-F8) | `camel.execution_loop` | ✅ Released |
+| Loop-body exception STRICT propagation (M4-F9) | `camel.interpreter` | ✅ Released |
+| Redaction audit log events — `RedactionAuditEvent` (M4-F17) | `camel.execution_loop` | ✅ Released |
 
 ---
 
@@ -248,6 +253,10 @@ pytest tests/test_policy.py                   # policy engine & registry
 pytest tests/policies/test_reference_policies.py  # reference policy library
 pytest tests/test_policy_harness.py           # policy testing harness
 pytest tests/test_e2e_enforcement.py          # end-to-end enforcement integration
+pytest tests/test_exception_hardening.py      # exception hardening & redaction (M4-F6–M4-F9, M4-F17)
+pytest tests/test_redaction_completeness.py   # redaction completeness (adversarial suite)
+pytest tests/test_strict_mode.py              # STRICT mode propagation rules
+pytest tests/integration/test_strict_mode_e2e.py  # STRICT mode end-to-end integration
 ```
 
 ---

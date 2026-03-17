@@ -1072,6 +1072,13 @@ class CaMeLInterpreter:
             self._dep_ctx_stack.append(outer_ctx_deps | iter_deps)
         else:
             inner_ctx2 = ctx_caps
+        # Capture inner dep-ctx before entering the loop so M4-F9 can attach
+        # it to any exception that propagates out of the loop body.
+        _loop_inner_dep_ctx: frozenset[str] = (
+            self._dep_ctx_stack[-1]
+            if self._mode == ExecutionMode.STRICT
+            else frozenset()
+        )
         try:
             for idx, element_raw in enumerate(iter_cv.raw):
                 idx_cv = wrap(idx, sources=frozenset({"CaMeL"}))
@@ -1079,7 +1086,19 @@ class CaMeLInterpreter:
                 if self._mode == ExecutionMode.STRICT:
                     element_cv = self._merge_ctx_caps(element_cv, inner_ctx2)
                 self._store_target(node.target, element_cv, target_deps)
-                self._exec_statements(node.body, inner_ctx2)
+                try:
+                    self._exec_statements(node.body, inner_ctx2)
+                except Exception as _body_exc:
+                    # M4-F9: attach loop-iterable dependency metadata to the
+                    # exception when the iterable has non-public provenance and
+                    # the interpreter is in STRICT mode.
+                    if (
+                        self._mode is ExecutionMode.STRICT
+                        and self._is_non_public(iter_cv)
+                    ):
+                        _body_exc.__loop_iter_deps__ = _loop_inner_dep_ctx  # type: ignore[attr-defined]
+                        _body_exc.__loop_iter_caps__ = inner_ctx2  # type: ignore[attr-defined]
+                    raise
         finally:
             if self._mode == ExecutionMode.STRICT:
                 self._dep_ctx_stack.pop()
@@ -1539,10 +1558,18 @@ class CaMeLInterpreter:
                         )
 
                 # Call the tool with raw values.
-                result_cv = tool_fn(
-                    *[a.raw for a in pos_arg_cvs],
-                    **{k: v.raw for k, v in kw_arg_cvs.items()},
-                )
+                # M4-F7: attach the AST call-site line number to any exception
+                # raised by the tool so the ExceptionRedactor can report it
+                # accurately — especially for NotEnoughInformationError.
+                _call_lineno: int | None = getattr(node, "lineno", None)
+                try:
+                    result_cv = tool_fn(
+                        *[a.raw for a in pos_arg_cvs],
+                        **{k: v.raw for k, v in kw_arg_cvs.items()},
+                    )
+                except Exception as _tool_exc:
+                    _tool_exc.__lineno__ = _call_lineno  # type: ignore[attr-defined]
+                    raise
                 if not isinstance(result_cv, CaMeLValue):
                     raise TypeError(
                         f"Tool {name!r} returned {type(result_cv).__name__!r}; "
@@ -1937,6 +1964,90 @@ class CaMeLInterpreter:
             inner_source=None,
             readers=union_cv.readers,
         )
+
+    # ------------------------------------------------------------------
+    # M4-F8 / M4-F9 public helpers — dep-state snapshot and restore
+    # ------------------------------------------------------------------
+
+    def snapshot_dep_state(
+        self,
+    ) -> tuple[dict[str, frozenset[str]], tuple[frozenset[str], ...]]:
+        """Return a snapshot of dependency graph and dep-ctx stack.
+
+        Used by M4-F8 to preserve STRICT mode annotations across
+        ``NotEnoughInformationError`` re-generation cycles.  The returned
+        tuple is safe to pass to :meth:`restore_dep_state`.
+
+        Returns
+        -------
+        tuple[dict[str, frozenset[str]], tuple[frozenset[str], ...]]
+            ``(dep_graph_export, dep_ctx_stack_copy)`` where:
+
+            - ``dep_graph_export`` is a ``{variable: frozenset_of_deps}``
+              plain-dict snapshot as returned by
+              :meth:`~camel.dependency_graph._InternalGraph.export`.
+            - ``dep_ctx_stack_copy`` is an immutable copy of the current
+              ``_dep_ctx_stack``.
+        """
+        return self._dep_graph.export(), tuple(self._dep_ctx_stack)
+
+    def restore_dep_state(
+        self,
+        dep_graph_snapshot: dict[str, frozenset[str]],
+        dep_ctx_stack_snapshot: tuple[frozenset[str], ...],
+    ) -> None:
+        """Restore dependency graph and dep-ctx stack from a snapshot.
+
+        Counterpart to :meth:`snapshot_dep_state`.  Called by the
+        :class:`~camel.execution_loop.CaMeLOrchestrator` before executing a
+        regenerated plan after a ``NotEnoughInformationError`` retry (M4-F8),
+        so the regenerated plan inherits the correct dependency context.
+
+        Parameters
+        ----------
+        dep_graph_snapshot:
+            ``{variable: frozenset_of_deps}`` as produced by
+            :meth:`snapshot_dep_state`.
+        dep_ctx_stack_snapshot:
+            The dep-ctx stack tuple as produced by :meth:`snapshot_dep_state`.
+        """
+        self._dep_graph.import_(dep_graph_snapshot)
+        self._dep_ctx_stack[:] = list(dep_ctx_stack_snapshot)
+
+    # ------------------------------------------------------------------
+    # M4-F9 helper — non-public iterable check
+    # ------------------------------------------------------------------
+
+    #: Sources considered trusted by the exception hardening logic.
+    _TRUSTED_SOURCES: frozenset[str] = frozenset({"User literal", "CaMeL"})
+
+    def _is_non_public(self, cv: CaMeLValue) -> bool:
+        """Return ``True`` if *cv* has any non-trusted source or non-Public readers.
+
+        Used by M4-F9 to determine whether an exception raised inside a
+        ``for``-loop body should carry the iterable's dependency annotations.
+
+        A ``CaMeLValue`` is considered *non-public* when either:
+
+        - Its ``readers`` field is not :data:`~camel.value.Public` and is
+          non-empty (restricted audience), or
+        - Any element of its ``sources`` frozenset is not in
+          ``_TRUSTED_SOURCES`` (``"User literal"`` or ``"CaMeL"``).
+
+        Parameters
+        ----------
+        cv:
+            The :class:`~camel.value.CaMeLValue` to inspect.
+
+        Returns
+        -------
+        bool
+            ``True`` if *cv* should be treated as non-public; ``False``
+            otherwise.
+        """
+        if cv.readers is not Public and cv.readers:
+            return True
+        return any(src not in self._TRUSTED_SOURCES for src in cv.sources)
 
     def _unsupported(self, node: ast.AST) -> UnsupportedSyntaxError:
         """Construct an :class:`UnsupportedSyntaxError` for *node*.

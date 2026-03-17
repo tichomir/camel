@@ -393,3 +393,36 @@ class _InternalGraph:
             all_upstream=upstream,
             edges=frozenset(edges),
         )
+
+    def export(self) -> dict[str, frozenset[str]]:
+        """Export the full graph as a plain-dict snapshot.
+
+        Returns a ``{variable: frozenset_of_direct_deps}`` mapping for every
+        variable that has been recorded.  Used by M4-F8 snapshot/restore to
+        preserve STRICT mode annotations across ``NotEnoughInformationError``
+        re-generation cycles.
+
+        Returns
+        -------
+        dict[str, frozenset[str]]
+            A shallow-copy snapshot; mutations do not affect the internal
+            graph.
+        """
+        return {var: frozenset(deps) for var, deps in self._direct.items()}
+
+    def import_(self, snapshot: dict[str, frozenset[str]]) -> None:
+        """Restore the graph from a snapshot produced by :meth:`export`.
+
+        Replaces the current graph contents with the snapshot data.  Any
+        edges not present in the snapshot are discarded.  This is the
+        counterpart to :meth:`export` used by M4-F8 to restore the
+        dependency state after a ``NotEnoughInformationError`` re-generation
+        cycle.
+
+        Parameters
+        ----------
+        snapshot:
+            ``{variable: frozenset_of_direct_deps}`` mapping, as returned by
+            :meth:`export`.
+        """
+        self._direct = {var: set(deps) for var, deps in snapshot.items()}

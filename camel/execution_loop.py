@@ -51,6 +51,7 @@ import ast
 import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from camel.interpreter import CaMeLInterpreter
@@ -61,6 +62,7 @@ from camel.value import CaMeLValue, wrap
 __all__ = [
     # Data models
     "RedactedError",
+    "RedactionAuditEvent",
     "AcceptedState",
     "TraceRecord",
     "ExecutionTrace",
@@ -120,6 +122,72 @@ class RedactedError:
 
 
 @dataclass(frozen=True)
+class RedactionAuditEvent:
+    """Audit log entry emitted by :class:`ExceptionRedactor` on every classification.
+
+    Emitted for every exception processed by
+    :meth:`ExceptionRedactor.classify`, regardless of whether redaction was
+    applied.  Provides a complete audit trail of all exception events so
+    operators can review redaction decisions (NFR-6 / M4-F17).
+
+    Attributes
+    ----------
+    timestamp:
+        ISO-8601 UTC timestamp of the redaction decision.
+    line_number:
+        1-based AST source line number of the failing statement, or ``None``
+        if unavailable.
+    redaction_reason:
+        Human-readable code indicating the redaction rule applied.
+        One of:
+
+        - ``"untrusted_dependency"`` — M4-F6 dependency taint check returned
+          ``True``; message body replaced with ``None``.
+        - ``"not_enough_information"`` — M4-F7 NEIE handler applied; all
+          content stripped.
+        - ``"loop_body_exception"`` — M4-F9 loop propagation applied.
+        - ``"none"`` — trusted exception; no redaction.
+    dependency_chain:
+        Ordered list of ``(variable_name, source_label)`` pairs representing
+        the taint propagation path that triggered redaction.  Empty list when
+        ``redaction_reason`` is ``"none"``.
+        Example: ``[("email_body", "get_last_email"), ("summary", "CaMeL")]``
+        Capped at 50 entries.
+    trust_level:
+        The ``trust_level`` field from the resulting :class:`RedactedError`.
+        One of ``"trusted"``, ``"untrusted"``, ``"not_enough_information"``.
+    error_type:
+        Exception class name (always included; never untrusted data).
+    redacted_message_length:
+        Length in characters of the original exception message before
+        redaction, or ``0`` if the message was empty or ``None``.  Allows
+        operators to gauge information density without re-exposing content.
+    m4_f9_applied:
+        ``True`` if M4-F9 loop-body exception STRICT propagation was applied
+        to this event.
+
+    Examples
+    --------
+    ::
+
+        redactor = ExceptionRedactor(audit_log=my_log)
+        redacted = redactor.classify(exc, store_snapshot)
+        event = my_log[-1]
+        assert event.error_type == type(exc).__name__
+        assert event.trust_level == redacted.trust_level
+    """
+
+    timestamp: str
+    line_number: int | None
+    redaction_reason: str
+    dependency_chain: list[tuple[str, str]]
+    trust_level: str
+    error_type: str
+    redacted_message_length: int
+    m4_f9_applied: bool
+
+
+@dataclass(frozen=True)
 class AcceptedState:
     """Snapshot of successfully executed interpreter state at the point of failure.
 
@@ -144,6 +212,14 @@ class AcceptedState:
     variable_names: frozenset[str]
     executed_statement_count: int
     remaining_source: str
+    # M4-F8: STRICT mode annotation preservation across NEIE re-generation.
+    # Both fields are None for non-NEIE exceptions.
+    dependency_graph_snapshot: dict[str, frozenset[str]] | None = None
+    dep_ctx_stack_snapshot: tuple[frozenset[str], ...] | None = None
+    # M4-F9: Loop-body exception STRICT propagation.
+    # Both fields are None when M4-F9 does not apply.
+    loop_iter_deps: frozenset[str] | None = None
+    loop_iter_caps: CaMeLValue | None = None
 
 
 @dataclass(frozen=True)
@@ -303,20 +379,26 @@ class ExceptionRedactor:
 
     The classification follows three rules (in priority order):
 
-    1. **NotEnoughInformationError** — fully redacted (type name only).
+    1. **NotEnoughInformationError** — fully redacted (type + lineno only;
+       no message).  M4-F7.
     2. **Untrusted-dependency exception** — type + lineno; message omitted.
+       Trust is checked via the dependency graph when an interpreter is
+       available (M4-F6), falling back to a store-level sources scan.
     3. **Trusted-origin exception** — type + lineno + full message included.
 
-    Trust is determined by inspecting the ``sources`` field of every
-    :class:`~camel.CaMeLValue` in the provided interpreter store snapshot.
-    If any source is outside ``{"User literal", "CaMeL"}``, the exception is
-    classified as untrusted-dependency.
+    Every classification emits a :class:`RedactionAuditEvent` to the
+    injected ``audit_log`` list (M4-F17).
 
     Parameters
     ----------
     trusted_sources:
         Frozenset of source labels considered trusted.  Defaults to
         ``frozenset({"User literal", "CaMeL"})``.
+    audit_log:
+        Optional list to which :class:`RedactionAuditEvent` entries are
+        appended after each classification.  If ``None``, events are
+        silently discarded (backward-compatible default for tests that do
+        not configure a log).
     """
 
     #: Default set of source labels considered trusted for exception message
@@ -326,18 +408,21 @@ class ExceptionRedactor:
     def __init__(
         self,
         trusted_sources: frozenset[str] | None = None,
+        audit_log: list[RedactionAuditEvent] | None = None,
     ) -> None:
-        """Initialise with an optional custom trusted-source set."""
+        """Initialise with an optional custom trusted-source set and audit log."""
         self._trusted_sources: frozenset[str] = (
             trusted_sources
             if trusted_sources is not None
             else self.DEFAULT_TRUSTED_SOURCES
         )
+        self._audit_log = audit_log
 
     def classify(
         self,
         exc: BaseException,
         interpreter_store_snapshot: dict[str, CaMeLValue],
+        interpreter: CaMeLInterpreter | None = None,
     ) -> RedactedError:
         """Produce a :class:`RedactedError` from *exc* under the store context.
 
@@ -347,8 +432,12 @@ class ExceptionRedactor:
             The exception raised during execution.
         interpreter_store_snapshot:
             Shallow copy of the interpreter variable store at the moment the
-            exception was caught.  Used to determine whether any in-scope
-            variable has untrusted provenance.
+            exception was caught.  Used as a fallback taint check when
+            *interpreter* is ``None``.
+        interpreter:
+            Optional reference to the live interpreter.  When provided,
+            enables dependency-graph-aware taint checking (M4-F6) for more
+            precise redaction decisions.
 
         Returns
         -------
@@ -358,34 +447,155 @@ class ExceptionRedactor:
         """
         from camel.exceptions import NotEnoughInformationError as CamelNEIE  # noqa: PLC0415
 
-        # Rule 1: NotEnoughInformationError — fully redacted regardless of content.
+        orig_message = str(exc) if str(exc) else None
+        orig_message_len = len(str(exc)) if exc.args else 0
+
+        # Check if M4-F9 loop annotation is present.
+        m4_f9_applied = hasattr(exc, "__loop_iter_deps__")
+
+        # M4-F7: NotEnoughInformationError — strip all content; expose type
+        # and call-site line number only.
         if isinstance(exc, (CamelNEIE, LLMNotEnoughInfoError)):
-            return RedactedError(
+            # Prefer __lineno__ (set by interpreter._eval_Call) over .lineno.
+            lineno: int | None = getattr(exc, "__lineno__", None)
+            if lineno is None:
+                lineno = getattr(exc, "lineno", None)
+            redacted = RedactedError(
                 error_type=type(exc).__name__,
-                lineno=None,
+                lineno=lineno,
                 message=None,
                 trust_level="not_enough_information",
             )
+            self._emit_audit_event(
+                exc=exc,
+                redacted=redacted,
+                dependency_chain=[],
+                redaction_reason="not_enough_information",
+                orig_message_len=orig_message_len,
+                m4_f9_applied=m4_f9_applied,
+            )
+            return redacted
 
-        # Extract lineno if available on the exception.
-        lineno: int | None = getattr(exc, "lineno", None)
+        # Extract lineno: prefer __lineno__ (set by _eval_Call), fall back to
+        # the exception's own .lineno attribute.
+        lineno = getattr(exc, "__lineno__", None)
+        if lineno is None:
+            lineno = getattr(exc, "lineno", None)
 
-        # Rule 2: Check whether any variable in the store has an untrusted source.
-        if self._store_has_untrusted(interpreter_store_snapshot):
-            return RedactedError(
+        # M4-F6: dependency-graph-aware taint check.
+        tainted, dep_chain = self._is_tainted(exc, interpreter_store_snapshot, interpreter)
+
+        if tainted:
+            redaction_reason = "loop_body_exception" if m4_f9_applied else "untrusted_dependency"
+            redacted = RedactedError(
                 error_type=type(exc).__name__,
                 lineno=lineno,
                 message=None,
                 trust_level="untrusted",
             )
+            self._emit_audit_event(
+                exc=exc,
+                redacted=redacted,
+                dependency_chain=dep_chain,
+                redaction_reason=redaction_reason,
+                orig_message_len=orig_message_len,
+                m4_f9_applied=m4_f9_applied,
+            )
+            return redacted
 
         # Rule 3: Trusted — include full message.
-        return RedactedError(
+        redacted = RedactedError(
             error_type=type(exc).__name__,
             lineno=lineno,
             message=str(exc),
             trust_level="trusted",
         )
+        self._emit_audit_event(
+            exc=exc,
+            redacted=redacted,
+            dependency_chain=[],
+            redaction_reason="none",
+            orig_message_len=orig_message_len,
+            m4_f9_applied=m4_f9_applied,
+        )
+        return redacted
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _is_tainted(
+        self,
+        exc: BaseException,
+        store: dict[str, CaMeLValue],
+        interpreter: CaMeLInterpreter | None,
+    ) -> tuple[bool, list[tuple[str, str]]]:
+        """Return ``(tainted, dependency_chain)`` for *exc*.
+
+        When *interpreter* is available, performs a dependency-graph-aware
+        taint check (M4-F6): walks the upstream graph for each store variable
+        and checks all upstream sources.  Falls back to a flat store-level
+        scan when *interpreter* is ``None``.
+
+        Parameters
+        ----------
+        exc:
+            The exception being classified.
+        store:
+            Interpreter variable store snapshot at exception time.
+        interpreter:
+            Live interpreter reference for dep-graph access (optional).
+
+        Returns
+        -------
+        tuple[bool, list[tuple[str, str]]]
+            ``(True, chain)`` when taint is detected; ``(False, [])``
+            otherwise.  *chain* is a list of ``(variable_name, source_label)``
+            pairs capped at 50 entries.
+        """
+        dep_chain: list[tuple[str, str]] = []
+
+        if interpreter is not None:
+            # M4-F6: dependency-graph-aware check.
+            all_vars = set(store.keys())
+            seen: set[tuple[str, str]] = set()
+            for var in all_vars:
+                # Check the variable's own capability sources.
+                cv = store.get(var)
+                if cv is not None:
+                    for src in cv.sources:
+                        if src not in self._trusted_sources:
+                            pair = (var, src)
+                            if pair not in seen:
+                                seen.add(pair)
+                                dep_chain.append(pair)
+                # Walk the upstream dependency graph.
+                try:
+                    dg = interpreter.get_dependency_graph(var)
+                    for upstream_var in dg.all_upstream:
+                        upstream_cv = store.get(upstream_var)
+                        if upstream_cv is not None:
+                            for src in upstream_cv.sources:
+                                if src not in self._trusted_sources:
+                                    pair = (upstream_var, src)
+                                    if pair not in seen:
+                                        seen.add(pair)
+                                        dep_chain.append(pair)
+                except Exception:  # noqa: BLE001
+                    pass
+            # Cap at 50 entries.
+            dep_chain = dep_chain[:50]
+            return bool(dep_chain), dep_chain
+
+        # Fallback: flat store-level scan (original behaviour).
+        fallback_chain: list[tuple[str, str]] = []
+        for var, cv in store.items():
+            for source in cv.sources:
+                if source not in self._trusted_sources:
+                    fallback_chain.append((var, source))
+        if fallback_chain:
+            return True, fallback_chain[:50]
+        return False, []
 
     def _store_has_untrusted(self, store: dict[str, CaMeLValue]) -> bool:
         """Return True if any value in *store* has at least one untrusted source."""
@@ -394,6 +604,48 @@ class ExceptionRedactor:
                 if source not in self._trusted_sources:
                     return True
         return False
+
+    def _emit_audit_event(
+        self,
+        exc: BaseException,
+        redacted: RedactedError,
+        dependency_chain: list[tuple[str, str]],
+        redaction_reason: str,
+        orig_message_len: int,
+        m4_f9_applied: bool,
+    ) -> None:
+        """Emit a :class:`RedactionAuditEvent` to the configured audit log.
+
+        No-op when ``self._audit_log`` is ``None``.
+
+        Parameters
+        ----------
+        exc:
+            Original exception (used only for ``error_type``).
+        redacted:
+            The :class:`RedactedError` produced for this classification.
+        dependency_chain:
+            Taint chain; ``[]`` for trusted or NEIE cases.
+        redaction_reason:
+            Reason code string for the event.
+        orig_message_len:
+            Character length of the original message before redaction.
+        m4_f9_applied:
+            Whether M4-F9 loop propagation was applied.
+        """
+        if self._audit_log is None:
+            return
+        event = RedactionAuditEvent(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            line_number=redacted.lineno,
+            redaction_reason=redaction_reason,
+            dependency_chain=list(dependency_chain),
+            trust_level=redacted.trust_level,
+            error_type=type(exc).__name__,
+            redacted_message_length=orig_message_len,
+            m4_f9_applied=m4_f9_applied,
+        )
+        self._audit_log.append(event)
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +712,19 @@ class RetryPromptBuilder:
                 f"Error type: {error.error_type}\n"
                 f"Location:   {lineno_part}\n"
                 f"Message:    {error.message}"
+            )
+        elif error.trust_level == "not_enough_information":
+            # M4-F7: NEIE advisory — no untrusted data, only fixed text and lineno.
+            advisory = (
+                f"The call to query_quarantined_llm() at {lineno_part} reported "
+                "that the provided context did not contain enough information "
+                "to populate the requested schema. Consider restructuring the "
+                "query or passing additional context variables."
+            )
+            error_detail = (
+                f"Error type: {error.error_type}\n"
+                f"Location:   {lineno_part}\n"
+                f"Advisory:   {advisory}"
             )
         else:
             error_detail = (
@@ -722,7 +987,9 @@ class CaMeLOrchestrator:
         )
         self._max_loop_retries = max_loop_retries
 
-        self._redactor = ExceptionRedactor()
+        # M4-F17: audit log for redaction events; exposed as a public property.
+        self._redaction_audit_log: list[RedactionAuditEvent] = []
+        self._redactor = ExceptionRedactor(audit_log=self._redaction_audit_log)
         self._retry_builder = RetryPromptBuilder()
         self._trace_recorder = TraceRecorder()
 
@@ -817,7 +1084,9 @@ class CaMeLOrchestrator:
             except Exception as exc:
                 # Snapshot the store at the point of failure for redaction.
                 store_snapshot_before = self._interpreter.store
-                last_error = self._redactor.classify(exc, store_snapshot_before)
+                last_error = self._redactor.classify(
+                    exc, store_snapshot_before, self._interpreter
+                )
 
                 # Determine where execution failed and build accepted state.
                 executed_count_on_error: int = getattr(exc, "_camel_executed_count", 0)
@@ -826,6 +1095,7 @@ class CaMeLOrchestrator:
                 accepted = self._build_accepted_state(
                     executed_count_on_error,
                     remaining_on_error,
+                    exc,
                 )
 
                 # If this was the last attempt, break out to raise the error.
@@ -846,6 +1116,32 @@ class CaMeLOrchestrator:
                     user_context=user_context,
                 )
                 plan_source = new_plan.source
+
+                # M4-F8: restore STRICT mode dep-state when NEIE triggered
+                # the retry so the regenerated plan inherits the correct
+                # dependency context.
+                if (
+                    last_error.trust_level == "not_enough_information"
+                    and accepted.dependency_graph_snapshot is not None
+                    and accepted.dep_ctx_stack_snapshot is not None
+                ):
+                    self._interpreter.restore_dep_state(
+                        accepted.dependency_graph_snapshot,
+                        accepted.dep_ctx_stack_snapshot,
+                    )
+                # M4-F9: pre-seed the dep-ctx stack when the exception
+                # originated in a for-loop body with a non-public iterable.
+                elif (
+                    accepted.loop_iter_deps is not None
+                    and accepted.loop_iter_deps
+                ):
+                    # Merge the loop iterable's dep context into the bottom
+                    # stack frame so the regenerated plan's first statement
+                    # already carries the iterable's taint.
+                    self._interpreter._dep_ctx_stack[0] = (  # type: ignore[attr-defined]
+                        self._interpreter._dep_ctx_stack[0]  # type: ignore[attr-defined]
+                        | accepted.loop_iter_deps
+                    )
 
         raise MaxRetriesExceededError(
             attempts=self._max_loop_retries,
@@ -909,6 +1205,7 @@ class CaMeLOrchestrator:
         self,
         executed_count: int,
         remaining_source: str,
+        exc: BaseException | None = None,
     ) -> AcceptedState:
         """Construct an :class:`AcceptedState` from the current interpreter store.
 
@@ -918,17 +1215,42 @@ class CaMeLOrchestrator:
             Number of statements that executed successfully.
         remaining_source:
             Unexecuted source text from the failure point.
+        exc:
+            The exception that caused failure, if any.  Used to capture
+            M4-F8 (NEIE) and M4-F9 (loop-body exception) metadata.
 
         Returns
         -------
         AcceptedState
-            Snapshot with variable names from the current store and the
-            remaining source.
+            Snapshot with variable names, optional dependency-state snapshot
+            (M4-F8), and optional loop-iter context (M4-F9).
         """
+        from camel.exceptions import NotEnoughInformationError as CamelNEIE  # noqa: PLC0415
+
+        dep_graph_snapshot: dict[str, frozenset[str]] | None = None
+        dep_ctx_stack_snapshot: tuple[frozenset[str], ...] | None = None
+        loop_iter_deps: frozenset[str] | None = None
+        loop_iter_caps: CaMeLValue | None = None
+
+        if exc is not None:
+            # M4-F8: snapshot dep state for NEIE re-generation cycles.
+            if isinstance(exc, (CamelNEIE, LLMNotEnoughInfoError)):
+                snap_graph, snap_stack = self._interpreter.snapshot_dep_state()
+                dep_graph_snapshot = snap_graph
+                dep_ctx_stack_snapshot = snap_stack
+
+            # M4-F9: capture loop-iterable dep context for loop-body exceptions.
+            loop_iter_deps = getattr(exc, "__loop_iter_deps__", None)
+            loop_iter_caps = getattr(exc, "__loop_iter_caps__", None)
+
         return AcceptedState(
             variable_names=frozenset(self._interpreter.store.keys()),
             executed_statement_count=executed_count,
             remaining_source=remaining_source,
+            dependency_graph_snapshot=dep_graph_snapshot,
+            dep_ctx_stack_snapshot=dep_ctx_stack_snapshot,
+            loop_iter_deps=loop_iter_deps,
+            loop_iter_caps=loop_iter_caps,
         )
 
     def _make_print_builtin(self) -> Callable[..., CaMeLValue]:
@@ -975,3 +1297,18 @@ class CaMeLOrchestrator:
             each successful tool call in the most recent :meth:`run` call.
         """
         return self._trace_recorder.trace
+
+    @property
+    def redaction_audit_log(self) -> list[RedactionAuditEvent]:
+        """Return the accumulated redaction audit log (M4-F17).
+
+        Contains one :class:`RedactionAuditEvent` for every exception
+        classification made by the :class:`ExceptionRedactor` during all
+        :meth:`run` calls on this orchestrator instance.
+
+        Returns
+        -------
+        list[RedactionAuditEvent]
+            Snapshot of the internal audit log.
+        """
+        return list(self._redaction_audit_log)

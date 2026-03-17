@@ -191,7 +191,8 @@ Isolation guarantee: P-LLM never observes tool return values.
 6.2 Quarantined LLM (Q-LLM)
 Receives unstructured data from tools and extracts structured output conforming to a caller-specified Pydantic schema.
 Has no tool-calling capability — cannot execute side-effecting operations.
-Exposes a have_enough_information boolean field; if false, raises NotEnoughInformationError — communicated to P-LLM without revealing the missing data (to prevent injection via error messages).
+Exposes a have_enough_information boolean field; if false, raises NotEnoughInformationError (NEIE) — communicated to P-LLM with call-site line number only; missing-information content is never forwarded (M4-F7, to prevent injection via error messages).
+STRICT mode annotation preservation (M4-F8): when NEIE is raised, the interpreter snapshots its dependency graph and context-dependency stack before the retry cycle; these are restored before the regenerated plan executes, so accumulated STRICT mode taint annotations are never lost across re-generation.
 Can be a lighter/cheaper model than P-LLM (empirically: ~1% utility drop, ~12% cost reduction using Haiku-class model).
 
 Inputs: Untrusted string data + Pydantic output schema
@@ -207,6 +208,10 @@ STRICT mode (default): Closes control-flow and Q-LLM side-channel vectors via th
   (M4-F2) If/else test — the condition's capability and dependency set is merged into every assignment in both the true and false branches.
   (M4-F3/F4) Post-query_quarantined_llm() remainder — all assignments following a Q-LLM call in the same code block inherit the Q-LLM result's capabilities as additional context dependencies; the flag is scoped to the current block and resets on block exit.
 NORMAL mode (explicit opt-in: pass mode=ExecutionMode.NORMAL to CaMeLInterpreter): Dependencies tracked only via direct data assignments; no control-flow taint propagation. Use only for debugging or non-security-sensitive scenarios.
+Exception redaction engine (Milestone 4, M4-F6 through M4-F9, M4-F17): All exception-handling pathways are hardened to prevent exception-based information leakage:
+  (M4-F6) Dependency-graph-aware taint check: the failing statement's dependency graph is consulted; exception messages are replaced with [REDACTED] (represented as message=None in RedactedError) when any upstream source of a referenced variable is outside {"User literal", "CaMeL"}.
+  (M4-F9) Loop-body exception STRICT propagation: when an exception originates inside a for-loop body with a non-public iterable (in STRICT mode), the iterable's dependency set and capability context are attached to the exception and pre-seeded into the regenerated plan's dependency context, ensuring the iterable's taint is never silently dropped across retry cycles.
+  (M4-F17) Every redaction event is written to the security audit log as a RedactionAuditEvent with timestamp, line number, redaction reason, dependency chain, trust level, error type, redacted message length, and m4_f9_applied flag.
 Before each tool call: evaluates security policy against the tool name, arguments, and the full dependency graph of each argument.
 On policy violation: blocks execution and (in production) surfaces a user consent prompt.
 6.4 Capabilities
@@ -282,7 +287,7 @@ Reliability
 P-LLM retry loop must handle up to 10 code-generation failures gracefully without exposing untrusted error content
 NFR-6
 Observability
-All tool calls, policy evaluations, consent decisions, and capability assignments must be written to the security audit log
+All tool calls, policy evaluations, consent decisions, capability assignments, and exception redaction events must be written to the security audit log
 NFR-7
 Extensibility
 Adding a new tool requires only: (a) registering the tool signature, (b) optionally providing a capability annotation function, and (c) optionally registering a security policy
@@ -309,9 +314,9 @@ Underdocumented tool APIs: P-LLM cannot correctly parse output from tools with u
 Medium
 Require tool providers to supply typed return schemas; Q-LLM fallback for unstructured parsing
 L3
-Exception-based side channel (residual): Adversary-controlled tool data can still trigger exceptions that the STRICT mode mitigation doesn't cover
-Low-Medium
-STRICT mode closes primary vector; adversarial exception triggering via tool data is significantly harder; document residual risk
+Exception-based side channel (residual): Adversary-controlled tool data can still trigger exceptions that exception hardening does not fully cover
+Low
+M4-F6 dependency-graph-aware redaction, M4-F7 NEIE hardening, M4-F8 annotation preservation, and M4-F9 loop-body propagation close the primary exception side-channel vectors; adversarial exception triggering via tool data is significantly harder; residual risk documented
 L4
 User fatigue from policy denials: Overly strict policies may generate frequent consent prompts, leading users to approve without review
 Medium
@@ -902,5 +907,27 @@ Deliverables:
 - ✅ Write unit and integration test suite for STRICT mode dependency propagation — Qa Engineer (◉ Deep, 5 SP)
 - ✅ Update all project documentation for Milestone 4 STRICT mode changes — Software Architect (⚡ Quick, 2 SP)
 - ✅ Fix: STRICT mode propagation rules M4-F1 through M4-F4 not verified as implemented — Backend Developer (◈ Standard, 3 SP)
+
+---
+### Milestone 4 — Exception Hardening & Redaction | 2026-03-17 | ✅ done | 18 SP
+**Goal:** [Phase: Exception Hardening & Redaction]
+Harden all exception handling pathways in the CaMeL interpreter to prevent exception-based information leakage. This phase covers: full redaction of exception messages when any dependency on untrusted data exists in the exception or its traceback (M4-F6); ensuring NotEnoughInformationError never exposes missing-information content to the P-LLM (M4-F7); preserving STRICT mode dependency annotations on all in-scope variables when NotEnoughInformationError is raised and re-generation is triggered (M4-F8); and applying STRICT mode dependency propagation to post-exception statements when an exception originates inside a for-loop body with a non-public iterable dependency (M4-F9). Audit log entries are emitted for every redaction event (M4-F17).
+
+Deliverables:
+- Exception redaction engine: dependency-aware message redaction replacing untrusted-tainted messages with [REDACTED] (M4-F6)
+- NotEnoughInformationError handler: strips all missing-information content before surfacing to P-LLM; passes only error type and call-site line number (M4-F7)
+- Dependency annotation preservation logic: retains STRICT mode annotations on all in-scope variables across NotEnoughInformationError re-generation cycles (M4-F8)
+- Loop-body exception STRICT propagation: applies dependency annotations to post-exception statements when exception originates inside a non-public-iterable loop body (M4-F9)
+- Audit log emitter: records exception redaction events with timestamp, line number, redaction reason, and triggering dependency chain (M4-F17)
+- Unit test suite: exception redaction covering all four redaction scenarios
+- Regression test: P-LLM receives only error type and line number from NotEnoughInformationError with no content leakage
+- Updated PRD Section 6.2 (Q-LLM) and Section 6.3 (Interpreter) documenting exception redaction rules
+- Updated Milestone 4 design document: exception hardening section marked complete
+
+**Delivered:**
+- ✅ Design exception hardening architecture: redaction engine, NEIE handler, loop propagation — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement exception redaction engine, NEIE handler, annotation preservation, and loop propagation (M4-F6–F9, M4-F17) — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write unit and regression test suite for all exception hardening features — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Update all project documentation for Milestone 4 exception hardening phase — Software Architect (⚡ Quick, 2 SP)
 
 ---
