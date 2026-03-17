@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.23",
     "mypy>=1.9",
     "ruff>=0.4",
     "black>=24.0",
@@ -42,6 +43,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.interrogate]
 ignore-init-method = true  # __init__ is documented in the class-level Parameters section

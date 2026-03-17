@@ -703,3 +703,23 @@ Deliverables:
 - ✅ Write unit and integration tests for Q-LLM wrapper isolation and error contracts — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Milestone 2: Execution Loop & Exception Redaction | 2026-03-17 | ✅ done | 19 SP
+**Goal:** [Phase: Execution Loop & Exception Redaction]
+Wire the P-LLM wrapper, Q-LLM wrapper, and the Milestone 1 interpreter into a complete execution loop. Implement the retry loop (up to 10 attempts), exception redaction logic based on untrusted-data dependency, partial re-execution semantics (only regenerate remaining code after failure point), and MaxRetriesExceededError termination. Implement execution trace recording.
+
+Deliverables:
+- Full execution loop orchestrator connecting P-LLM, interpreter, Q-LLM, and tool dispatch
+- Exception redaction engine: full message for trusted-origin exceptions; type and line number only for exceptions with any untrusted dependency; redacted NotEnoughInformationError
+- P-LLM re-generation prompt builder that communicates already-executed state and instructs regeneration of only remaining code (M2-F14)
+- Retry loop with 10-attempt ceiling and MaxRetriesExceededError on exhaustion (M2-F8)
+- Execution trace recorder producing ordered (tool_name, args, memory_snapshot) tuples after each successful tool call (M2-F12)
+- print() output routing to a separate display channel distinct from the execution trace (M2-F10)
+- Integration tests: 10 adversarial cases confirming untrusted exception content is never exposed to P-LLM; retry termination test; NotEnoughInformationError redaction test
+
+**Delivered:**
+- ✅ Design execution loop orchestrator and exception redaction architecture — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement execution loop orchestrator with retry, redaction, trace recorder, and print routing — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write adversarial integration tests for redaction, retry termination, and NotEnoughInformationError — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Fix: install pytest-asyncio and resolve test_qllm.py async test failures — Backend Developer (◈ Standard, 3 SP)
+
+---
