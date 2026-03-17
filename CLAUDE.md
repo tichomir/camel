@@ -428,3 +428,23 @@ Deliverables:
 - ✅ Fix: verify QLLMWrapper.extract enforces schema validation and does not silently pass through unvalidated output — Backend Developer (◈ Standard, 3 SP)
 
 ---
+### Sprint 7 — Q-LLM Wrapper Implementation | 2026-03-17 | 📋 reviewing | 16 SP
+**Goal:** [Phase: Project Setup & Environment]
+Establish the project repository, toolchain, CI pipeline, and development environment. Define coding standards, pin the Python version, set up linting and formatting, and scaffold the package structure that all subsequent phases will build on. This phase ensures every engineer can build, test, and contribute from day one.
+
+Deliverables:
+- Git repository with branch protection and PR templates
+- Python version pinned (pyproject.toml / .python-version)
+- CI pipeline (lint, type-check, test) on every pull request
+- Package scaffold: camel/ and tests/ directories with __init__.py stubs
+- Pre-commit hooks (black, mypy, ruff)
+- CONTRIBUTING.md and local-dev setup guide
+
+**Delivered:**
+- ✅ Design Q-LLM wrapper architecture and Pydantic schema contracts — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement Q-LLM wrapper with schema-validated structured output — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write unit tests for Q-LLM wrapper isolation, schema validation, and error handling — Qa Engineer (◈ Standard, 3 SP)
+- ❌ Fix: missing tests for QLLMWrapper and backend adapters — Backend Developer (◈ Standard, 3 SP)
+- ❌ Fix: verify QLLMWrapper.extract enforces schema validation and does not silently pass through unvalidated output — Backend Developer (◈ Standard, 3 SP)
+
+---
