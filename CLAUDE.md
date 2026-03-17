@@ -506,3 +506,21 @@ Deliverables:
 - ✅ Write tests/test_value.py — full unit test suite for CaMeLValue and propagation rules — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Sprint 1 | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: AST Interpreter Core]
+Implement the CaMeL custom Python interpreter using Python's ast library. The interpreter parses and executes a restricted Python subset (assignments, conditionals, for-loops, function calls, list/dict access, arithmetic, string formatting). All constructs outside the supported subset raise a structured UnsupportedSyntaxError. Every value produced during execution is wrapped in CaMeLValue. Session state — all variables and their capability wrappers — persists across sequential code-execution runs within a single interpreter instance.
+
+Deliverables:
+- camel/interpreter.py: AST-walking interpreter covering the full supported grammar
+- UnsupportedSyntaxError with offending node type and line number
+- Session state (variable store) persisting across multiple exec() calls on the same instance
+- Integration of CaMeLValue wrapping for all expression evaluations
+- tests/test_interpreter.py: unit tests for all supported constructs plus negative suite of ≥15 unsupported construct cases
+- tests/test_interpreter.py: session-persistence tests across ≥3 sequential code-run scenarios
+
+**Delivered:**
+- ✅ Design AST interpreter architecture and supported grammar spec — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement camel/interpreter.py — full AST-walking interpreter with session state — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write tests/test_interpreter.py — full test suite with negative suite and session-persistence tests — Qa Engineer (◉ Deep, 5 SP)
+
+---
