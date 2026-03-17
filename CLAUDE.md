@@ -765,3 +765,17 @@ Deliverables:
 - ✅ Fix: version mismatch between README badge and pyproject.toml — Software Architect (◈ Standard, 3 SP)
 
 ---
+### Milestone 2 — Documentation Sprint | 2026-03-17 | ✅ done | 25 SP
+**Goal:** Let's documet everything if not done already - Architecture - Github Readme - Manuals etc...
+
+**Delivered:**
+- ✅ Write GitHub README for CaMeL repository — Software Architect (◈ Standard, 3 SP)
+- ✅ Document system architecture in docs/architecture.md — Software Architect (◉ Deep, 5 SP)
+- ✅ Write developer setup and contribution guide — Backend Developer (◈ Standard, 3 SP)
+- ✅ Produce M2 component API reference docs — Backend Developer (◈ Standard, 3 SP)
+- ✅ Review and QA all documentation for accuracy and completeness — Qa Engineer (⚡ Quick, 2 SP)
+- ✅ Fix: version mismatch between README badge and pyproject.toml — Software Architect (◈ Standard, 3 SP)
+- ✅ Fix: Add LICENSE file to repository — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: Bump version from 0.1.0 to 0.2.0 in pyproject.toml and __init__.py — Qa Engineer (◈ Standard, 3 SP)
+
+---

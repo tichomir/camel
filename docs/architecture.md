@@ -180,8 +180,8 @@ Provider-agnostic interface via the `LLMBackend` Protocol:
 
 ```python
 class LLMBackend(Protocol):
-    async def complete(self, messages: list[Message]) -> str: ...
-    async def complete_structured(
+    async def generate(self, messages: list[Message], **kwargs: Any) -> str: ...
+    async def generate_structured(
         self, messages: list[Message], schema: type[BaseModel]
     ) -> BaseModel: ...
 ```
@@ -258,10 +258,14 @@ Every runtime value in the interpreter is wrapped in `CaMeLValue`:
 ```python
 @dataclass(frozen=True)
 class CaMeLValue:
-    raw: Any                          # the underlying Python value
+    value: Any                        # the underlying Python value (access via .raw property)
     sources: frozenset[str]           # origin tool(s) / "User literal" / "CaMeL"
     inner_source: str | None          # sub-field within a tool response
     readers: frozenset[str] | Public  # authorised recipients, or Public sentinel
+
+    @property
+    def raw(self) -> Any:             # preferred accessor — do not use .value directly
+        return self.value
 ```
 
 ### Propagation Rules

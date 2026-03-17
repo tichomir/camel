@@ -346,7 +346,7 @@ CaMeL tracks data flow dependencies in two modes, configurable per interpreter i
 where an adversary could learn the value of a private boolean by observing which
 branch the agent takes (PRD §7.3).
 
-See [Architecture Reference — Interpreter Modes](docs/architecture.md#interpreter-execution-modes) for details.
+See [Architecture Reference — Interpreter Modes](docs/architecture.md#6-interpreter-execution-modes) for details.
 
 ---
 
@@ -365,7 +365,7 @@ It achieves this by:
 4. Tracking data flow dependencies (STRICT mode also tracks control-flow taint)
 5. Redacting exception messages from untrusted-dependency failures before P-LLM retry
 
-See [Architecture Reference — Security Model](docs/architecture.md#security-model) for the full
+See [Architecture Reference — Security Model](docs/architecture.md#10-security-model) for the full
 threat model, PI-SEC game definition, and trusted/untrusted boundary table.
 
 ---
