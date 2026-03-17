@@ -821,3 +821,24 @@ Deliverables:
 - ✅ Write unit and integration tests for policy engine and NFR-2 compliance — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Milestone 3 — Reference Policy Library | 2026-03-17 | ✅ done | 12 SP
+**Goal:** [Phase: Reference Policy Library]
+Implement, document, and thoroughly test the six reference security policies that form the baseline policy set shipped with CaMeL: send_email, send_money, create_calendar_event, write_file, post_message, and fetch_external_url. Each policy must implement the exact logic, denial reasons, and edge cases specified in the milestone document. This phase also validates that the policies collectively enforce Goals G2 (data flow manipulation) and G3 (private data exfiltration) across the AgentDojo tool categories.
+
+Deliverables:
+- send_email policy: recipient trust check and readers superset check implemented and tested
+- send_money policy: recipient and amount must have User as sole source across full dependency graph
+- create_calendar_event policy: all event fields readable by all participants unless participants are fully trusted
+- write_file policy: file content readers must include file system owning user
+- post_message policy: message content readers must include channel member set or content must be trusted
+- fetch_external_url policy: URL and all parameters must have no untrusted parent sources
+- Policy unit test suite: positive (Allowed) and negative (Denied) cases for every policy, including dependency-graph-deep provenance scenarios
+- AgentDojo adversarial task mapping: each reference policy mapped to the AgentDojo attack scenarios it mitigates
+- Policy documentation: human-readable description, denial reasons, and configuration guidance for each policy
+
+**Delivered:**
+- ✅ Design reference policy specifications and AgentDojo attack mappings — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement all six reference security policies — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write comprehensive policy unit test suite and AgentDojo adversarial mapping tests — Qa Engineer (◉ Deep, 5 SP)
+
+---
