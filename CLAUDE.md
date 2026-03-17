@@ -488,3 +488,21 @@ Deliverables:
 - ✅ Fix: verify QLLMWrapper.extract enforces schema validation and does not silently pass through unvalidated output — Backend Developer (◈ Standard, 3 SP)
 
 ---
+### Sprint 1 — CaMeLValue & Capability System | 2026-03-17 | ✅ done | 12 SP
+**Goal:** [Phase: CaMeLValue & Capability System]
+Implement the core CaMeLValue container type, the Public singleton, and all capability propagation rules. This is the foundational data structure that every other CaMeL component depends on. Every runtime value in the interpreter will be wrapped in CaMeLValue, carrying sources, inner_source, and readers metadata. Propagation rules for all supported operations (assignment, arithmetic, string concat, list/dict construction, subscript access) are implemented and fully unit-tested here.
+
+Deliverables:
+- camel/value.py: CaMeLValue dataclass with sources, inner_source, readers fields
+- Public singleton type for open-readers semantics
+- Capability propagation functions for: assignment, binary operations, list construction, dict construction, subscript access
+- camel/value.py exports raw_value / raw accessor for downstream tool execution (Milestone 2 readiness)
+- tests/test_value.py: full unit test suite covering all propagation rules and edge cases
+- Type stubs / mypy-clean module
+
+**Delivered:**
+- ✅ Design CaMeLValue dataclass and capability propagation API — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement camel/value.py — CaMeLValue, Public, and all propagation functions — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write tests/test_value.py — full unit test suite for CaMeLValue and propagation rules — Qa Engineer (◉ Deep, 5 SP)
+
+---
