@@ -16,8 +16,8 @@
   "I3_redaction_completeness": {
     "invariant": "I3_redaction_completeness",
     "description": "All untrusted-origin exception messages fully redacted before P-LLM",
-    "passed": 10,
+    "passed": 0,
     "failed": 0,
-    "total": 10
+    "total": 0
   }
 }

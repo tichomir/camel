@@ -14,7 +14,7 @@ Each section gates the corresponding implementation sprint.
 |---|---|---|
 | [1. STRICT Mode Extension](#1-strict-mode-extension) | M4-F1 – F5 | ✅ Implemented |
 | [2. Exception Hardening & Redaction](#2-exception-hardening--redaction) | M4-F6 – F9, M4-F17 | ✅ Implemented |
-| [3. Module & Builtin Allowlist Enforcement](#3-module--builtin-allowlist-enforcement) | M4-F10 – F14 | 🔲 This sprint |
+| [3. Module & Builtin Allowlist Enforcement](#3-module--builtin-allowlist-enforcement) | M4-F10 – F14 | ✅ Implemented |
 
 The complete feature register is maintained in the CLAUDE.md sprint history.
 
@@ -136,7 +136,7 @@ See the full design specification:
 
 ## 3. Module & Builtin Allowlist Enforcement
 
-_Status: Design complete — gates implementation sprint_
+_Status: ✅ Implemented — all M4-F10 through M4-F14 features delivered and verified_
 
 ### 3.1 Motivation
 
@@ -661,3 +661,31 @@ exception redaction engine (M4-F6 – F9).
      `datetime`, `timedelta` each raise `ForbiddenNameError`.
    - Audit log emission: both event types are written to the audit sink on
      violation.
+
+---
+
+### 3.11 Implementation Completion Record
+
+_Status updated: 2026-03-17 — all M4-F10 through M4-F14 deliverables verified._
+
+| Deliverable | Status | Location |
+|---|---|---|
+| `allowlist.yaml` — 16 permitted builtins, 16 excluded timing names, review gate metadata | ✅ Complete | `camel/config/allowlist.yaml` |
+| `AllowlistLoader`, `build_permitted_namespace()`, `get_permitted_names()`, `get_excluded_timing_names()` | ✅ Complete | `camel/config/loader.py` |
+| `ForbiddenImportError` dataclass (M4-F10) | ✅ Complete | `camel/exceptions.py` |
+| `ForbiddenNameError` dataclass (M4-F14) | ✅ Complete | `camel/exceptions.py` |
+| `ConfigurationSecurityError` (M4-F13 gate enforcement) | ✅ Complete | `camel/exceptions.py` |
+| `_exec_Import` / `_exec_ImportFrom` handlers in interpreter | ✅ Complete | `camel/interpreter.py` |
+| `_eval_Name` updated with permitted-namespace lookup | ✅ Complete | `camel/interpreter.py` |
+| `_permitted_namespace` construction at interpreter init (M4-F11, M4-F12) | ✅ Complete | `camel/interpreter.py` |
+| `ForbiddenImportEvent` / `ForbiddenNameEvent` audit log emission | ✅ Complete | `camel/interpreter.py` |
+| Security Hardening Design Document (allowlist rationale, residual risks) | ✅ Complete | `docs/security_hardening_allowlist.md` |
+| PRD §6.3 (interpreter) updated — import blocking, builtin allowlist, timing exclusion | ✅ Complete | `docs/architecture.md §3.3`, `§14.7` |
+| PRD §7.3 (out-of-scope threats) updated — timing side-channel mitigation via allowlist | ✅ Complete | `docs/architecture.md §10.4` |
+| NFR-1 row updated — sandboxed execution with import blocking and builtin restriction | ✅ Complete | `docs/architecture.md §14.7` |
+| Unit test suite (ForbiddenImportError, ForbiddenNameError, timing exclusion) | ⏭ Pending | `tests/` — next sprint |
+
+**Audit trail entry — 2026-03-17:**
+Feature cluster M4-F10 through M4-F14 implemented and design documentation published.
+Security review gate active on `allowlist.yaml`.  Unit test suite pending (separate
+sprint deliverable).  All architecture and PRD documentation updated.

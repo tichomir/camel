@@ -1341,7 +1341,7 @@ class CaMeLInterpreter:
                 self._tracking.add(name)
             return self._store[name]
         # M4-F14: any name not in tools, builtins, or store is forbidden.
-        exc = ForbiddenNameError(name=name, lineno=lineno)
+        exc = ForbiddenNameError(offending_name=name, lineno=lineno)
         self._emit_allowlist_audit_event(
             event_type="ForbiddenNameAccess",
             offending_name=name,
@@ -1711,7 +1711,7 @@ class CaMeLInterpreter:
             else:
                 # M4-F14: callee name not in tools, builtins, or store.
                 lineno = getattr(func_node, "lineno", 0)
-                exc = ForbiddenNameError(name=name, lineno=lineno)
+                exc = ForbiddenNameError(offending_name=name, lineno=lineno)
                 self._emit_allowlist_audit_event(
                     event_type="ForbiddenNameAccess",
                     offending_name=name,

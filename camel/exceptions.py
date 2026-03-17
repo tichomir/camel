@@ -90,14 +90,20 @@ class ForbiddenNameError(NameError):
 
     Attributes
     ----------
-    name:
+    offending_name:
         The exact identifier string from the ``ast.Name`` node.
     lineno:
         1-based source line number of the name access.  Zero when no line
         information is available on the node.
+
+    Notes
+    -----
+    The field is named ``offending_name`` rather than ``name`` to avoid
+    conflicting with the C-level ``name`` slot on :class:`NameError`, which
+    defaults to ``None`` and is not controlled by the dataclass ``__init__``.
     """
 
-    name: str
+    offending_name: str
     lineno: int
 
     def __post_init__(self) -> None:
@@ -105,7 +111,7 @@ class ForbiddenNameError(NameError):
 
     def __str__(self) -> str:
         return (
-            f"Name {self.name!r} is not permitted in CaMeL-executed code "
+            f"Name {self.offending_name!r} is not permitted in CaMeL-executed code "
             f"at line {self.lineno} (M4-F14)"
         )
 
