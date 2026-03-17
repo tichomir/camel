@@ -1,6 +1,7 @@
 # Milestone 4 — Design Document
 
-_Author: Software Architect | Date: 2026-03-17 | Status: In Progress_
+_Author: Software Architect | Date: 2026-03-17 | Status: **Complete — all phases delivered and verified**_
+_Version: 1.4 | Publication date: 2026-03-17_
 
 ---
 
@@ -16,6 +17,7 @@ Each section gates the corresponding implementation sprint.
 | [2. Exception Hardening & Redaction](#2-exception-hardening--redaction) | M4-F6 – F9, M4-F17 | ✅ Implemented |
 | [3. Module & Builtin Allowlist Enforcement](#3-module--builtin-allowlist-enforcement) | M4-F10 – F14 | ✅ Implemented |
 | [4. Data-to-Control-Flow Escalation Detection](#4-data-to-control-flow-escalation-detection) | M4-F15, M4-F16, M4-F18 | ✅ Implemented |
+| [5. Side-Channel Test Suite & Documentation](#5-side-channel-test-suite--documentation) | Side-channel tests, docs | ✅ Complete |
 
 The complete feature register is maintained in the CLAUDE.md sprint history.
 
@@ -860,3 +862,89 @@ _Status updated: 2026-03-17 — all M4-F15, M4-F16, M4-F18 deliverables implemen
 Feature cluster M4-F15, M4-F16, M4-F18 implemented, tested, and documented.  The
 data-to-control-flow escalation attack vector is now runtime-detected and blocked.
 PRD security model (§7.1, §7.2, §10 L6) updated to reflect implementation status.
+
+---
+
+## 5. Side-Channel Test Suite & Documentation
+
+_Status: ✅ Complete — all side-channel tests pass, all documentation published_
+
+### 5.1 Automated Side-Channel Test Suite
+
+The side-channel test suite (`tests/side_channel/`) validates all three attack classes
+with automated pass/fail reporting against the PRD §11 success metrics.
+
+| Test Class | Test File | Tests | Pass Rate | Attack Vector | Mitigation(s) |
+|---|---|---|---|---|---|
+| **Indirect inference via loop count** | `test_loop_count_inference.py` | 10 | **100%** | Loop iteration count observable externally | M4-F1 (STRICT mode iterable taint propagation) |
+| **Exception-based bit leakage** | `test_exception_bit_leakage.py` | 17 | **100%** | Exception messages echo untrusted data to P-LLM | M4-F6, M4-F7, M4-F9, M4-F17 |
+| **Timing primitive exclusion** | `test_timing_primitive_exclusion.py` | 62 | **100%** | Direct timing primitives encode private values | M4-F10, M4-F11, M4-F12, M4-F13, M4-F14 |
+| **Overall** | `tests/side_channel/` | **89** | **100%** | — | All Milestone 4 mitigations |
+
+**PRD §11 target: 100% pass rate for implemented mitigations. Status: ✅ MET.**
+
+Full test execution report: `docs/reports/milestone4_side_channel_test_report.md`.
+
+### 5.2 Documentation Published
+
+All documentation artifacts are published as of 2026-03-17 (Version 1.4):
+
+| Document | Location | Status |
+|---|---|---|
+| System Architecture Reference (PRD §5–§12) | `docs/architecture.md` | ✅ Version 1.4 published |
+| **Security Hardening Design Document (standalone)** | **`docs/design/security_hardening_design.md`** | ✅ New in v0.4.0 — consolidated standalone reference covering all five hardening sections (allowlist rationale, STRICT mode design, exception redaction, escalation detection, residual risk register) |
+| Security Hardening Allowlist Document (extended) | `docs/security_hardening_allowlist.md` | ✅ Version 1.4 published — full allowlist audit trail and per-feature deep dives |
+| **Milestone 4 Release Notes** | **`docs/releases/milestone4_release_notes.md`** | ✅ New in v0.4.0 — release summary, PRD §11 metric outcomes, breaking changes, entry criteria for Milestone 5 |
+| Milestone 4 Design Document (this file) | `docs/milestone4_design.md` | ✅ Version 1.4, all sections complete |
+| M4 Side-Channel Test Report | `docs/reports/milestone4_side_channel_test_report.md` | ✅ Published |
+| M4 STRICT Mode Extension Design | `docs/design/milestone4-strict-mode-extension.md` | ✅ Published |
+| M4 Exception Hardening Design | `docs/design/milestone4-exception-hardening.md` | ✅ Published |
+| M4 Escalation Detection Design | `docs/design/milestone4-escalation-detection.md` | ✅ Published |
+
+### 5.3 Milestone 4 Completion Summary
+
+**Security improvements delivered:**
+
+- STRICT mode is now the production default (M4-F5); all new deployments benefit
+  automatically from control-flow and Q-LLM taint propagation.
+- For-loop iterable taint propagation (M4-F1) closes the loop-count side-channel vector.
+- If/else condition taint propagation (M4-F2) closes the branch-observation side-channel.
+- Post-Q-LLM remainder propagation (M4-F3/F4) closes the Q-LLM data-to-assignment channel.
+- Exception message redaction (M4-F6) prevents untrusted exception content reaching the P-LLM.
+- NEIE content stripping (M4-F7) prevents Q-LLM failure reasons leaking to the P-LLM.
+- STRICT mode annotation preservation across NEIE (M4-F8) prevents taint drop on retry.
+- Loop-body exception propagation (M4-F9) prevents iterable taint drop on exception retry.
+- Import blocking (M4-F10) prevents arbitrary module loading from P-LLM-generated code.
+- Builtin allowlist (M4-F11) restricts interpreter namespace to 16 approved names.
+- Timing primitive exclusion (M4-F12) closes the direct timing side-channel vector.
+- Central auditable allowlist configuration (M4-F13) with mandatory security review gate.
+- ForbiddenNameError (M4-F14) provides a clear, auditable rejection for disallowed names.
+- DataToControlFlowWarning detection (M4-F15) identifies tool-name escalation at runtime.
+- Elevated consent gate (M4-F16) blocks escalation before policy evaluation.
+- Redaction audit events (M4-F17) ensure all redaction decisions are observable.
+- STRICT mode dependency addition audit events (M4-F18) provide per-statement taint traceability.
+
+**Known residual risks (entering Milestone 5):**
+
+| Risk | Severity | Reference |
+|---|---|---|
+| Indirect iteration-count timing channel | Medium | `docs/security_hardening_allowlist.md §16 R1` |
+| Deeply nested tool exception chains | Low | `docs/design/milestone4-exception-hardening.md §9.2` |
+| ROP-analogue action chaining | Medium-High | `docs/architecture.md §10.5 L6` |
+| CPython instruction-dispatch variance | Low | `docs/security_hardening_allowlist.md §16 R2` |
+| Tool-implementation timing leakage | Medium | `docs/security_hardening_allowlist.md §16 R3` |
+
+**Entry criteria for Milestone 5:**
+
+All Milestone 4 exit criteria are met.  The PRD §11 side-channel test pass rate target
+(100% for implemented mitigations) is achieved.  Residual risks L3, L6, NG4 are
+documented with explicit caveats.  Milestone 5 may proceed.
+
+**Audit trail entry — 2026-03-17:**
+Milestone 4 is complete.  All 18 features (M4-F1 through M4-F18) are implemented,
+tested, and documented.  Side-channel test suite: 89/89 tests pass (100%).
+Architecture documentation, security hardening design document, and Milestone 4 design
+document all updated to Version 1.4.  Residual risks documented and carried forward.
+Consolidated Security Hardening Design Document published at
+`docs/design/security_hardening_design.md`.  Milestone 4 Release Notes published at
+`docs/releases/milestone4_release_notes.md`.  Entry criteria for Milestone 5 are met.

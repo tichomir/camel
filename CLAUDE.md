@@ -1066,3 +1066,25 @@ Deliverables:
 - ✅ Publish updated PRD and Milestone 4 design document — Software Architect (⚡ Quick, 2 SP)
 
 ---
+### Milestone 4 — Side-Channel Test Suite & Documentation Publication | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: Side-Channel Test Suite & Documentation Publication]
+Produce the automated side-channel test suite covering all three attack classes, execute it against the hardened interpreter, record results against the success metrics defined in PRD Section 11, and publish all updated documentation. This phase covers: automated tests for indirect inference via loop count, exception-based bit leakage, and timing side channel (all mitigations validated end-to-end); success metric validation (side-channel test pass rate target: 100% for implemented mitigations); and publication of all updated documents — PRD, Milestone 4 design doc, architecture overview, NFR table, threat model, known limitations, open questions, and the security hardening design document. Residual risks (L3, L4, NG4) are documented with explicit caveats.
+
+Deliverables:
+- Automated side-channel test suite: three test classes — indirect inference via loop count, exception-based bit leakage, timing primitive exclusion — with pass/fail reporting against PRD Section 11 targets
+- Test execution report: side-channel test pass rate result (target 100% for implemented mitigations)
+- Published updated PRD (all sections): Executive Summary, Problem Statement, Goals, Architecture, Core Components, Security Model, Phased Delivery Plan, NFRs, Known Limitations, Success Metrics, Open Questions
+- Published updated Milestone 4 design document: all sections marked complete, residual risks documented
+- Published Security Hardening Design Document: allowlist rationale, STRICT mode design decisions, exception redaction design, escalation detection design, residual risk register
+- Published updated threat model: side-channel attack classes and their mitigations formally documented
+- Published updated Known Limitations & Risks table: L3 (exception side channel residual), L6 (ROP analogue), NG4 (partial timing mitigation) updated with Milestone 4 outcomes
+- Published updated Open Questions & Future Work: FW-1 (alternative execution language), FW-2 (formal verification) updated with Milestone 4 findings
+- Release notes for Milestone 4: summary of security improvements, known residual risks, and entry criteria for Milestone 5
+
+**Delivered:**
+- ✅ Implement automated side-channel test suite (three attack classes) — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Execute test suite and produce test execution report — Qa Engineer (⚡ Quick, 2 SP)
+- ✅ Publish updated PRD, threat model, NFR table, and Known Limitations & Open Questions — Software Architect (◉ Deep, 5 SP)
+- ✅ Publish Security Hardening Design Document and Milestone 4 release notes — Software Architect (◈ Standard, 3 SP)
+
+---

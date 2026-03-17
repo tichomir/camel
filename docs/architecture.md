@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.4.3 (Milestone 4 — Data-to-Control-Flow Escalation Detection Design)
+**Version:** 1.4 (Milestone 4 — Complete)
 **Date:** 2026-03-17
-**Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.4 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -779,48 +779,91 @@ attempt and blocked by the elevated consent gate regardless of existing policy o
 | **Exception side-channel** — error content leaks private values to P-LLM | Exception redaction engine strips messages from untrusted-dependency failures |
 | **Timing / control-flow side-channel** — branch observation leaks private booleans | STRICT mode propagates branch condition as dependency to all inner-block variables |
 
+### 10.3a Side-Channel Attack Classes — Formal Table
+
+The following table formally documents all three side-channel attack classes addressed in
+Milestone 4, together with the specific mitigations delivered and their validation status.
+This table satisfies PRD §11 success metric traceability.
+
+| Attack Class | Description | CaMeL Mitigation(s) | Feature IDs | Test Class | Pass Rate (M4 suite) |
+|---|---|---|---|---|---|
+| **Indirect inference via loop count** | An adversary who can observe which tool calls are made (or measure total execution time) infers the value of a private variable by counting loop iterations when an untrusted iterable controls the loop body. | STRICT mode merges the iterable's capability and dependency set into every variable assigned inside the loop body. The policy engine sees the untrusted provenance before any downstream tool call, blocking exfiltration. | M4-F1 | `tests/side_channel/test_loop_count_inference.py` | **100%** (10/10) ✅ |
+| **Exception-based bit leakage** | An adversary crafts tool return values that, when processed, trigger exceptions whose messages echo adversary-controlled content back to the P-LLM via the retry prompt, crossing the trusted/untrusted boundary. | (1) Dependency-graph-aware taint check: exception messages replaced with `None` when any upstream source is outside `{"User literal", "CaMeL"}`. (2) `NotEnoughInformationError` content stripped entirely; only error type and call-site line number forwarded. (3) Loop-body exception STRICT propagation: iterable taint pre-seeded into the regenerated plan's dependency context. | M4-F6, M4-F7, M4-F9, M4-F17 | `tests/side_channel/test_exception_bit_leakage.py` | **100%** (17/17) ✅ |
+| **Timing primitive exclusion** | If the interpreter exposes `time.perf_counter`, `time.sleep`, `datetime.now`, or any other timing primitive, an adversary can encode private values into time-delayed tool calls or measure elapsed time to infer branch outcomes. | All import statements raise `ForbiddenImportError` at AST-walk time. The interpreter namespace is restricted to 16 approved builtins; any other name access raises `ForbiddenNameError`. The `time` module and all timing-related names are unconditionally excluded from the namespace, defined in the central auditable `allowlist.yaml`. | M4-F10, M4-F11, M4-F12, M4-F13, M4-F14 | `tests/side_channel/test_timing_primitive_exclusion.py` | **100%** (62/62) ✅ |
+
+**Overall side-channel test pass rate: 100% (89/89) — PRD §11 target MET.**
+See the full test execution report: `docs/reports/milestone4_side_channel_test_report.md`.
+
 ### 10.4 Out-of-Scope Threats (PRD §7.3)
 
 - Text-to-text manipulation with no data/control flow consequence
 - Prompt-injection-induced phishing (link-click attacks)
 - Fully compromised user prompt
-- **Timing side-channels (partial mitigation):** The `time` module and all timing
+- **Timing side-channels (partial mitigation — NG4):** The `time` module and all timing
   primitives (`time.sleep`, `time.perf_counter`, `datetime.now`, etc.) are excluded
   from the interpreter namespace as of M4-F12, eliminating the *direct* timing
-  side-channel vector.  Residual timing channels — indirect iteration-count channels,
-  CPython instruction-dispatch variance, tool-implementation timing leakage, and
-  OS-level process-time observation — remain out of scope per NG4 (PRD §3.2).
-  See `docs/security_hardening_allowlist.md §5` for the full residual risk catalogue.
-- Formal verification of interpreter correctness (future work — FW-2)
+  side-channel vector.  **Milestone 4 outcome:** The direct timing primitive vector is
+  closed; the timing primitive exclusion test class passes at 100% (62/62).  Residual
+  timing channels — indirect iteration-count channels (partially addressed by M4-F1
+  STRICT propagation), CPython instruction-dispatch variance, tool-implementation timing
+  leakage, and OS-level process-time observation — remain out of scope per NG4 (PRD §3.2).
+  **Explicit caveat:** Full timing side-channel immunity is not guaranteed in all
+  configurations; this is an explicit non-goal of CaMeL.  See
+  `docs/security_hardening_allowlist.md §9` for the full residual risk catalogue.
+- Formal verification of interpreter correctness (future work — FW-2; see §10.7)
 
 ### 10.5 Known Limitations & Residual Risks
 
-| # | Limitation | Severity | Mitigation Status |
-|---|---|---|---|
-| L1 | Data-requires-action failure: P-LLM cannot plan actions that depend on reading untrusted data | Medium | Documented design constraint; future: nested P-LLM tool (FW-4) |
-| L3 | Exception-based side channel (residual): M4-F6 through M4-F9 close primary exception channels; deeply nested tool call exception propagation remains a documented residual | Low | M4-F6/F7/F8/F9 implemented; see `docs/design/milestone4-exception-hardening.md §9.2` |
-| L6 | **ROP-analogue action chaining**: an adversary may chain individually-approved tool calls to produce a collectively malicious outcome. M4-F15/F16 runtime detection closes the **single-escalation** vector (one untrusted-derived callable per call site), but chaining of individually *trusted* actions remains a residual risk. | Medium-High | **Partially mitigated by M4-F15/F16** (single-step escalation blocked at runtime). Residual chain risk documented; future: action-sequence anomaly detection via dependency graph analysis (FW-6); defence-in-depth with model-level robustness training |
-| L4 | User fatigue from policy / escalation denials | Medium | Granular policies; elevated consent provides clear escalation reason |
-| L5 | Token cost overhead (~2.82× input tokens vs native tool-calling) | Low-Medium | Expected to decrease as models follow subset spec more closely |
+_Updated for Milestone 4 completion (Version 1.4, 2026-03-17)._
 
-**L6 detail:** M4-F15 detects and M4-F16 blocks the case where a *single* tool call's
-function identity derives from untrusted data.  The ROP-analogue scenario — where each
-individual tool call is to a statically-named (trusted) tool but the sequence of calls,
-driven by untrusted branching, collectively exfiltrates data — is **not** eliminated by
-M4-F15/F16.  STRICT mode (M4-F1/F2) propagates untrusted branch conditions to all
-inner-block assignments, ensuring those variables carry the correct taint; however, an
-adversary crafting a sequence of fully-legitimate tool calls where each call is
-individually policy-approved can still construct a collectively malicious trace.  This
-is the subject of future work FW-6.
+| # | Limitation | Severity | Milestone 4 Outcome | Residual Caveat |
+|---|---|---|---|---|
+| L1 | Data-requires-action failure: P-LLM cannot plan actions that depend on reading untrusted data | Medium | Documented design constraint; no change in M4 | Future: nested P-LLM tool (FW-4) |
+| L3 | **Exception-based side channel (residual):** Primary vectors — loop-body taint (M4-F1), exception message redaction (M4-F6), NEIE stripping (M4-F7), loop annotation propagation (M4-F9) — are all implemented and validated at 100% (17/17 tests pass). | Low | ✅ Primary vectors closed by M4-F6, M4-F7, M4-F9, M4-F17. Side-channel test class 2 passes at 100%. | **Residual:** Deeply nested tool call exception chains — where an exception propagates through multiple tool call frames before reaching the interpreter's exception handler — remain a documented residual risk not covered by the M4 mitigations. See `docs/design/milestone4-exception-hardening.md §9.2`. |
+| L4 | User fatigue from policy / escalation denials | Medium | Elevated consent provides clear escalation reason and distinguishes data-to-control vs policy denials | Granular policies reduce denial rate; policy tuning guidance available |
+| L5 | Token cost overhead (~2.82× input tokens vs native tool-calling) | Low-Medium | No change in M4 | Expected to decrease as models follow subset spec more closely |
+| L6 | **ROP-analogue action chaining:** An adversary may chain individually-approved tool calls to produce a collectively malicious outcome. | Medium-High | ✅ **Single-step escalation blocked** by M4-F15 (detection) and M4-F16 (elevated consent gate). | **Residual:** The ROP-analogue scenario — where each individual tool call is to a statically-named (trusted) tool but the *sequence* of calls collectively exfiltrates data — is **not** eliminated by M4-F15/F16. STRICT mode (M4-F1/F2) propagates untrusted branch conditions to all inner-block assignments, but an adversary constructing a sequence of fully-legitimate, individually policy-approved calls can still produce a collectively malicious trace. Future work: FW-6 (action-sequence anomaly detection via dependency graph analysis). |
+| NG4 | **Partial timing mitigation (explicit non-goal):** CaMeL does not guarantee side-channel immunity in all configurations. | Low | ✅ **Direct timing primitive vector closed** by M4-F12 (timing names excluded from namespace). Side-channel test class 3 (timing primitive exclusion) passes at 100% (62/62 tests). | **Residual / explicit caveat:** Indirect timing channels — iteration-count channels (wall-clock observable without any timing call), CPython instruction-dispatch variance, tool-implementation timing leakage, OS-level process-time observation — remain out of scope per PRD §3.2 NG4. Full timing immunity is not a CaMeL guarantee. See `docs/security_hardening_allowlist.md §9` for the complete residual risk register. |
+
+**L6 detail (updated for M4):** M4-F15 detects and M4-F16 blocks the case where a *single*
+tool call's function identity derives from untrusted data.  The ROP-analogue scenario — where
+each individual tool call is to a statically-named (trusted) tool but the sequence of calls,
+driven by untrusted branching, collectively exfiltrates data — is **not** eliminated by M4-F15/F16.
+STRICT mode (M4-F1/F2) ensures all inner-block assignments carry the correct taint, but an
+adversary crafting a sequence of fully-legitimate, individually policy-approved calls can still
+construct a collectively malicious trace.  This is the subject of future work FW-6.
+
+**NG4 detail (updated for M4):** The allowlist enforcement layer (M4-F10–F14) and the STRICT mode
+propagation rules (M4-F1–F4) together provide defence in depth against timing side channels, but
+they are not a complete solution.  The direct timing primitive vector is closed.  The residual
+risks (iteration-count channels, CPython variance, tool timing leakage, OS-level observation) are
+acknowledged, documented, and consistent with the explicit non-goal NG4 stated in the PRD.
 
 ### 10.6 Security Metrics
 
-| Metric | Target | Achieved |
+_Milestone 4 outcomes recorded per PRD §11 success metric targets._
+
+| Metric | PRD §11 Target | Achieved | Status |
+|---|---|---|---|
+| AgentDojo task success rate (CaMeL vs native) | ≤10% degradation | **77%** vs 84% (8.3% degradation) | ✅ Met |
+| Prompt injection ASR on AgentDojo | 0 | **0** | ✅ Met |
+| Data exfiltration events blocked | 100% of policy-covered scenarios | **100%** | ✅ Met |
+| **Side-channel test pass rate — loop count inference** | 100% for implemented mitigations | **100%** (10/10 tests) | ✅ Met |
+| **Side-channel test pass rate — exception bit leakage** | 100% for implemented mitigations | **100%** (17/17 tests) | ✅ Met |
+| **Side-channel test pass rate — timing primitive exclusion** | 100% for implemented mitigations | **100%** (62/62 tests) | ✅ Met |
+| **Overall side-channel test pass rate** | 100% for implemented mitigations | **100%** (89/89 tests) | ✅ Met |
+
+Full test execution report: `docs/reports/milestone4_side_channel_test_report.md`.
+
+### 10.7 Open Questions & Future Work
+
+_Updated for Milestone 4 completion (Version 1.4, 2026-03-17)._
+
+| # | Topic | Milestone 4 Finding |
 |---|---|---|
-| AgentDojo task success rate (CaMeL vs native) | ≤10% degradation | **77%** vs 84% (8.3% degradation) |
-| Prompt injection ASR on AgentDojo | 0 | **0** |
-| Data exfiltration events blocked | 100% | **100%** (policy-covered scenarios) |
-| Side-channel test pass rate | 100% | **100%** (STRICT mode suite) |
+| FW-1 | **Alternative execution language** | Python's exception model creates residual side-channel risks (L3) that the M4 exception hardening features reduce but cannot fully eliminate. Adversarial exception triggering via deeply nested tool call chains remains a documented residual risk. The Python exception model's implicit control-flow semantics make it structurally harder to achieve exception-side-channel immunity compared to languages with explicit error handling (e.g., Haskell's `Either`/`Result` types or Rust's `Result<T, E>`). **Milestone 4 strengthens the case for evaluating a Haskell or Rust DSL for the P-LLM code plan** as an alternative execution target that would eliminate the exception side-channel class entirely at the language level, rather than requiring layered mitigation. Evaluate feasibility as part of Milestone 5 planning. |
+| FW-2 | **Formal verification** | The CaMeL interpreter has grown substantially in Milestone 4 — STRICT mode propagation rules (M4-F1–F4), exception redaction engine (M4-F6–F9, M4-F17), allowlist enforcement (M4-F10–F14), and escalation detection (M4-F15–F16, M4-F18) all add non-trivial enforcement logic. **Milestone 4 increases the value of formal verification:** the more complex the enforcement logic, the greater the risk that an edge case in the implementation diverges from the intended security property. A machine-verified proof of interpreter correctness (e.g., using Coq or Lean) would close this gap and provide provable guarantees that complement the test suite. Recommended as a medium-priority research investment for Milestone 5. |
+| FW-6 | **ROP-analogue attack detection** | M4-F15/F16 close the single-step data-to-control escalation vector. The remaining challenge (L6 residual) is detecting whether a sequence of individually-approved tool calls constitutes a collectively malicious trace. Dependency graph analysis — tracking whether the combined data flow graph of a completed trace contains paths from untrusted sources to sensitive sinks — is a candidate technique. Recommend scoping a detection algorithm and prototype as part of Milestone 5. |
 
 ---
 
@@ -1362,6 +1405,12 @@ tests/
 | Operator Guide | [docs/manuals/operator-guide.md](manuals/operator-guide.md) |
 | Reference Policy Specification | [docs/policies/reference-policy-spec.md](policies/reference-policy-spec.md) |
 | M2 Exit Criteria Report | [docs/milestone-2-exit-criteria-report.md](milestone-2-exit-criteria-report.md) |
+| **Milestone 4 Design Document** | [docs/milestone4_design.md](milestone4_design.md) |
+| **Security Hardening Design Document** | [docs/security_hardening_allowlist.md](security_hardening_allowlist.md) |
+| **M4 Side-Channel Test Report** | [docs/reports/milestone4_side_channel_test_report.md](reports/milestone4_side_channel_test_report.md) |
+| M4 STRICT Mode Extension Design | [docs/design/milestone4-strict-mode-extension.md](design/milestone4-strict-mode-extension.md) |
+| M4 Exception Hardening Design | [docs/design/milestone4-exception-hardening.md](design/milestone4-exception-hardening.md) |
+| M4 Escalation Detection Design | [docs/design/milestone4-escalation-detection.md](design/milestone4-escalation-detection.md) |
 | ADR 001 — Q-LLM Isolation | [docs/adr/001-q-llm-isolation-contract.md](adr/001-q-llm-isolation-contract.md) |
 | ADR 002 — CaMeLValue | [docs/adr/002-camelvalue-capability-system.md](adr/002-camelvalue-capability-system.md) |
 | ADR 003 — Interpreter | [docs/adr/003-ast-interpreter-architecture.md](adr/003-ast-interpreter-architecture.md) |

