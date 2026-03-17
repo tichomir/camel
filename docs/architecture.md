@@ -669,6 +669,7 @@ tests/
 
 | Document | Location |
 |---|---|
+| API Reference | [docs/api/index.md](api/index.md) |
 | Product Requirements Document (PRD) | `docs/` (embedded in `CLAUDE.md`) |
 | Developer Guide | [docs/developer_guide.md](developer_guide.md) |
 | Operator Guide | [docs/manuals/operator-guide.md](manuals/operator-guide.md) |

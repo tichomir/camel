@@ -1,7 +1,7 @@
 # CaMeL — Capabilities for Machine Learning
 
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -176,6 +176,7 @@ for record in result.trace:
 
 | Document | Description |
 |---|---|
+| [API Reference](docs/api/index.md) | M2 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop |
 | [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model |
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
 | [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, known limitations |
