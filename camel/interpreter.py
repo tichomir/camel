@@ -106,7 +106,9 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal, Protocol
 
+from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
 from camel.dependency_graph import DependencyGraph, _InternalGraph
+from camel.exceptions import ForbiddenImportError, ForbiddenNameError
 from camel.value import (
     CaMeLValue,
     Public,
@@ -406,35 +408,84 @@ _CMPOP_MAP: dict[type[ast.cmpop], Callable[[Any, Any], Any]] = {
     ast.NotIn: lambda a, b: a not in b,
 }
 
-# Default builtin callables available to all CaMeLInterpreter instances.
-# All of these receive raw Python values and return raw Python values;
-# the interpreter wraps the return value with the union of argument capabilities.
-_DEFAULT_BUILTINS: dict[str, Callable[..., Any]] = {
-    "len": len,
-    "str": str,
-    "int": int,
-    "float": float,
-    "bool": bool,
-    "list": list,
-    "dict": dict,
-    "tuple": tuple,
-    "set": set,
-    "range": range,
-    "sorted": sorted,
-    "reversed": reversed,
-    "enumerate": enumerate,
-    "zip": zip,
-    "map": map,
-    "filter": filter,
-    "min": min,
-    "max": max,
-    "sum": sum,
-    "abs": abs,
-    "round": round,
-    "isinstance": isinstance,
-    "type": type,
-    "repr": repr,
-}
+# ---------------------------------------------------------------------------
+# Allowlist-derived builtin namespace (M4-F11 / M4-F12 / M4-F13)
+# ---------------------------------------------------------------------------
+# Built once at module import time from camel/config/allowlist.yaml.
+# Contains exactly the 15 names approved for use in P-LLM-generated code.
+# Any name in excluded_timing_names is guaranteed absent (defence-in-depth).
+_ALLOWLIST_BUILTINS: dict[str, Any] = build_permitted_namespace()
+
+# Names excluded for timing side-channel reasons — used by ForbiddenNameEvent
+# emission to annotate whether a blocked name is a timing primitive.
+_EXCLUDED_TIMING_NAMES: frozenset[str] = get_excluded_timing_names()
+
+
+# ---------------------------------------------------------------------------
+# Allowlist audit event dataclasses
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ForbiddenImportEvent:
+    """Audit log entry emitted when a :class:`~camel.exceptions.ForbiddenImportError` is raised.
+
+    One entry is appended to :attr:`CaMeLInterpreter.security_audit_log` for
+    every import statement detected in interpreter-executed code (M4-F10,
+    M4-F13).
+
+    Attributes
+    ----------
+    event_type:
+        Fixed discriminant — always ``"ForbiddenImport"``.
+    module_name:
+        The module name extracted from the ``import`` or ``from … import``
+        statement.
+    line_number:
+        1-based source line number of the offending statement.
+    timestamp:
+        UTC ISO-8601 timestamp at the moment the violation was detected.
+    error_message:
+        The string representation of the raised :class:`~camel.exceptions.ForbiddenImportError`.
+    """
+
+    event_type: Literal["ForbiddenImport"] = field(default="ForbiddenImport")
+    module_name: str = field(default="")
+    line_number: int = field(default=0)
+    timestamp: str = field(default="")
+    error_message: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ForbiddenNameEvent:
+    """Audit log entry emitted when a :class:`~camel.exceptions.ForbiddenNameError` is raised.
+
+    One entry is appended to :attr:`CaMeLInterpreter.security_audit_log` for
+    every disallowed name access in interpreter-executed code (M4-F14).
+
+    Attributes
+    ----------
+    event_type:
+        Fixed discriminant — always ``"ForbiddenNameAccess"``.
+    offending_name:
+        The exact identifier string from the ``ast.Name`` node.
+    line_number:
+        1-based source line number of the name access.
+    timestamp:
+        UTC ISO-8601 timestamp at the moment the violation was detected.
+    is_timing_primitive:
+        ``True`` when *offending_name* appears in the ``excluded_timing_names``
+        list in ``allowlist.yaml`` (M4-F12).
+    error_message:
+        The string representation of the raised :class:`~camel.exceptions.ForbiddenNameError`.
+    """
+
+    event_type: Literal["ForbiddenNameAccess"] = field(default="ForbiddenNameAccess")
+    offending_name: str = field(default="")
+    line_number: int = field(default=0)
+    timestamp: str = field(default="")
+    is_timing_primitive: bool = field(default=False)
+    error_message: str = field(default="")
 
 
 # ---------------------------------------------------------------------------
@@ -512,11 +563,12 @@ class CaMeLInterpreter:
         go through the policy engine (if set) before execution.
         Example: ``{"get_email": get_email_tool, "send_email": send_email_tool}``
     builtins:
-        Plain Python callables keyed by name.  These are called with raw
-        (unwrapped) argument values; the interpreter wraps the return value
-        with the union of all argument capabilities.  If ``builtins`` is
-        provided, it is **merged with** (and can override) the default builtin
-        set.  Pass ``{}`` to suppress all defaults.
+        Extra plain Python callables keyed by name.  These are merged **on
+        top of** the allowlist-derived permitted namespace loaded from
+        ``camel/config/allowlist.yaml`` (M4-F11).  Use this parameter to
+        inject additional callables needed by specific deployments or tests
+        without bypassing the allowlist for standard Python builtins.  Pass
+        ``{}`` to use the allowlist-derived set only.
     mode:
         Execution mode controlling side-channel capability propagation.
         Defaults to ``ExecutionMode.STRICT`` (recommended for production use).
@@ -584,9 +636,10 @@ class CaMeLInterpreter:
         --------------------
         - ``_store`` is initialised to ``{}``.
         - ``_tools`` is a copy of the ``tools`` argument (or ``{}`` if None).
-        - ``_builtins`` is the merge of ``_DEFAULT_BUILTINS`` with the
-          ``builtins`` argument.  Values in ``builtins`` override defaults of
-          the same name.
+        - ``_builtins`` starts from the allowlist-derived namespace
+          (``_ALLOWLIST_BUILTINS``) and is then updated with the caller-supplied
+          ``builtins`` argument.  The allowlist is the authoritative base;
+          extra callables injected via ``builtins`` extend it.
         - ``_mode``, ``_policy_engine``, ``_enforcement_mode``, and
           ``_consent_callback`` are stored as given.
         - ``ValueError`` is raised if ``enforcement_mode=PRODUCTION`` and
@@ -594,6 +647,8 @@ class CaMeLInterpreter:
         - ``_last_qllm_result_cv`` is a one-shot signal field set by
           ``_eval_Call`` when a Q-LLM tool returns, and consumed by
           ``_exec_statements`` to update the M4-F3/F4 tainting context.
+        - ``_security_audit_log`` records :class:`ForbiddenImportEvent` and
+          :class:`ForbiddenNameEvent` entries (M4-F10, M4-F14).
         """
         if enforcement_mode is EnforcementMode.PRODUCTION and consent_callback is None:
             raise ValueError(
@@ -602,7 +657,9 @@ class CaMeLInterpreter:
             )
         self._store: dict[str, CaMeLValue] = {}
         self._tools: dict[str, Callable[..., CaMeLValue]] = dict(tools) if tools else {}
-        merged_builtins: dict[str, Callable[..., Any]] = dict(_DEFAULT_BUILTINS)
+        # M4-F11 / M4-F12: start from the allowlist-derived namespace and
+        # merge in any caller-supplied extras.
+        merged_builtins: dict[str, Any] = dict(_ALLOWLIST_BUILTINS)
         if builtins is not None:
             merged_builtins.update(builtins)
         self._builtins = merged_builtins
@@ -612,6 +669,8 @@ class CaMeLInterpreter:
         self._consent_callback = consent_callback
         # Security audit log (NFR-6): one entry per policy evaluate() call.
         self._audit_log: list[AuditLogEntry] = []
+        # M4-F10 / M4-F14: allowlist violation events.
+        self._security_audit_log: list[ForbiddenImportEvent | ForbiddenNameEvent] = []
         # Dependency graph tracking state.
         self._dep_graph: _InternalGraph = _InternalGraph()
         # Set to a live set while evaluating an assignment RHS; None otherwise.
@@ -725,6 +784,23 @@ class CaMeLInterpreter:
         """
         return list(self._audit_log)
 
+    @property
+    def security_audit_log(
+        self,
+    ) -> list[ForbiddenImportEvent | ForbiddenNameEvent]:
+        """Return a snapshot of the allowlist-violation security audit log.
+
+        Contains one :class:`ForbiddenImportEvent` or :class:`ForbiddenNameEvent`
+        for every import statement or disallowed name access detected during
+        this interpreter session (M4-F10, M4-F14).
+
+        Returns
+        -------
+        list[ForbiddenImportEvent | ForbiddenNameEvent]
+            Shallow copy of the internal security audit log.
+        """
+        return list(self._security_audit_log)
+
     def get_dependency_graph(self, variable: str) -> DependencyGraph:
         """Return the dependency graph snapshot for *variable*.
 
@@ -776,9 +852,28 @@ class CaMeLInterpreter:
         Implementation notes
         --------------------
         1. Call ``ast.parse(code, mode="exec")`` to obtain a ``ast.Module``.
-        2. Call ``self._exec_statements(module.body, ctx_caps=None)``.
+        2. Walk the entire AST with ``ast.walk()`` to locate any
+           ``ast.Import`` or ``ast.ImportFrom`` nodes — these raise
+           :class:`~camel.exceptions.ForbiddenImportError` immediately,
+           before any statement is executed (M4-F10).
+        3. Call ``self._exec_statements(module.body, ctx_caps=None)``.
         """
         module = ast.parse(code, mode="exec")
+        # M4-F10: pre-scan the full AST for any import statement before
+        # executing anything, ensuring no side-effects occur prior to
+        # rejection — even imports in dead-code branches are blocked.
+        for node in ast.walk(module):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                module_name = self._extract_import_module_name(node)
+                lineno = getattr(node, "lineno", 0)
+                exc = ForbiddenImportError(module_name=module_name, lineno=lineno)
+                self._emit_allowlist_audit_event(
+                    event_type="ForbiddenImport",
+                    offending_name=module_name,
+                    line_number=lineno,
+                    error_message=str(exc),
+                )
+                raise exc
         self._exec_statements(module.body, ctx_caps=None)
 
     # ------------------------------------------------------------------
@@ -1235,6 +1330,7 @@ class CaMeLInterpreter:
         :meth:`_store_target`, not here.
         """
         name = node.id
+        lineno = getattr(node, "lineno", 0)
         if name in self._tools:
             return wrap(self._tools[name], sources=frozenset({"CaMeL"}), readers=Public)
         if name in self._builtins:
@@ -1244,7 +1340,15 @@ class CaMeLInterpreter:
             if self._tracking is not None:
                 self._tracking.add(name)
             return self._store[name]
-        raise NameError(f"name {name!r} is not defined")
+        # M4-F14: any name not in tools, builtins, or store is forbidden.
+        exc = ForbiddenNameError(name=name, lineno=lineno)
+        self._emit_allowlist_audit_event(
+            event_type="ForbiddenNameAccess",
+            offending_name=name,
+            line_number=lineno,
+            error_message=str(exc),
+        )
+        raise exc
 
     def _eval_BinOp(
         self,
@@ -1605,7 +1709,16 @@ class CaMeLInterpreter:
                 return self._wrap_builtin_result(all_arg_cvs, result_raw)
 
             else:
-                raise NameError(f"name {name!r} is not defined")
+                # M4-F14: callee name not in tools, builtins, or store.
+                lineno = getattr(func_node, "lineno", 0)
+                exc = ForbiddenNameError(name=name, lineno=lineno)
+                self._emit_allowlist_audit_event(
+                    event_type="ForbiddenNameAccess",
+                    offending_name=name,
+                    line_number=lineno,
+                    error_message=str(exc),
+                )
+                raise exc
 
         elif isinstance(func_node, ast.Attribute):
             obj_cv = self._eval(func_node.value, ctx_caps)
@@ -2048,6 +2161,76 @@ class CaMeLInterpreter:
         if cv.readers is not Public and cv.readers:
             return True
         return any(src not in self._TRUSTED_SOURCES for src in cv.sources)
+
+    @staticmethod
+    def _extract_import_module_name(node: ast.Import | ast.ImportFrom) -> str:
+        """Extract the top-level module name from an import AST node.
+
+        For ``import os`` → ``"os"``.
+        For ``from os import path`` → ``"os"``.
+        For ``from os.path import join`` → ``"os"``.
+
+        Parameters
+        ----------
+        node:
+            An ``ast.Import`` or ``ast.ImportFrom`` node.
+
+        Returns
+        -------
+        str
+            The top-level module name, or ``"<unknown>"`` if extraction fails.
+        """
+        if isinstance(node, ast.ImportFrom):
+            return node.module.split(".")[0] if node.module else "<unknown>"
+        # ast.Import: one or more aliased names, e.g. "import os, sys"
+        if node.names:
+            return node.names[0].name.split(".")[0]
+        return "<unknown>"
+
+    def _emit_allowlist_audit_event(
+        self,
+        event_type: str,
+        offending_name: str,
+        line_number: int,
+        error_message: str = "",
+    ) -> None:
+        """Append a :class:`ForbiddenImportEvent` or :class:`ForbiddenNameEvent` to the log.
+
+        Called immediately before raising :class:`~camel.exceptions.ForbiddenImportError`
+        or :class:`~camel.exceptions.ForbiddenNameError` so every violation is
+        observable in the security audit log (NFR-6, M4-F10, M4-F14).
+
+        Parameters
+        ----------
+        event_type:
+            ``"ForbiddenImport"`` or ``"ForbiddenNameAccess"``.
+        offending_name:
+            The module name (for imports) or identifier name (for name accesses).
+        line_number:
+            1-based source line number of the violation.
+        error_message:
+            String representation of the exception that will be raised.
+        """
+        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if event_type == "ForbiddenImport":
+            self._security_audit_log.append(
+                ForbiddenImportEvent(
+                    module_name=offending_name,
+                    line_number=line_number,
+                    timestamp=ts,
+                    error_message=error_message,
+                )
+            )
+        else:
+            self._security_audit_log.append(
+                ForbiddenNameEvent(
+                    offending_name=offending_name,
+                    line_number=line_number,
+                    timestamp=ts,
+                    is_timing_primitive=offending_name in _EXCLUDED_TIMING_NAMES,
+                    error_message=error_message,
+                )
+            )
 
     def _unsupported(self, node: ast.AST) -> UnsupportedSyntaxError:
         """Construct an :class:`UnsupportedSyntaxError` for *node*.

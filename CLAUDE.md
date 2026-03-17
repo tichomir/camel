@@ -931,3 +931,27 @@ Deliverables:
 - ✅ Update all project documentation for Milestone 4 exception hardening phase — Software Architect (⚡ Quick, 2 SP)
 
 ---
+### Milestone 4 — Module & Builtin Allowlist Enforcement | 2026-03-17 | 📋 reviewing | 18 SP
+**Goal:** [Phase: Module & Builtin Allowlist Enforcement]
+Lock down the interpreter execution environment by enforcing a strict allowlist of permitted Python builtins and blocking all import statements and timing primitives. This phase covers: raising ForbiddenImportError immediately for any import statement in P-LLM-generated code (M4-F10); exposing only the explicitly approved set of Python builtins in the interpreter namespace (M4-F11); excluding the time module and all timing primitives to close the timing side-channel vector (M4-F12); defining the allowlist in a central auditable configuration file with a documented security review process for any deviations (M4-F13); and raising ForbiddenNameError with the offending name for any access to a disallowed builtin or name (M4-F14).
+
+Deliverables:
+- ForbiddenImportError: immediate raise on any import statement in interpreter-executed code (M4-F10)
+- Builtin allowlist implementation: interpreter namespace restricted to approved set — len, range, list, dict, str, int, float, bool, set, isinstance, print, enumerate, zip, sorted, min, max (M4-F11)
+- Timing primitive exclusion: time module and all timing-related names removed from interpreter namespace (M4-F12)
+- Central allowlist configuration file (allowlist.yaml or equivalent) with inline documentation and security review gate (M4-F13)
+- ForbiddenNameError: raised with offending name for any disallowed name access (M4-F14)
+- Security hardening design document covering allowlist rationale, exclusion decisions, and residual risks
+- Unit test suite: ForbiddenImportError, ForbiddenNameError, and timing primitive exclusion
+- Updated PRD Section 6.3 (CaMeL Interpreter) and Section 7.3 documenting allowlist scope and timing side-channel mitigations
+- Updated NFR table (NFR-1) confirming sandboxed execution constraints
+- Updated Milestone 4 design document: allowlist section marked complete with audit trail
+
+**Delivered:**
+- ✅ Author allowlist.yaml configuration file with inline documentation — Software Architect (⚡ Quick, 2 SP)
+- ✅ Design allowlist enforcement architecture: ForbiddenImportError, ForbiddenNameError, and namespace restriction — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement ForbiddenImportError, ForbiddenNameError, builtin allowlist enforcement, and timing exclusion in interpreter — Backend Developer (◉ Deep, 8 SP)
+- ⏭ Write unit test suite for allowlist enforcement, ForbiddenImportError, ForbiddenNameError, and timing exclusion — Qa Engineer (◈ Standard, 3 SP)
+- ⏭ Update PRD Sections 6.3, 7.3, NFR-1 table, and publish security hardening design document — Software Architect (◈ Standard, 3 SP)
+
+---

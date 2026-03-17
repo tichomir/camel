@@ -1,0 +1,287 @@
+# =============================================================================
+# CaMeL Interpreter Builtin Allowlist Configuration
+# =============================================================================
+#
+# This file is the SINGLE SOURCE OF TRUTH for what names are permitted in the
+# CaMeL interpreter execution namespace. It is loaded at interpreter startup.
+#
+# Security model:
+#   The CaMeL interpreter executes P-LLM-generated pseudo-Python in a sandboxed
+#   environment. To prevent privilege escalation, timing side-channel attacks,
+#   and arbitrary code execution, only names explicitly enumerated below are
+#   available in the interpreter namespace. Any access to a name not in
+#   `permitted_builtins` raises ForbiddenNameError; any import statement raises
+#   ForbiddenImportError (M4-F10 through M4-F14).
+#
+# Security Review Gate:
+#   ANY modification to this file — additions, removals, or annotation changes —
+#   MUST go through the following process before being merged:
+#
+#   1. Open a pull request describing the change and its security rationale.
+#   2. A named security reviewer (see `review_gate.reviewers` below) must
+#      approve the PR with an explicit sign-off comment referencing this file.
+#   3. The rationale for the change must be added inline as a YAML comment on
+#      the affected entry.
+#   4. The `review_gate.last_reviewed` timestamp must be updated.
+#   5. If the change adds a new name, add a `risk_level` annotation
+#      (low | medium | high) and a one-line `justification`.
+#
+# Deviation Policy:
+#   Deviations from the allowlist are not supported at runtime. There is no
+#   override flag or environment variable that widens the permitted namespace.
+#   If a tool or workflow requires a name not in this list, the correct path is
+#   to register it as a CaMeL tool (giving it full capability and policy
+#   tracking) rather than exposing it as a raw builtin.
+#
+# =============================================================================
+
+# Review gate metadata — updated on every security-reviewed change.
+review_gate:
+  last_reviewed: "2026-03-17"
+  reviewers:
+    - "security-team"        # Any member of the security engineering team.
+    - "camel-maintainers"    # Any CaMeL core maintainer may also approve.
+  review_required: true      # Set to false only in dev/test forks; NEVER in prod.
+
+# =============================================================================
+# Section 1: Permitted Builtins (M4-F11)
+# =============================================================================
+#
+# These names are injected directly into the interpreter namespace at startup.
+# Each entry has been individually reviewed and approved for use in
+# P-LLM-generated code. They are limited to safe, pure data-manipulation
+# and control-flow primitives that cannot open files, spawn processes, or
+# communicate over the network.
+#
+# To add a name: follow the deviation policy above; add a `risk_level` and
+# `justification` comment on the new entry.
+#
+permitted_builtins:
+  # --- Type constructors ---
+  - name: list
+    risk_level: low
+    justification: >
+      Pure data structure constructor. No I/O or side-effects.
+
+  - name: dict
+    risk_level: low
+    justification: >
+      Pure data structure constructor. No I/O or side-effects.
+
+  - name: set
+    risk_level: low
+    justification: >
+      Pure data structure constructor. No I/O or side-effects.
+
+  - name: str
+    risk_level: low
+    justification: >
+      String type and constructor. No I/O or side-effects.
+
+  - name: int
+    risk_level: low
+    justification: >
+      Integer type and constructor. No I/O or side-effects.
+
+  - name: float
+    risk_level: low
+    justification: >
+      Float type and constructor. No I/O or side-effects.
+
+  - name: bool
+    risk_level: low
+    justification: >
+      Boolean type and constructor. No I/O or side-effects.
+
+  # --- Introspection / type-checking ---
+  - name: isinstance
+    risk_level: low
+    justification: >
+      Type-checking only; read-only introspection, no side-effects.
+
+  # --- Sequence utilities ---
+  - name: len
+    risk_level: low
+    justification: >
+      Returns length of a sequence. No I/O or side-effects.
+
+  - name: range
+    risk_level: low
+    justification: >
+      Generates integer sequences for iteration. No I/O or side-effects.
+
+  - name: enumerate
+    risk_level: low
+    justification: >
+      Wraps an iterable with index counters. No I/O or side-effects.
+
+  - name: zip
+    risk_level: low
+    justification: >
+      Aggregates iterables element-wise. No I/O or side-effects.
+
+  - name: sorted
+    risk_level: low
+    justification: >
+      Returns a sorted list; pure functional operation. No I/O or side-effects.
+
+  - name: min
+    risk_level: low
+    justification: >
+      Returns the minimum element; pure functional operation. No I/O.
+
+  - name: max
+    risk_level: low
+    justification: >
+      Returns the maximum element; pure functional operation. No I/O.
+
+  # --- Output ---
+  - name: print
+    risk_level: low
+    justification: >
+      Routed to a separate display channel by the interpreter (M2-F10); never
+      written to the execution trace or P-LLM context. Allows P-LLM plans to
+      surface intermediate results to the user without security consequence.
+
+# =============================================================================
+# Section 2: Excluded Timing Names (M4-F12)
+# =============================================================================
+#
+# The names below are EXPLICITLY EXCLUDED from the interpreter namespace.
+# They are listed here (rather than simply omitted) to document the security
+# rationale and to make the exclusion auditable.
+#
+# Threat model for timing side channels:
+#   An adversary who controls tool return values (untrusted data) could craft
+#   inputs that cause the interpreter to branch differently depending on a
+#   secret value (e.g., a private token). If timing primitives were available,
+#   the adversary could measure wall-clock or CPU time to infer those branches,
+#   recovering the secret without ever reading the variable directly.
+#   Excluding ALL timing primitives eliminates this entire attack class at the
+#   namespace level (see PRD Section 7.3 and NFR-1).
+#
+# If a CaMeL tool legitimately requires a timestamp (e.g., calendar tools),
+# it must obtain that value inside its own implementation and return it as a
+# CaMeLValue — it must NOT be obtained by P-LLM-generated code calling a
+# timing primitive directly.
+#
+excluded_timing_names:
+  # --- Standard library `time` module and its functions ---
+  - name: time
+    category: stdlib_module
+    rationale: >
+      The `time` module is the primary source of all timing primitives.
+      Blocking the module import and the bare name `time` prevents any
+      access regardless of import alias tricks.
+
+  - name: sleep
+    category: stdlib_function
+    rationale: >
+      `time.sleep` creates measurable delays; an attacker-controlled loop
+      count could encode a secret value in total wall-clock duration.
+
+  - name: monotonic
+    category: stdlib_function
+    rationale: >
+      `time.monotonic` provides a high-resolution monotonic clock;
+      directly usable for timing side-channel measurement.
+
+  - name: perf_counter
+    category: stdlib_function
+    rationale: >
+      `time.perf_counter` is the highest-resolution wall-clock timer in
+      CPython; primary tool for precision timing attacks.
+
+  - name: process_time
+    category: stdlib_function
+    rationale: >
+      `time.process_time` measures CPU time; useful for side-channel
+      analysis that is independent of system load.
+
+  - name: clock
+    category: stdlib_function_deprecated
+    rationale: >
+      Deprecated in Python 3.3, removed in 3.8; included for completeness
+      in case of backport or monkey-patching scenarios.
+
+  - name: time_ns
+    category: stdlib_function
+    rationale: >
+      Nanosecond-resolution variant of `time.time`; excluded for the same
+      reason as `perf_counter`.
+
+  - name: perf_counter_ns
+    category: stdlib_function
+    rationale: >
+      Nanosecond-resolution variant of `perf_counter`; highest possible
+      timing resolution available in CPython.
+
+  - name: gmtime
+    category: stdlib_function
+    rationale: >
+      Converts a timestamp to UTC struct_time; excluded to prevent
+      timestamp-based covert channel construction.
+
+  - name: localtime
+    category: stdlib_function
+    rationale: >
+      Converts a timestamp to local struct_time; same rationale as gmtime.
+
+  - name: mktime
+    category: stdlib_function
+    rationale: >
+      Converts struct_time to a timestamp float; inverse of localtime;
+      excluded to prevent timestamp arithmetic in P-LLM code.
+
+  - name: strftime
+    category: stdlib_function
+    rationale: >
+      Formats a timestamp as a string; excluded to prevent timestamp
+      values from being embedded in strings passed to tool arguments.
+
+  - name: strptime
+    category: stdlib_function
+    rationale: >
+      Parses a timestamp string; excluded alongside strftime for
+      symmetry and to prevent timestamp value extraction.
+
+  # --- `datetime` module timing types ---
+  - name: timezone
+    category: datetime_class
+    rationale: >
+      `datetime.timezone` is a tzinfo subclass for UTC offsets; excluded
+      to prevent timestamp-aware datetime construction in P-LLM code.
+
+  - name: timedelta
+    category: datetime_class
+    rationale: >
+      `datetime.timedelta` represents a duration; could be used to compute
+      elapsed time and leak secret-correlated branch counts.
+
+  - name: datetime
+    category: datetime_class
+    rationale: >
+      `datetime.datetime` provides `datetime.now()` and `datetime.utcnow()`,
+      both of which are timing primitives; excluded in its entirety.
+      Calendar/scheduling tools should accept and return ISO-8601 strings,
+      not datetime objects.
+
+# =============================================================================
+# Section 3: Forbidden Constructs (supplementary documentation)
+# =============================================================================
+#
+# The following Python constructs are blocked at the AST level (not just by
+# name exclusion) and are listed here for audit completeness. They are
+# enforced by UnsupportedSyntaxError / ForbiddenImportError before namespace
+# lookup even occurs.
+#
+# - `import` / `from ... import` statements → ForbiddenImportError (M4-F10)
+# - `__import__()` builtin call → blocked via builtin exclusion (M4-F11)
+# - `exec()` / `eval()` → blocked via builtin exclusion (M4-F11)
+# - `open()` / `io.*` → blocked via builtin exclusion (M4-F11)
+# - `os.*` / `sys.*` / `subprocess.*` → blocked via import ban (M4-F10)
+# - `__builtins__` attribute access → ForbiddenNameError (M4-F14)
+#
+# None of these names appear in `permitted_builtins`; accessing them raises
+# ForbiddenNameError with the offending name included in the error message.
+#

@@ -1,0 +1,564 @@
+# Milestone 4 — Design Document
+
+_Author: Software Architect | Date: 2026-03-17 | Status: In Progress_
+
+---
+
+## Overview
+
+This document consolidates all Milestone 4 design specifications.  It is
+structured as a set of named sections, one per Milestone 4 feature cluster.
+Each section gates the corresponding implementation sprint.
+
+| Section | Features | Status |
+|---|---|---|
+| [1. STRICT Mode Extension](#1-strict-mode-extension) | M4-F1 – F5 | ✅ Implemented |
+| [2. Exception Hardening & Redaction](#2-exception-hardening--redaction) | M4-F6 – F9, M4-F17 | ✅ Implemented |
+| [3. Module & Builtin Allowlist Enforcement](#3-module--builtin-allowlist-enforcement) | M4-F10 – F14 | 🔲 This sprint |
+
+The complete feature register is maintained in the CLAUDE.md sprint history.
+
+---
+
+## 1. STRICT Mode Extension
+
+See the dedicated design document:
+[`docs/design/milestone4-strict-mode-extension.md`](design/milestone4-strict-mode-extension.md)
+
+---
+
+## 2. Exception Hardening & Redaction
+
+See the CLAUDE.md sprint record for M4-F6 through M4-F9 and M4-F17, which
+have been fully implemented and verified.  Implementation lives in
+`camel/interpreter.py`.
+
+---
+
+## 3. Module & Builtin Allowlist Enforcement
+
+_Status: Design complete — gates implementation sprint_
+
+### 3.1 Motivation
+
+The CaMeL interpreter executes P-LLM-generated pseudo-Python code.  Without
+explicit namespace restriction, adversarially crafted code could:
+
+- Import arbitrary stdlib or third-party modules (`import os`, `import subprocess`)
+  to escape the sandbox.
+- Access timing primitives (`time.perf_counter`, `datetime.now`) to mount
+  timing side-channel attacks against secret values in the interpreter store.
+- Call dangerous builtins (`exec`, `eval`, `open`, `__import__`) to achieve
+  arbitrary code execution or file-system access.
+
+The allowlist enforcement layer closes these vectors at the AST level (import
+ban) and at the namespace level (builtin restriction), providing defence in
+depth independently of any policy or capability rules.
+
+This design covers five sub-features:
+
+| ID | Description |
+|---|---|
+| M4-F10 | `ForbiddenImportError` on any `import` / `from … import` statement |
+| M4-F11 | Interpreter namespace restricted to approved builtin set |
+| M4-F12 | Timing primitives excluded from namespace at construction time |
+| M4-F13 | Central auditable configuration (`allowlist.yaml`) with review gate |
+| M4-F14 | `ForbiddenNameError` with offending name for any disallowed name access |
+
+---
+
+### 3.2 Exception Class Signatures
+
+Two new exception classes are introduced.  Both are defined in
+`camel/exceptions.py` and exported via `camel/__init__.py`.
+
+#### 3.2.1 `ForbiddenImportError`
+
+Raised immediately when the AST walker encounters any `ast.Import` or
+`ast.ImportFrom` node before any execution of that node occurs.
+
+```python
+class ForbiddenImportError(Exception):
+    """Raised when P-LLM-generated code contains an import statement.
+
+    Import statements are unconditionally forbidden in the CaMeL interpreter
+    execution environment (M4-F10).  The exception is raised at AST-walk time
+    before any module loading occurs.
+
+    Attributes
+    ----------
+    module_name:
+        The raw name string from the import statement (e.g. ``"os"`` for
+        ``import os``; ``"time"`` for ``from time import sleep``).
+        Set to ``"<unknown>"`` when the AST node carries no name.
+    line_number:
+        The 1-based source line number of the offending ``import`` statement,
+        taken directly from ``node.lineno``.
+    message:
+        Human-readable description: ``"import statements are forbidden in
+        CaMeL execution context: '<module_name>' at line <line_number>"``.
+    """
+
+    def __init__(self, module_name: str, line_number: int) -> None:
+        self.module_name = module_name
+        self.line_number = line_number
+        self.message = (
+            f"import statements are forbidden in CaMeL execution context: "
+            f"{module_name!r} at line {line_number}"
+        )
+        super().__init__(self.message)
+```
+
+#### 3.2.2 `ForbiddenNameError`
+
+Raised when the interpreter's name-resolution path encounters a name that is
+neither a user-defined variable in the current store nor a name in the
+permitted-builtin namespace.
+
+```python
+class ForbiddenNameError(Exception):
+    """Raised when P-LLM-generated code accesses a disallowed name (M4-F14).
+
+    This is raised after the interpreter confirms the name is absent from
+    both the variable store and the permitted-builtin namespace.  The
+    offending name is included verbatim to aid debugging without leaking
+    secret values (the name is P-LLM-generated code text, not a runtime
+    value).
+
+    Attributes
+    ----------
+    offending_name:
+        The exact identifier string from the ``ast.Name`` node
+        (e.g. ``"time"``, ``"eval"``, ``"__builtins__"``).
+    line_number:
+        The 1-based source line number of the name access.
+    message:
+        Human-readable description: ``"name '<offending_name>' is not
+        permitted in the CaMeL execution namespace (line <line_number>)"``.
+    """
+
+    def __init__(self, offending_name: str, line_number: int) -> None:
+        self.offending_name = offending_name
+        self.line_number = line_number
+        self.message = (
+            f"name {offending_name!r} is not permitted in the CaMeL "
+            f"execution namespace (line {line_number})"
+        )
+        super().__init__(self.message)
+```
+
+---
+
+### 3.3 M4-F10 — Import Statement Interception
+
+#### 3.3.1 Hook location
+
+The AST walker in `CaMeLInterpreter` dispatches each statement node through a
+`_exec_<NodeType>` method.  Two new dispatch targets are added:
+
+```
+_exec_Import(node: ast.Import)
+_exec_ImportFrom(node: ast.ImportFrom)
+```
+
+Both are inserted **at the top of the dispatch table**, ensuring they are
+reached before any other handler.
+
+#### 3.3.2 Execution semantics
+
+```
+_exec_Import(node):
+    module_name = node.names[0].name if node.names else "<unknown>"
+    raise ForbiddenImportError(module_name, node.lineno)
+
+_exec_ImportFrom(node):
+    module_name = node.module or "<unknown>"
+    raise ForbiddenImportError(module_name, node.lineno)
+```
+
+- The raise occurs **before any module loading** — the CPython `import`
+  machinery is never invoked.
+- `__import__` is excluded from the permitted-builtin set (M4-F11), so
+  indirect import via `__import__("os")` is also blocked.
+- `importlib` is not in the permitted-builtin set, closing that vector too.
+
+#### 3.3.3 Interaction with the retry loop
+
+`ForbiddenImportError` is treated identically to `UnsupportedSyntaxError`
+by the execution loop: it is a **hard failure** that increments the retry
+counter.  The exception type and line number are forwarded to the P-LLM
+regeneration prompt; the module name string is considered a P-LLM code
+artefact (trusted), so it is **not** redacted.
+
+---
+
+### 3.4 M4-F11 / M4-F12 — Permitted Builtin Namespace Construction
+
+#### 3.4.1 Allowlist source
+
+The single source of truth is `camel/config/allowlist.yaml`.  Its structure
+and security review gate are described in §3.6 (M4-F13).
+
+At interpreter startup, the namespace is constructed once and stored as an
+instance attribute:
+
+```
+_permitted_namespace: dict[str, object]
+```
+
+#### 3.4.2 Construction flow (step by step)
+
+```
+Step 1 — Load allowlist.yaml
+    loader = AllowlistLoader("camel/config/allowlist.yaml")
+    config = loader.load()          # returns validated AllowlistConfig
+
+Step 2 — Resolve permitted builtin names
+    permitted_names: set[str] = {entry.name for entry in config.permitted_builtins}
+
+Step 3 — Identify excluded timing names
+    excluded_names: set[str] = {entry.name for entry in config.excluded_timing_names}
+
+Step 4 — Verify invariant: permitted ∩ excluded = ∅
+    assert permitted_names.isdisjoint(excluded_names), \
+        "Allowlist integrity violation: timing name appears in permitted set"
+
+Step 5 — Resolve Python builtin objects for permitted names
+    import builtins as _builtins_module
+    raw_builtins: dict[str, object] = vars(_builtins_module)
+
+    namespace: dict[str, object] = {}
+    for name in permitted_names:
+        if name not in raw_builtins:
+            raise AllowlistConfigurationError(
+                f"Permitted builtin {name!r} not found in Python builtins"
+            )
+        namespace[name] = raw_builtins[name]
+
+Step 6 — Explicitly remove all excluded timing names (defence in depth)
+    for name in excluded_names:
+        namespace.pop(name, None)   # no-op if already absent
+
+Step 7 — Freeze the namespace
+    self._permitted_namespace = namespace   # stored; never mutated after init
+```
+
+#### 3.4.3 Timing primitive exclusion rationale (M4-F12)
+
+The `excluded_timing_names` list in `allowlist.yaml` enumerates every name
+that could be used to measure wall-clock or CPU time.  These names are:
+
+- Never added to `namespace` in Step 5 (they are not in `permitted_builtins`).
+- Explicitly popped in Step 6 as a defence-in-depth measure.
+- Documented in `allowlist.yaml` with per-entry security rationale.
+
+The threat addressed: an adversary controlling tool return values could craft
+inputs that cause the interpreter to take secret-dependent branches (e.g., a
+conditional on a private token value).  If timing primitives were available,
+the adversary could measure execution time to distinguish branches, recovering
+the secret without reading it directly.  Full exclusion eliminates this attack
+class at the namespace level, complementing the STRICT mode propagation rules
+that prevent timing-correlated capability leakage.
+
+Note: this does **not** prevent all timing side channels (see §3.8 Residual
+Risks); it eliminates only the direct timing-primitive vector.
+
+#### 3.4.4 `__builtins__` injection
+
+During code execution, the interpreter does **not** use Python's native
+`exec()` or `eval()` built-ins (which would inherit the process `__builtins__`).
+Instead, the AST is walked manually by `_eval_*` and `_exec_*` methods.
+The `_permitted_namespace` dict is consulted directly during name resolution
+(§3.5).  There is therefore no `__builtins__` dict that needs to be patched;
+the permitted-builtin namespace is enforced structurally, not via Python's
+built-in scoping mechanism.
+
+---
+
+### 3.5 M4-F14 — Name Lookup and `ForbiddenNameError`
+
+#### 3.5.1 Resolution order
+
+All `ast.Name` nodes in Load context pass through `_eval_Name`:
+
+```
+_eval_Name(node: ast.Name) -> CaMeLValue:
+
+    name = node.id
+    line = node.lineno
+
+    # 1. Check variable store (user-defined variables take precedence)
+    if name in self._store:
+        return self._store[name]
+
+    # 2. Check permitted-builtin namespace
+    if name in self._permitted_namespace:
+        raw = self._permitted_namespace[name]
+        return wrap(raw, sources=frozenset({"CaMeL"}), readers=Public)
+
+    # 3. Name not found in either scope → forbidden
+    self._emit_allowlist_audit_event(
+        event_type="ForbiddenNameAccess",
+        offending_name=name,
+        line_number=line,
+    )
+    raise ForbiddenNameError(name, line)
+```
+
+#### 3.5.2 Design rationale for resolution order
+
+User-defined variables are checked first because:
+
+- They are the primary purpose of the variable store.
+- They are always `CaMeLValue` instances; no ambiguity with builtins.
+- A P-LLM-generated variable named `len` (though unusual) should shadow the
+  builtin, consistent with Python semantics.
+
+Permitted builtins are checked second to provide a clear, auditable boundary:
+any name not in `_store` and not in `_permitted_namespace` is forbidden.
+
+#### 3.5.3 Builtin call wrapping
+
+When `_eval_Name` returns a builtin callable (Step 2 above), the raw Python
+function is wrapped in a `CaMeLValue` with `sources=frozenset({"CaMeL"})`.
+At `ast.Call` evaluation time (`_eval_Call`), the builtin is detected
+(not a registered CaMeL tool) and called directly.  The result is wrapped
+using the union of all argument capabilities — consistent with the existing
+"builtin calls" wrapping rule documented in the interpreter module docstring.
+
+---
+
+### 3.6 M4-F13 — Central Allowlist Configuration (`allowlist.yaml`)
+
+#### 3.6.1 File location and ownership
+
+```
+camel/config/allowlist.yaml
+```
+
+This file is the **single source of truth** for the permitted-builtin set
+and the excluded-timing-name set.  It is checked into version control and
+subject to the review gate described below.
+
+#### 3.6.2 Schema
+
+```yaml
+review_gate:
+  last_reviewed: "<ISO-8601 date>"
+  reviewers:
+    - "<team or individual>"
+  review_required: true | false
+
+permitted_builtins:
+  - name: "<builtin name>"
+    risk_level: low | medium | high
+    justification: "<one-line security rationale>"
+
+excluded_timing_names:
+  - name: "<name>"
+    category: stdlib_module | stdlib_function | datetime_class | ...
+    rationale: "<security rationale>"
+```
+
+The file already exists with this schema and is fully populated.  See
+`camel/config/allowlist.yaml` for the current contents.
+
+#### 3.6.3 Security review gate
+
+ANY modification to `allowlist.yaml` — additions, removals, or annotation
+changes — MUST follow this process before merging:
+
+1. Open a pull request describing the change and its security rationale.
+2. A named reviewer from `review_gate.reviewers` approves with an explicit
+   sign-off comment referencing this file.
+3. The rationale for the change is added inline as a YAML comment on the
+   affected entry.
+4. `review_gate.last_reviewed` is updated to the review date.
+5. New entries carry a `risk_level` annotation (low / medium / high) and a
+   one-line `justification`.
+
+There is no runtime override flag that widens the permitted namespace.  Any
+workflow requiring a name not in the allowlist must register the name as a
+CaMeL tool with full capability and policy tracking.
+
+#### 3.6.4 Loader implementation
+
+A dedicated `AllowlistLoader` class in `camel/config/__init__.py` (or a
+new `camel/config/loader.py`) is responsible for:
+
+- Parsing `allowlist.yaml` using `PyYAML` (or `ruamel.yaml`).
+- Validating the parsed structure against a `AllowlistConfig` Pydantic model.
+- Raising `AllowlistConfigurationError` (a subclass of `RuntimeError`) on
+  any structural violation, preventing the interpreter from starting in a
+  misconfigured state.
+- Caching the parsed config at module import time (module-level singleton)
+  so that repeated interpreter construction does not re-read the file.
+
+---
+
+### 3.7 Audit Log Schema for Allowlist Violation Events
+
+All allowlist enforcement events are written to the CaMeL security audit log
+(the same sink used for policy evaluation events per NFR-6).  Two event types
+are defined.
+
+#### 3.7.1 `ForbiddenImportEvent`
+
+```python
+@dataclass
+class ForbiddenImportEvent:
+    """Audit log entry emitted when a ForbiddenImportError is raised."""
+
+    event_type: Literal["ForbiddenImport"] = "ForbiddenImport"
+    # The module name extracted from the import statement.
+    module_name: str = ""
+    # 1-based source line number of the offending import statement.
+    line_number: int = 0
+    # UTC timestamp at the moment the violation was detected.
+    timestamp: str = ""   # ISO-8601, e.g. "2026-03-17T20:51:41Z"
+    # The full exception message (safe to log: contains only P-LLM code text).
+    error_message: str = ""
+```
+
+#### 3.7.2 `ForbiddenNameEvent`
+
+```python
+@dataclass
+class ForbiddenNameEvent:
+    """Audit log entry emitted when a ForbiddenNameError is raised."""
+
+    event_type: Literal["ForbiddenNameAccess"] = "ForbiddenNameAccess"
+    # The exact identifier string from the ast.Name node.
+    offending_name: str = ""
+    # 1-based source line number of the name access.
+    line_number: int = 0
+    # UTC timestamp at the moment the violation was detected.
+    timestamp: str = ""   # ISO-8601
+    # Whether the name appears in the excluded_timing_names list.
+    is_timing_primitive: bool = False
+    # The full exception message.
+    error_message: str = ""
+```
+
+#### 3.7.3 Emission point
+
+Both events are emitted inside the `_emit_allowlist_audit_event` helper,
+called immediately before the corresponding exception is raised:
+
+```
+_emit_allowlist_audit_event(
+    event_type:      "ForbiddenImport" | "ForbiddenNameAccess",
+    offending_name:  str,   # module_name for Import events
+    line_number:     int,
+    is_timing_primitive: bool = False,
+) -> None
+```
+
+The helper constructs the appropriate dataclass, serialises it to JSON, and
+writes it to the audit log sink (same path as `RedactionAuditEvent`).  This
+ensures all violation events are observable in the same log stream, supporting
+NFR-6 (observability) without requiring a separate log configuration.
+
+---
+
+### 3.8 Namespace Construction — Sequence Diagram
+
+```
+CaMeLInterpreter.__init__()
+  │
+  ├─► AllowlistLoader.load("camel/config/allowlist.yaml")
+  │     ├─ Parse YAML
+  │     ├─ Validate via AllowlistConfig (Pydantic)
+  │     └─ Return AllowlistConfig
+  │
+  ├─► Build permitted_names set from config.permitted_builtins
+  ├─► Build excluded_names set from config.excluded_timing_names
+  ├─► Assert permitted_names ∩ excluded_names = ∅
+  ├─► Resolve each permitted_name against vars(builtins)
+  ├─► Pop any excluded_names from resolved dict (defence-in-depth)
+  ├─► Store as self._permitted_namespace (immutable after this point)
+  │
+  └─► (interpreter ready for exec() calls)
+
+CaMeLInterpreter.exec(code: str)
+  │
+  ├─► ast.parse(code)
+  ├─► For each statement node:
+  │     ├─ ast.Import / ast.ImportFrom
+  │     │     └─► _exec_Import / _exec_ImportFrom
+  │     │           ├─ emit ForbiddenImportEvent to audit log
+  │     │           └─ raise ForbiddenImportError(module_name, lineno)
+  │     │
+  │     └─ (other statement types → existing handlers)
+  │
+  └─► For each ast.Name(ctx=Load) in expression evaluation:
+        └─► _eval_Name(node)
+              ├─ Check self._store → return if found
+              ├─ Check self._permitted_namespace → return wrapped if found
+              ├─ emit ForbiddenNameEvent to audit log
+              └─ raise ForbiddenNameError(name, lineno)
+```
+
+---
+
+### 3.9 Residual Risks
+
+> **NG4 (PRD §3.2):** CaMeL does not guarantee side-channel immunity in all
+> configurations.  Timing channels are partially mitigated, not eliminated.
+
+The allowlist enforcement layer (M4-F10 – F14) addresses the **direct**
+timing side-channel vector: P-LLM code cannot call `time.sleep`,
+`time.perf_counter`, or any other timing primitive because those names are
+absent from the permitted namespace.
+
+The following **residual risks** remain and are explicitly out of scope for
+this feature cluster:
+
+| Risk | Description | Mitigation Status |
+|---|---|---|
+| **Indirect timing via iteration count** | Adversary-controlled loop count encodes a secret in total execution time without any explicit timing call. Excluded timing names do not prevent this. | Not mitigated by allowlist; partially addressed by STRICT mode (M4-F1/F2) propagating taint to loop-derived values. |
+| **Interpreter overhead variation** | CPython instruction dispatch time varies by expression complexity; a sufficiently precise external observer could infer branch counts. | Not mitigated; acknowledged in PRD §10 L3 and §7.3. |
+| **Tool implementation timing leakage** | Registered CaMeL tools may internally use timing-sensitive operations (e.g., database lookups proportional to secret size). | Out of scope; tool implementers must apply constant-time techniques independently. |
+| **Process-level timing observability** | An OS-level attacker can measure process CPU time via `/proc` or equivalent, bypassing namespace exclusion entirely. | Out of scope (assumes untrusted process isolation at the OS level). |
+| **`__import__` alias attacks** | If a future allowlist change inadvertently admits `__import__`, the import ban is bypassed. | Mitigated by the review gate (§3.6.3) and the `assert permitted ∩ excluded = ∅` invariant check at startup. |
+
+The allowlist enforcement layer is therefore a **necessary but not sufficient**
+defence against all timing side channels.  It is designed as one layer in a
+defence-in-depth stack alongside STRICT mode propagation (M4-F1 – F4) and the
+exception redaction engine (M4-F6 – F9).
+
+---
+
+### 3.10 Implementation Notes for Implementers
+
+1. **`ForbiddenImportError` and `ForbiddenNameError`** must be added to
+   `camel/exceptions.py` and re-exported from `camel/__init__.py`.
+
+2. **`AllowlistLoader`** may use `pyyaml` (already a transitive dependency
+   via `anthropic`).  If `pyyaml` is not available, `tomllib` (stdlib,
+   Python 3.11+) is an alternative if the config is converted to TOML.
+   Prefer `pyyaml` to keep the existing YAML format.
+
+3. **Interpreter dispatch** — the `_exec_*` dispatch mechanism (likely a
+   `getattr(self, f"_exec_{type(node).__name__}", self._unsupported)(node)`
+   pattern) will naturally route `ast.Import` and `ast.ImportFrom` to the
+   new handlers without touching existing code paths.
+
+4. **`_eval_Name` modification** — the existing load-context handler checks
+   `self._store`.  The new code adds a second check against
+   `self._permitted_namespace` before raising `ForbiddenNameError`.  The
+   existing `UnsupportedSyntaxError` path for Store/Del contexts is
+   unchanged.
+
+5. **Test coverage requirements** (per acceptance criteria):
+   - `ForbiddenImportError` for `import os`, `from time import sleep`,
+     `import sys as system`, `from __future__ import annotations`.
+   - `ForbiddenNameError` for `eval`, `exec`, `open`, `__builtins__`,
+     `time`, `datetime`, and any other name absent from the allowlist.
+   - Positive cases: all 16 permitted builtins (`len`, `range`, `list`,
+     `dict`, `str`, `int`, `float`, `bool`, `set`, `isinstance`, `print`,
+     `enumerate`, `zip`, `sorted`, `min`, `max`) are accessible.
+   - Timing primitive exclusion: `time`, `sleep`, `perf_counter`,
+     `datetime`, `timedelta` each raise `ForbiddenNameError`.
+   - Audit log emission: both event types are written to the audit sink on
+     violation.

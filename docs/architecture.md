@@ -1,6 +1,6 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.4.1 (Milestone 4 — Exception Hardening)
+**Version:** 0.4.2 (Milestone 4 — Module & Builtin Allowlist Enforcement)
 **Date:** 2026-03-17
 **Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
@@ -158,6 +158,39 @@ Custom AST-walking interpreter for a restricted Python subset.
 | Exception redaction | Dependency-graph-aware taint check (M4-F6): failing statement's dependency graph consulted; untrusted-tainted messages replaced with `[REDACTED]` (`message=None` in `RedactedError`) |
 | Loop-body propagation | In STRICT mode, exceptions inside a non-public-iterable `for`-loop body carry the iterable's dependency set into the retry cycle (M4-F9) |
 | Redaction audit log | Every redaction decision emitted as `RedactionAuditEvent` to the security audit log (M4-F17) |
+| Import blocking | Any `import` / `from … import` statement raises `ForbiddenImportError` at AST-walk time before any module loading occurs (M4-F10) |
+| Builtin allowlist | Interpreter namespace restricted to 16 approved names; any other name access raises `ForbiddenNameError` with the offending identifier (M4-F11, M4-F14) |
+| Timing exclusion | `time`, `datetime`, and all timing primitives excluded from namespace at construction time, closing the direct timing side-channel vector (M4-F12) |
+| Allowlist config | Single source of truth: `camel/config/allowlist.yaml`; subject to mandatory security review gate before any modification (M4-F13) |
+
+**Restricted builtin namespace (M4-F11) — approved names:**
+
+| Category | Names |
+|---|---|
+| Type constructors | `list`, `dict`, `set`, `str`, `int`, `float`, `bool` |
+| Type checking | `isinstance` |
+| Sequence utilities | `len`, `range`, `enumerate`, `zip`, `sorted`, `min`, `max` |
+| Output | `print` (routed to display channel, never to P-LLM context — M2-F10) |
+
+Any name absent from the above 16-entry set — including `eval`, `exec`, `open`,
+`__import__`, `__builtins__`, `time`, `datetime`, `os`, `sys` — raises
+`ForbiddenNameError(name, lineno)` with the offending identifier included verbatim.
+
+**Exception classes (M4-F10, M4-F14):**
+
+```python
+class ForbiddenImportError(Exception):
+    module_name: str   # e.g. "os", "time"
+    lineno: int        # 1-based source line of the import statement
+
+class ForbiddenNameError(NameError):
+    name: str          # exact identifier from ast.Name node
+    lineno: int        # 1-based source line of the name access
+```
+
+Both exceptions are defined in `camel/exceptions.py` and exported via `camel/__init__.py`.
+Violation events are written to the security audit log as `ForbiddenImportEvent` and
+`ForbiddenNameEvent` dataclasses respectively (NFR-6).
 
 **Restricted grammar — supported:**
 
@@ -173,7 +206,7 @@ Expressions: constants, Name, BinOp, UnaryOp, BoolOp, Compare,
 |---|---|
 | `while` | Unbounded iteration; timing side-channel |
 | `def`, `class`, `lambda` | Arbitrary code outside P-LLM plan |
-| `import` | Arbitrary module access |
+| `import` / `from … import` | Blocked by `ForbiddenImportError` (M4-F10) before any module loading |
 | `try` / `except` / `raise` | Exception side-channel |
 | `with` / `async with` | Context manager side effects |
 | Comprehensions | Hard to taint-track; lazy evaluation |
@@ -741,7 +774,13 @@ CaMeL's design prevents this by ensuring:
 - Text-to-text manipulation with no data/control flow consequence
 - Prompt-injection-induced phishing (link-click attacks)
 - Fully compromised user prompt
-- Timing side-channels beyond control-flow taint (e.g. network latency observation)
+- **Timing side-channels (partial mitigation):** The `time` module and all timing
+  primitives (`time.sleep`, `time.perf_counter`, `datetime.now`, etc.) are excluded
+  from the interpreter namespace as of M4-F12, eliminating the *direct* timing
+  side-channel vector.  Residual timing channels — indirect iteration-count channels,
+  CPython instruction-dispatch variance, tool-implementation timing leakage, and
+  OS-level process-time observation — remain out of scope per NG4 (PRD §3.2).
+  See `docs/security_hardening_allowlist.md §5` for the full residual risk catalogue.
 - Formal verification of interpreter correctness (future work — FW-2)
 
 ### 10.5 Security Metrics
@@ -1196,10 +1235,11 @@ interp = CaMeLInterpreter(
 
 | NFR | Requirement | Verification |
 |---|---|---|
+| NFR-1 | Interpreter operates in a sandboxed environment: no arbitrary module imports, no timing primitives, builtins restricted to the 16-name approved set defined in `camel/config/allowlist.yaml` (M4-F10 – F14) | `tests/test_interpreter.py` — `ForbiddenImportError` and `ForbiddenNameError` suites; allowlist positive/negative cases |
 | NFR-2 | No LLM in policy evaluation path | `test_e2e_enforcement.py` asserts zero LLM calls during `evaluate()` |
 | NFR-4 | ≤100ms interpreter overhead per tool call (including policy evaluation) | `scripts/benchmark_interpreter.py` |
-| NFR-6 | All policy outcomes and consent decisions written to audit log | `test_e2e_enforcement.py` log-completeness assertions |
-| NFR-9 | Policy engine, capability system, enforcement hook independently unit-testable | `tests/harness/policy_harness.py`, `tests/test_policy.py` |
+| NFR-6 | All policy outcomes, consent decisions, exception redactions, and allowlist violations written to audit log | `test_e2e_enforcement.py` log-completeness assertions; `ForbiddenImportEvent` / `ForbiddenNameEvent` emission tests |
+| NFR-9 | Policy engine, capability system, and enforcement hook independently unit-testable | `tests/harness/policy_harness.py`, `tests/test_policy.py` |
 
 ---
 
@@ -1219,7 +1259,13 @@ camel/
 │                            MaxRetriesExceededError, ExecutionResult,
 │                            TraceRecord, RedactedError, AcceptedState,
 │                            DisplayChannel, StdoutDisplayChannel
-├── exceptions.py            Shared exception base types
+├── exceptions.py            Shared exception base types: NotEnoughInformationError,
+│                            SchemaValidationError, ForbiddenImportError (M4-F10),
+│                            ForbiddenNameError (M4-F14), ConfigurationSecurityError
+├── config/
+│   ├── __init__.py          AllowlistLoader, AllowlistConfig (Pydantic model)
+│   └── allowlist.yaml       Single source of truth for permitted builtins and
+│                            excluded timing names; mandatory security review gate
 ├── qllm_schema.py           Schema augmentation utilities (have_enough_information)
 ├── qllm_wrapper.py          QLLMWrapper (legacy path, re-exported)
 ├── capabilities/
