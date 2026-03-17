@@ -575,3 +575,16 @@ Deliverables:
 - ⏭ Validate and publish docs coverage report + update CI to enforce it — Devops Engineer (⚡ Quick, 2 SP)
 
 ---
+### Sprint 3 — Milestone 1 Documentation & Architecture Capture | 2026-03-17 | 📋 reviewing | 11 SP
+**Goal:** Let's documet everything if not done already
+- Architecture
+- Github Readme
+- Manuals etc...
+
+**Delivered:**
+- ✅ Write comprehensive GitHub README for CaMeL v0.1.0 — Software Architect (◈ Standard, 3 SP)
+- ❌ Produce architecture decision records (ADRs) for core Milestone 1 design choices — Software Architect (◈ Standard, 3 SP)
+- ✅ Write operator/deployment manual for Milestone 1 package — Backend Developer (◈ Standard, 3 SP)
+- ✅ Validate and publish docs coverage report + update CI to enforce it — Devops Engineer (⚡ Quick, 2 SP)
+
+---

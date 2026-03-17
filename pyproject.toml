@@ -21,6 +21,7 @@ dev = [
     "ruff>=0.4",
     "black>=24.0",
     "pre-commit>=3.0",
+    "interrogate>=1.5",
 ]
 
 [tool.setuptools.packages.find]
@@ -41,3 +42,19 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.interrogate]
+ignore-init-method = true  # __init__ is documented in the class-level Parameters section
+ignore-init-module = false
+ignore-magic = true        # other dunder methods (e.g. __str__, __new__) are self-evident
+ignore-semiprivate = false
+ignore-private = false
+ignore-property-decorators = false
+ignore-module = false
+fail-under = 90
+exclude = ["setup.py", "docs", "build"]
+verbose = 0
+quiet = false
+whitelist-regex = []
+color = true
+omit-covered-files = false

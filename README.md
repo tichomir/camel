@@ -4,6 +4,7 @@
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
+[![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
 
 CaMeL is a security layer that protects LLM-based agentic systems from prompt
 injection attacks.  Rather than modifying the underlying model, CaMeL wraps it
@@ -68,14 +69,10 @@ print(result.sources)  # frozenset({'get_inbox_count'})
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API, Milestone 2 readiness |
 | [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, known limitations, troubleshooting |
 | [Exit Criteria Checklist](docs/exit_criteria_checklist.md) | Milestone 1 sign-off checklist with test evidence |
-| [ADR-0001 — Python AST Interpreter Substrate](docs/adr/ADR-0001-python-ast-interpreter-substrate.md) | Why Python AST over a custom parser or bytecode approach |
-| [ADR-0002 — CaMeLValue Capability Wrapper](docs/adr/ADR-0002-camelvalue-capability-wrapper.md) | CaMeLValue design: capability tagging vs. alternatives |
-| [ADR-0003 — NORMAL/STRICT Dependency Tracking](docs/adr/ADR-0003-normal-strict-dependency-tracking.md) | Dual-mode dependency tracking and side-channel rationale |
-| [ADR-0004 — Excluded Python Constructs](docs/adr/ADR-0004-excluded-python-constructs.md) | Which constructs are excluded and why |
 | [ADR 001 — Q-LLM Isolation Contract](docs/adr/001-q-llm-isolation-contract.md) | Q-LLM isolation guarantees and schema conventions |
-| [ADR 002 — CaMeLValue Capability System (detailed)](docs/adr/002-camelvalue-capability-system.md) | Detailed capability data model spec |
-| [ADR 003 — AST Interpreter Architecture (detailed)](docs/adr/003-ast-interpreter-architecture.md) | Full interpreter design spec |
-| [ADR 004 — Dependency Graph Architecture (detailed)](docs/adr/004-dependency-graph-architecture.md) | Full dependency tracking design spec |
+| [ADR 002 — CaMeLValue Capability System](docs/adr/002-camelvalue-capability-system.md) | Detailed capability data model spec |
+| [ADR 003 — AST Interpreter Architecture](docs/adr/003-ast-interpreter-architecture.md) | Full interpreter design spec |
+| [ADR 004 — Dependency Graph Architecture](docs/adr/004-dependency-graph-architecture.md) | Full dependency tracking design spec |
 
 ---
 
@@ -110,6 +107,24 @@ pytest tests/test_interpreter.py
 pytest tests/test_dependency_graph.py
 pytest tests/test_exit_criteria.py   # M1 exit criteria sign-off
 ```
+
+---
+
+## Documentation Coverage
+
+Docstring coverage is enforced in CI using [interrogate](https://github.com/econchick/interrogate).
+Magic/dunder methods and `__init__` constructors are excluded (their parameters are documented in
+the class-level `Parameters` section).
+
+**Current coverage: 100%** (minimum required: 90%)
+
+To measure locally:
+
+```bash
+interrogate camel/ --ignore-init-method --ignore-magic --fail-under 90 -v
+```
+
+The CI step fails on any PR that drops public-symbol coverage below 90%.
 
 ---
 

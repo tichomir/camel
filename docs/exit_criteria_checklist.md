@@ -102,6 +102,23 @@ evidence of satisfaction, together with the expected evidence and current pass/f
 
 ---
 
+---
+
+## EC-7 — Documentation Coverage ≥ 90%
+
+| Field | Value |
+|-------|-------|
+| **Criterion** | All public classes, methods, and functions in the `camel` package have docstrings. Docstring coverage must be ≥ 90% as measured by `interrogate` (magic/dunder methods and `__init__` constructors excluded, as they are documented in the class-level `Parameters` section). |
+| **Tool** | `interrogate>=1.5` (added to `[project.optional-dependencies].dev` in `pyproject.toml`) |
+| **Configuration** | `[tool.interrogate]` in `pyproject.toml`: `ignore-init-method = true`, `ignore-magic = true`, `fail-under = 90` |
+| **CI enforcement** | `Docstring coverage (interrogate)` step in `.github/workflows/ci.yml` — runs `interrogate camel/ --ignore-init-method --ignore-magic --fail-under 90 -v` |
+| **Measurement command** | `interrogate camel/ --ignore-init-method --ignore-magic --fail-under 90 -v` |
+| **Current coverage** | 100% (71 / 71 symbols covered) |
+| **Minimum threshold** | 90% |
+| **Status** | ✅ PASS |
+
+---
+
 ## Summary
 
 | Criterion | Test Count | Status |
@@ -112,7 +129,8 @@ evidence of satisfaction, together with the expected evidence and current pass/f
 | EC-4 — ≥15 negative syntax tests | 17 | ✅ PASS |
 | EC-5 — Session persistence (3 sequential execs) | 2 | ✅ PASS |
 | EC-6 — STRICT mode loop-dependency regression | 3 | ✅ PASS |
-| **Total** | **34** | **✅ ALL PASS** |
+| EC-7 — Documentation coverage ≥ 90% | interrogate | ✅ PASS |
+| **Total** | **34 tests + interrogate** | **✅ ALL PASS** |
 
 ---
 

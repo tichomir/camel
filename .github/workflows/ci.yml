@@ -55,5 +55,8 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
+      - name: Docstring coverage (interrogate)
+        run: interrogate camel/ --ignore-init-method --ignore-magic --fail-under 90 -v
+
       - name: Performance baseline — interpreter overhead (NFR-4)
         run: python scripts/benchmark_interpreter.py --verbose
