@@ -684,3 +684,22 @@ Deliverables:
 - ✅ Write isolation contract enforcement tests for P-LLM — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Sprint — Milestone 2: Q-LLM Wrapper Implementation | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: Q-LLM Wrapper Implementation]
+Implement the Quarantined LLM wrapper including schema-enforced structured output, automatic injection of the have_enough_information field into every caller-specified Pydantic schema, NotEnoughInformationError handling, and the strict prohibition on free-form text returning to the P-LLM. Validate Q-LLM output against the schema before returning to the interpreter.
+
+Deliverables:
+- Q-LLM wrapper class callable as query_quarantined_llm(prompt, output_schema) from interpreter-executed code
+- Automatic have_enough_information: bool field injection into all Q-LLM output schemas
+- NotEnoughInformationError raised and surfaced to the interpreter when have_enough_information is False
+- Schema validation layer that rejects any Q-LLM response not conforming to the declared Pydantic model
+- Unit tests confirming Q-LLM has zero tool-calling capability and cannot return free-form text to P-LLM
+- Integration tests verifying NotEnoughInformationError does not leak missing-data content to the P-LLM
+
+**Delivered:**
+- ✅ Design Q-LLM wrapper architecture and schema injection contract — Software Architect (◈ Standard, 3 SP)
+- ✅ Define NotEnoughInformationError and augmented schema builder utility — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Implement QLLMWrapper with schema injection, validation, and NotEnoughInformationError surfacing — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write unit and integration tests for Q-LLM wrapper isolation and error contracts — Qa Engineer (◉ Deep, 5 SP)
+
+---

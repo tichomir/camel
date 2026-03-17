@@ -34,12 +34,15 @@ class NotEnoughInformationError(Exception):
         self,
         schema_type: type[QResponse],
         partial_response: QResponse | None = None,
-        message: str | None = None,
     ) -> None:
         self.schema_type = schema_type
         self.partial_response = partial_response
-        detail = message or (
+        # Fixed message template — only the developer-declared class name is
+        # interpolated.  No untrusted data (field values, LLM output) may
+        # appear here.  The ``message`` parameter that existed in earlier
+        # drafts was removed to prevent callers from accidentally forwarding
+        # untrusted content into the exception string (see ADR-006 §4).
+        super().__init__(
             f"Q-LLM reported insufficient information to populate "
             f"{schema_type.__name__!r}"
         )
-        super().__init__(detail)

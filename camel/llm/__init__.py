@@ -25,6 +25,12 @@ Q-LLM wrapper
 .. autoclass:: QLLMWrapper
 .. autofunction:: make_qllm_wrapper
 
+Q-LLM interpreter-callable interface
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. autofunction:: augment_schema_with_hei
+.. autoclass:: QueryQLLMCallable
+.. autofunction:: make_query_quarantined_llm
+
 P-LLM wrapper
 ~~~~~~~~~~~~~
 .. autoclass:: PLLMWrapper
@@ -52,6 +58,11 @@ from camel.llm.p_llm import (
 )
 from camel.llm.protocols import LLMBackend, Message, QlLMBackend, QResponseT
 from camel.llm.qllm import QLLMWrapper, make_qllm_wrapper
+from camel.llm.query_interface import (
+    QueryQLLMCallable,
+    augment_schema_with_hei,
+    make_query_quarantined_llm,
+)
 from camel.llm.schemas import QResponse
 
 __all__ = [
@@ -71,6 +82,10 @@ __all__ = [
     # Q-LLM wrapper
     "QLLMWrapper",
     "make_qllm_wrapper",
+    # Q-LLM interpreter-callable interface
+    "augment_schema_with_hei",
+    "QueryQLLMCallable",
+    "make_query_quarantined_llm",
     # P-LLM wrapper
     "PLLMWrapper",
     "ToolSignature",
