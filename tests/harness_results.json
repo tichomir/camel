@@ -2,22 +2,22 @@
   "I1_no_tool_return_in_p_llm": {
     "invariant": "I1_no_tool_return_in_p_llm",
     "description": "No tool return value content in P-LLM context",
-    "passed": 50,
+    "passed": 0,
     "failed": 0,
-    "total": 50
+    "total": 0
   },
   "I2_no_qllm_freeform_in_p_llm": {
     "invariant": "I2_no_qllm_freeform_in_p_llm",
     "description": "No raw Q-LLM free-form response reaches P-LLM context",
-    "passed": 5,
+    "passed": 0,
     "failed": 0,
-    "total": 5
+    "total": 0
   },
   "I3_redaction_completeness": {
     "invariant": "I3_redaction_completeness",
     "description": "All untrusted-origin exception messages fully redacted before P-LLM",
-    "passed": 11,
+    "passed": 10,
     "failed": 0,
-    "total": 11
+    "total": 10
   }
 }

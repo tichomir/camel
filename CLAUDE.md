@@ -318,7 +318,7 @@ Require tool providers to supply typed return schemas; Q-LLM fallback for unstru
 L3
 Exception-based side channel (residual): Adversary-controlled tool data can still trigger exceptions that exception hardening does not fully cover
 Low
-M4-F6 dependency-graph-aware redaction, M4-F7 NEIE hardening, M4-F8 annotation preservation, and M4-F9 loop-body propagation close the primary exception side-channel vectors; additionally, M4-F3/F4 post-Q-LLM contamination propagation further reduces the residual risk surface by ensuring Q-LLM-derived taint is carried through subsequent assignments and checked by the policy engine before any tool call, narrowing the set of exception-triggering inputs that could encode side-channel information; adversarial exception triggering via tool data is significantly harder; residual risk documented
+M4-F6 dependency-graph-aware redaction, M4-F7 NEIE hardening, M4-F8 annotation preservation, and M4-F9 loop-body propagation close the primary exception side-channel vectors; additionally, M4-F3/F4 post-Q-LLM contamination propagation further reduces the residual risk surface by ensuring Q-LLM-derived taint is carried through subsequent assignments and checked by the policy engine before any tool call, narrowing the set of exception-triggering inputs that could encode side-channel information; adversarial exception triggering via tool data is significantly harder; M4-F9 closes the primary loop-iterable exception channel; adversarial exception triggering via deeply nested tool call chains (exceptions propagating through multiple tool call frames before reaching the interpreter's exception handler) remains a documented residual risk; see docs/design/milestone4-exception-hardening.md §9.2
 L4
 User fatigue from policy denials: Overly strict policies may generate frequent consent prompts, leading users to approve without review
 Medium
@@ -997,5 +997,28 @@ Deliverables:
 - ✅ Implement STRICT mode dependency propagation (M4-F1, M4-F2, M4-F3, M4-F4) and default-mode flag (M4-F5) — Backend Developer (◉ Deep, 8 SP)
 - ✅ Write unit and integration test suite for STRICT mode dependency propagation — Qa Engineer (◉ Deep, 5 SP)
 - ✅ Update PRD Section 6.3 and Milestone 4 design document for STRICT mode default behaviour — Software Architect (⚡ Quick, 2 SP)
+
+---
+### Milestone 4 — Exception Hardening & Redaction | 2026-03-17 | ✅ done | 18 SP
+**Goal:** [Phase: Exception Hardening & Redaction]
+Harden all exception handling pathways in the CaMeL interpreter to prevent exception-based information leakage. This phase covers: full redaction of exception messages when any dependency on untrusted data exists in the exception or its traceback (M4-F6); ensuring NotEnoughInformationError never exposes missing-information content to the P-LLM (M4-F7); preserving STRICT mode dependency annotations on all in-scope variables when NotEnoughInformationError is raised and re-generation is triggered (M4-F8); and applying STRICT mode dependency propagation to post-exception statements when an exception originates inside a for-loop body with a non-public iterable dependency (M4-F9). Audit log entries are emitted for every redaction event (M4-F17).
+
+Deliverables:
+- Exception redaction engine: dependency-aware message redaction replacing untrusted-tainted messages with [REDACTED] (M4-F6)
+- NotEnoughInformationError handler: strips all missing-information content before surfacing to P-LLM; passes only error type and call-site line number (M4-F7)
+- Dependency annotation preservation logic: retains STRICT mode annotations on all in-scope variables across NotEnoughInformationError re-generation cycles (M4-F8)
+- Loop-body exception STRICT propagation: applies dependency annotations to post-exception statements when exception originates inside a non-public-iterable loop body (M4-F9)
+- Audit log emitter: records exception redaction events with timestamp, line number, redaction reason, and triggering dependency chain (M4-F17)
+- Unit test suite: exception redaction covering all four redaction scenarios
+- Regression test: P-LLM receives only error type and line number from NotEnoughInformationError with no content leakage
+- Updated PRD Section 6.2 (Q-LLM) and Section 6.3 (Interpreter) documenting exception redaction rules
+- Updated Milestone 4 design document: exception hardening section marked complete
+
+**Delivered:**
+- ✅ Design exception hardening architecture (M4-F6, F7, F8, F9, F17) — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement exception redaction engine, NotEnoughInformationError handler, and audit log emitter (M4-F6, F7, F17) — Backend Developer (◉ Deep, 5 SP)
+- ✅ Implement STRICT mode annotation preservation and loop-body exception propagation (M4-F8, F9) — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write unit and regression test suite for all exception hardening features — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Mark Milestone 4 exception hardening section complete and publish updated docs — Software Architect (⚡ Quick, 2 SP)
 
 ---

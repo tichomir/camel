@@ -50,9 +50,87 @@ See the full design specification and verification record:
 
 ## 2. Exception Hardening & Redaction
 
-See the CLAUDE.md sprint record for M4-F6 through M4-F9 and M4-F17, which
-have been fully implemented and verified.  Implementation lives in
-`camel/interpreter.py`.
+_Status: ✅ Implemented — all M4-F6 through M4-F9, M4-F17 features delivered and verified_
+
+The exception hardening sprint closed all exception-based information leakage vectors
+in the CaMeL interpreter.  Without hardening, an adversary controlling tool return
+values could craft content that, when processed, triggers an exception whose message
+echoes adversary-controlled data back to the P-LLM through the retry prompt.
+
+### 2.1 Feature Register
+
+| Feature ID | Description | Implementation | Status |
+|---|---|---|---|
+| M4-F6 | Dependency-graph-aware exception message redaction — untrusted-tainted messages replaced with `None` (`message=None` in `RedactedError`) | `ExceptionRedactor._is_tainted()` | ✅ Implemented |
+| M4-F7 | `NotEnoughInformationError` content stripping — only error type and call-site line number forwarded to P-LLM; missing-information content never surfaced | `ExceptionRedactor.classify()` NEIE branch | ✅ Implemented |
+| M4-F8 | STRICT mode annotation preservation across NEIE re-generation — `DependencyGraph` and `_dep_ctx_stack` snapshotted before NEIE, restored before regenerated plan executes | `AcceptedState` fields + `interpreter.snapshot_dep_state()` / `restore_dep_state()` | ✅ Implemented |
+| M4-F9 | Loop-body exception STRICT propagation — when an exception originates inside a `for`-loop body with a non-public iterable in STRICT mode, the iterable's dep context is attached to the exception and pre-seeded into the retry | `_exec_For()` annotation attachment + orchestrator recovery | ✅ Implemented |
+| M4-F17 | `RedactionAuditEvent` emission — every exception processed by `ExceptionRedactor.classify()` emits an audit event with timestamp, line number, redaction reason, dependency chain, trust level, error type, redacted message length, and `m4_f9_applied` flag | `ExceptionRedactor._emit_audit_event()` | ✅ Implemented |
+
+### 2.2 Key Data Models
+
+**`RedactedError`** — the sanitised exception representation forwarded to the P-LLM:
+
+```python
+@dataclass(frozen=True)
+class RedactedError:
+    error_type:  str
+    lineno:      int | None
+    message:     str | None   # None when redacted; never set for NEIE or untrusted
+    trust_level: Literal["trusted", "untrusted", "not_enough_information"]
+```
+
+**`RedactionAuditEvent`** — the audit log entry emitted for every classification (M4-F17):
+
+```python
+@dataclass(frozen=True)
+class RedactionAuditEvent:
+    timestamp:               str                    # ISO-8601 UTC
+    line_number:             int | None
+    redaction_reason:        str                    # "untrusted_dependency" | "not_enough_information"
+                                                    # | "loop_body_exception" | "none"
+    dependency_chain:        list[tuple[str, str]]  # [(var_name, source_label), ...]; max 50
+    trust_level:             str
+    error_type:              str
+    redacted_message_length: int
+    m4_f9_applied:           bool
+```
+
+### 2.3 Trusted Sources Definition
+
+`TRUSTED_SOURCES = frozenset({"User literal", "CaMeL"})`
+
+Any variable whose upstream dependency chain contains a source outside this set is
+considered untrusted for exception message purposes.
+
+### 2.4 Security Outcome
+
+- **M4-F6** closes the direct exception-message injection channel: adversary content
+  appearing in exception messages is replaced with `None` before reaching the P-LLM.
+- **M4-F7** closes the Q-LLM content leakage channel via NEIE: zero Q-LLM output
+  (including failure reasons) reaches the P-LLM.
+- **M4-F8** closes the STRICT mode taint-drop gap across NEIE retry cycles.
+- **M4-F9** closes the loop-iterable taint-drop gap across loop-body-exception retry cycles.
+- **M4-F17** ensures all redaction decisions are observable in the security audit log.
+
+These features collectively reduce the residual exception side-channel risk documented
+in PRD §10 L3 from "exception messages and loop provenance can leak" to "only exception
+type, line number, and occurrence are observable by the P-LLM."
+
+### 2.5 Implementation Locations
+
+| Component | File |
+|---|---|
+| `RedactedError`, `RedactionAuditEvent`, `ExceptionRedactor` | `camel/execution_loop.py` |
+| `AcceptedState` (M4-F8 and M4-F9 fields) | `camel/execution_loop.py` |
+| `CaMeLOrchestrator._run_loop()` (call sites) | `camel/execution_loop.py` |
+| `_exec_For()` M4-F9 annotation attachment | `camel/interpreter.py` |
+| `snapshot_dep_state()`, `restore_dep_state()` | `camel/interpreter.py` |
+| `_is_non_public()` | `camel/interpreter.py` |
+| `NotEnoughInformationError` | `camel/exceptions.py` |
+
+See the full design specification:
+[`docs/design/milestone4-exception-hardening.md`](design/milestone4-exception-hardening.md)
 
 ---
 

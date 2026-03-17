@@ -166,6 +166,37 @@ class TestM4F6DependencyAwareRedaction:
         assert event.trust_level == "untrusted"
         assert any(src == "get_email" for _, src in event.dependency_chain)
 
+    def test_deep_nested_call_chain_taint_detected(self) -> None:
+        """M4-F6 (d): Taint several frames deep in the dep graph is still detected.
+
+        Chain: a (untrusted) → b → c → d → e
+        The exception occurs in a context where only 'e' is directly visible,
+        but the dep-graph walk must trace back to 'a' and detect the untrusted
+        source.
+        """
+        interp = _make_interp()
+        # Build a 5-level deep dependency chain rooted at an untrusted source.
+        interp.exec("a = get_email()")   # untrusted: source = get_email
+        interp.exec("b = a")
+        interp.exec("c = b")
+        interp.exec("d = c")
+        interp.exec("e = d")
+
+        audit: list[RedactionAuditEvent] = []
+        redactor = ExceptionRedactor(audit_log=audit)
+        exc = ValueError("seemingly safe message")
+        # The store contains all five vars; dep graph links e→d→c→b→a.
+        result = redactor.classify(exc, interp.store, interp)
+        assert result.trust_level == "untrusted", (
+            "M4-F6 (d): exception in scope of a deep dep chain must be redacted"
+        )
+        assert result.message is None
+        # The dep chain must reference the root untrusted source.
+        assert len(audit) == 1
+        assert any(src == "get_email" for _, src in audit[0].dependency_chain), (
+            "Dependency chain must include the deep untrusted root source"
+        )
+
 
 # ===========================================================================
 # M4-F17 — Audit log entry for every redaction event
@@ -480,6 +511,100 @@ class TestM4F8AnnotationPreservation:
         result = await orch.run("Test M4-F8")
         # After retry, 'result' should be in the final store.
         assert "result" in result.final_store
+
+    async def test_annotation_preserved_across_3_neie_cycles(self) -> None:
+        """M4-F8: Dep graph snapshot is correctly restored over 3 NEIE retries.
+
+        The test verifies that after 3 NEIE failures and a final success, the
+        store still contains a value from the pre-NEIE sensor_tool call, and
+        the dependency graph snapshot was restored on each retry.
+        """
+        call_count = [0]
+
+        def neie_tool(*args: Any, **kwargs: Any) -> CaMeLValue:
+            """Raises NEIE on the first 3 calls, succeeds on the 4th."""
+            call_count[0] += 1
+            if call_count[0] <= 3:
+                raise CamelNEIE()
+            return wrap("ok", sources=frozenset({"neie_tool"}))
+
+        def sensor_tool(*args: Any, **kwargs: Any) -> CaMeLValue:
+            return wrap("sensor_data", sources=frozenset({"sensor_tool"}))
+
+        # Initial plan sets 'data', then triggers NEIE on neie_tool.
+        # Each retry plan only calls neie_tool (NEIE re-raised until 4th call).
+        plan_initial = "data = sensor_tool()\nresult = neie_tool(data)"
+        plan_retry = "result = neie_tool(data)"
+
+        # 1 initial + 3 retries (responses[1..3] all trigger NEIE) + 1 success
+        responses = [plan_initial] + [plan_retry] * 4
+        stub = StubBackend(responses=responses, cycle=False)
+        recording = RecordingBackend(stub)
+        p_llm = PLLMWrapper(recording)
+
+        interp = CaMeLInterpreter(
+            tools={"neie_tool": neie_tool, "sensor_tool": sensor_tool},
+            mode=ExecutionMode.STRICT,
+        )
+        sigs = [
+            ToolSignature("neie_tool", "data", "CaMeLValue", "May raise NEIE"),
+            ToolSignature("sensor_tool", "", "CaMeLValue", "Returns sensor data"),
+        ]
+        orch = CaMeLOrchestrator(
+            p_llm=p_llm, interpreter=interp, tool_signatures=sigs, max_loop_retries=10
+        )
+
+        result = await orch.run("Test M4-F8 3-cycle")
+        assert "result" in result.final_store
+        # 'data' was set before first NEIE and must survive all retries.
+        assert "data" in result.final_store
+        # Verify neie_tool was called exactly 4 times (3 NEIE + 1 success).
+        assert call_count[0] == 4
+
+    async def test_annotation_preserved_across_5_neie_cycles(self) -> None:
+        """M4-F8: Dep graph snapshot is correctly restored over 5 NEIE retries.
+
+        Identical to the 3-cycle test but extended to 5 consecutive NEIE
+        failures before the final success.
+        """
+        call_count = [0]
+
+        def neie_tool(*args: Any, **kwargs: Any) -> CaMeLValue:
+            """Raises NEIE on the first 5 calls, succeeds on the 6th."""
+            call_count[0] += 1
+            if call_count[0] <= 5:
+                raise CamelNEIE()
+            return wrap("ok", sources=frozenset({"neie_tool"}))
+
+        def sensor_tool(*args: Any, **kwargs: Any) -> CaMeLValue:
+            return wrap("sensor_data", sources=frozenset({"sensor_tool"}))
+
+        plan_initial = "data = sensor_tool()\nresult = neie_tool(data)"
+        plan_retry = "result = neie_tool(data)"
+
+        # 1 initial + 6 retry attempts (5 NEIE + 1 success)
+        responses = [plan_initial] + [plan_retry] * 6
+        stub = StubBackend(responses=responses, cycle=False)
+        recording = RecordingBackend(stub)
+        p_llm = PLLMWrapper(recording)
+
+        interp = CaMeLInterpreter(
+            tools={"neie_tool": neie_tool, "sensor_tool": sensor_tool},
+            mode=ExecutionMode.STRICT,
+        )
+        sigs = [
+            ToolSignature("neie_tool", "data", "CaMeLValue", "May raise NEIE"),
+            ToolSignature("sensor_tool", "", "CaMeLValue", "Returns sensor data"),
+        ]
+        orch = CaMeLOrchestrator(
+            p_llm=p_llm, interpreter=interp, tool_signatures=sigs, max_loop_retries=10
+        )
+
+        result = await orch.run("Test M4-F8 5-cycle")
+        assert "result" in result.final_store
+        assert "data" in result.final_store
+        # Verify neie_tool was called exactly 6 times (5 NEIE + 1 success).
+        assert call_count[0] == 6
 
 
 # ===========================================================================
