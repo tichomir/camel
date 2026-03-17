@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 
+from camel.exceptions import ForbiddenImportError
 from camel.interpreter import (
     CaMeLInterpreter,
     ExecutionMode,
@@ -439,9 +440,20 @@ class TestAssign:
             i.exec('d["k"] = 1')
 
     def test_attribute_target_unsupported(self):
-        i = _interp()
+        # Use a tool that returns an object so we can attempt obj.attr = val
+        # without triggering ForbiddenImportError first.
+        import types
+
+        def _obj_tool() -> CaMeLValue:
+            return wrap(
+                types.SimpleNamespace(name="original"),
+                sources=frozenset({"CaMeL"}),
+            )
+
+        i = CaMeLInterpreter(tools={"get_obj": _obj_tool})
+        i.exec("obj = get_obj()")
         with pytest.raises(UnsupportedSyntaxError):
-            i.exec("import os; os.name = 'x'")
+            i.exec("obj.name = 'x'")
 
 
 # ---------------------------------------------------------------------------
@@ -977,10 +989,18 @@ class TestUnsupportedSyntax:
         self._assert_unsupported("while True: pass", "While")
 
     def test_import(self):
-        self._assert_unsupported("import os", "Import")
+        # Import statements raise ForbiddenImportError (M4-F10), not
+        # UnsupportedSyntaxError, because the allowlist check fires first.
+        i = _interp()
+        with pytest.raises(ForbiddenImportError):
+            i.exec("import os")
 
     def test_import_from(self):
-        self._assert_unsupported("from os import path", "ImportFrom")
+        # Same as test_import: ForbiddenImportError is raised before the
+        # generic unsupported-syntax path is reached.
+        i = _interp()
+        with pytest.raises(ForbiddenImportError):
+            i.exec("from os import path")
 
     def test_class_def(self):
         self._assert_unsupported("class Foo: pass", "ClassDef")

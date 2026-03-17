@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from camel.dependency_graph import DependencyGraph
+from camel.exceptions import ForbiddenImportError
 from camel.interpreter import CaMeLInterpreter, ExecutionMode, UnsupportedSyntaxError
 from camel.value import (
     CaMeLValue,
@@ -309,8 +310,6 @@ for n in nums:
         ("while True: pass", "While"),
         ("class Foo: pass", "ClassDef"),
         ("def foo(): pass", "FunctionDef"),
-        ("import os", "Import"),
-        ("from os import path", "ImportFrom"),
         ("del x", "Delete"),
         ("raise ValueError()", "Raise"),
         ("assert True", "Assert"),
@@ -329,8 +328,6 @@ for n in nums:
         "while",
         "class_def",
         "function_def",
-        "import",
-        "import_from",
         "delete",
         "raise",
         "assert",
@@ -357,6 +354,21 @@ def test_ec4_unsupported_syntax_raises_correct_error(
         f"Expected node_type={expected_node_type!r}, got {exc.node_type!r}"
     )
     assert exc.lineno >= 1, f"Expected lineno ≥ 1, got {exc.lineno}"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import os",
+        "from os import path",
+    ],
+    ids=["import", "import_from"],
+)
+def test_ec4_import_raises_forbidden_import_error(code: str) -> None:
+    """Import statements raise ForbiddenImportError (M4-F10), not UnsupportedSyntaxError."""
+    interp = CaMeLInterpreter()
+    with pytest.raises(ForbiddenImportError):
+        interp.exec(code)
 
 
 # ============================================================================
