@@ -85,9 +85,10 @@ import ast
 import inspect
 import operator as _operator
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from camel.dependency_graph import DependencyGraph, _InternalGraph
 from camel.value import (
@@ -177,6 +178,50 @@ class PolicyViolationError(Exception):
 
     def __str__(self) -> str:
         return f"Policy denied call to {self.tool_name!r}: {self.reason}"
+
+
+# ---------------------------------------------------------------------------
+# AuditLogEntry
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AuditLogEntry:
+    """A single security audit log entry produced by a policy evaluation.
+
+    One entry is appended to :attr:`CaMeLInterpreter.audit_log` for every
+    call to :meth:`PolicyRegistry.evaluate <camel.policy.PolicyRegistry.evaluate>`,
+    regardless of the outcome.
+
+    Attributes
+    ----------
+    tool_name:
+        The name of the tool whose call was evaluated.
+    outcome:
+        ``"Allowed"`` or ``"Denied"``.
+    reason:
+        The denial reason string when *outcome* is ``"Denied"``; ``None``
+        when the call was allowed.
+    timestamp:
+        UTC timestamp of the policy evaluation (ISO-8601 string,
+        ``datetime.now(timezone.utc).isoformat()``).
+
+    Examples
+    --------
+    ::
+
+        interp = CaMeLInterpreter(tools=tools, policy_engine=registry)
+        interp.exec('r = my_tool("x")')
+        entry = interp.audit_log[-1]
+        assert entry.tool_name == "my_tool"
+        assert entry.outcome == "Allowed"
+        assert entry.reason is None
+    """
+
+    tool_name: str
+    outcome: Literal["Allowed", "Denied"]
+    reason: str | None
+    timestamp: str
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +370,7 @@ class CaMeLInterpreter:
     policy_engine:
         Optional policy engine instance.  Must implement::
 
-            check(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> PolicyResult
+            evaluate(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> PolicyResult
 
         where ``PolicyResult`` is either ``Allowed()`` or ``Denied(reason)``.
         If ``None``, all tool calls are permitted.
@@ -378,6 +423,8 @@ class CaMeLInterpreter:
         self._builtins = merged_builtins
         self._mode = mode
         self._policy_engine = policy_engine
+        # Security audit log (NFR-6): one entry per policy evaluate() call.
+        self._audit_log: list[AuditLogEntry] = []
         # Dependency graph tracking state.
         self._dep_graph: _InternalGraph = _InternalGraph()
         # Set to a live set while evaluating an assignment RHS; None otherwise.
@@ -470,6 +517,21 @@ class CaMeLInterpreter:
         if isinstance(mode, str):
             mode = ExecutionMode(mode)
         self._mode = mode
+
+    @property
+    def audit_log(self) -> list[AuditLogEntry]:
+        """Return a snapshot of the security audit log.
+
+        Contains one :class:`AuditLogEntry` for every policy evaluation that
+        has occurred in this interpreter session (both ``"Allowed"`` and
+        ``"Denied"`` outcomes).  Entries are in chronological order.
+
+        Returns
+        -------
+        list[AuditLogEntry]
+            Shallow copy of the internal audit log.
+        """
+        return list(self._audit_log)
 
     def get_dependency_graph(self, variable: str) -> DependencyGraph:
         """Return the dependency graph snapshot for *variable*.
@@ -1093,7 +1155,7 @@ class CaMeLInterpreter:
            build a ``kwargs_mapping: dict[str, CaMeLValue]`` that includes both
            positional args (mapped to parameter names via ``inspect.signature``)
            and keyword args.
-           Call ``_policy_engine.check(tool_name, kwargs_mapping)``.
+           Call ``_policy_engine.evaluate(tool_name, kwargs_mapping)``.
            If denied: raise :class:`PolicyViolationError`.
         2. **Call** the tool with raw values:
            ``result_cv = tool(*[a.raw for a in pos_args],``
@@ -1152,11 +1214,28 @@ class CaMeLInterpreter:
                         for i, arg_cv in enumerate(pos_arg_cvs):
                             kwargs_mapping[f"arg{i}"] = arg_cv
                     kwargs_mapping.update(kw_arg_cvs)
-                    policy_result = self._policy_engine.check(name, kwargs_mapping)
-                    if hasattr(policy_result, "reason") and policy_result.reason is not None:
-                        raise PolicyViolationError(
-                            tool_name=name, reason=str(policy_result.reason)
+                    policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
+                    if not policy_result.is_allowed():
+                        denial_reason = str(policy_result.reason)
+                        self._audit_log.append(
+                            AuditLogEntry(
+                                tool_name=name,
+                                outcome="Denied",
+                                reason=denial_reason,
+                                timestamp=datetime.now(timezone.utc).isoformat(),
+                            )
                         )
+                        raise PolicyViolationError(
+                            tool_name=name, reason=denial_reason
+                        )
+                    self._audit_log.append(
+                        AuditLogEntry(
+                            tool_name=name,
+                            outcome="Allowed",
+                            reason=None,
+                            timestamp=datetime.now(timezone.utc).isoformat(),
+                        )
+                    )
 
                 # Call the tool with raw values.
                 result_cv = tool_fn(

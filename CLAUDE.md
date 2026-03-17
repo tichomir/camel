@@ -800,3 +800,24 @@ Deliverables:
 - ✅ Write unit test suite for capability assignment — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 3 — Policy Engine & Registry | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: Policy Engine & Registry]
+Implement the PolicyRegistry, the policy evaluation engine, and all framework-provided helper functions. This phase covers the SecurityPolicyResult type (Allowed / Denied), the PolicyRegistry.register and PolicyRegistry.evaluate interfaces, synchronous and deterministic policy evaluation semantics, multi-policy composition (all must return Allowed), read-only access for policies to the full CaMeLValue dependency graph, and the three helper functions (is_trusted, can_readers_read_value, get_all_sources). It also covers per-deployment configurability of policy definitions without modifying core code.
+
+Deliverables:
+- SecurityPolicyResult sealed type with Allowed() and Denied(reason: str) variants
+- PolicyRegistry class with register(tool_name, policy_fn) and evaluate(tool_name, kwargs) methods
+- Synchronous, deterministic evaluation loop: all registered policies for a tool evaluated; first Denied short-circuits execution
+- Helper functions implemented and unit-tested: is_trusted, can_readers_read_value, get_all_sources
+- Multi-policy composition: multiple policies per tool all required to return Allowed
+- Policy definitions externalisable per-deployment (configuration-driven, no core code changes required)
+- Integration test: interpreter calls PolicyRegistry.evaluate before every tool call execution
+- NFR-2 compliance test: policy evaluation path contains no LLM calls
+
+**Delivered:**
+- ✅ Design PolicyRegistry and SecurityPolicyResult architecture — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement SecurityPolicyResult, PolicyRegistry, and helper functions — Backend Developer (◉ Deep, 5 SP)
+- ✅ Integrate PolicyRegistry.evaluate into CaMeL interpreter tool call path — Backend Developer (◈ Standard, 3 SP)
+- ✅ Write unit and integration tests for policy engine and NFR-2 compliance — Qa Engineer (◉ Deep, 5 SP)
+
+---

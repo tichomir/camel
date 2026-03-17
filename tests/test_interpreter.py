@@ -783,22 +783,28 @@ class TestToolCalls:
 class _Allowed:
     reason = None
 
+    def is_allowed(self) -> bool:
+        return True
+
 
 class _Denied:
-    def __init__(self, reason):
+    def __init__(self, reason: str) -> None:
         self.reason = reason
+
+    def is_allowed(self) -> bool:
+        return False
 
 
 class _PolicyAllow:
-    def check(self, tool_name, kwargs):
+    def evaluate(self, tool_name: str, kwargs: object) -> _Allowed:
         return _Allowed()
 
 
 class _PolicyDeny:
-    def __init__(self, reason="not allowed"):
+    def __init__(self, reason: str = "not allowed") -> None:
         self._reason = reason
 
-    def check(self, tool_name, kwargs):
+    def evaluate(self, tool_name: str, kwargs: object) -> _Denied:
         return _Denied(self._reason)
 
 

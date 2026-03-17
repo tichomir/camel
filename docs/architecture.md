@@ -18,8 +18,9 @@
 8. [Retry Loop Mechanics](#8-retry-loop-mechanics)
 9. [Execution Trace Recorder](#9-execution-trace-recorder)
 10. [Security Model](#10-security-model)
-11. [Module Map](#11-module-map)
-12. [Related Documents](#12-related-documents)
+11. [Policy Engine](#11-policy-engine)
+12. [Module Map](#12-module-map)
+13. [Related Documents](#13-related-documents)
 
 ---
 
@@ -621,7 +622,123 @@ CaMeL's design prevents this by ensuring:
 
 ---
 
-## 11. Module Map
+## 11. Policy Engine
+
+**Module:** `camel/policy/` | **ADR:** [009](adr/009-policy-engine-architecture.md)
+
+The policy engine is the *enforcement layer* that the interpreter consults
+before every tool call.  It is synchronous, deterministic, and contains no
+LLM calls (NFR-2).
+
+### 11.1 SecurityPolicyResult — sealed type
+
+Two concrete variants; no other subclasses are permitted:
+
+```python
+class Allowed(SecurityPolicyResult):
+    """The tool call may proceed."""
+
+class Denied(SecurityPolicyResult):
+    reason: str   # human-readable denial reason, safe for audit logs
+```
+
+### 11.2 PolicyFn — type alias
+
+```python
+PolicyFn = Callable[
+    [str, Mapping[str, CaMeLValue]],   # (tool_name, kwargs)
+    SecurityPolicyResult,
+]
+```
+
+Policy functions must be **pure, synchronous, and deterministic**.  No I/O,
+no LLM calls.
+
+### 11.3 PolicyRegistry
+
+```python
+class PolicyRegistry:
+    def register(
+        self,
+        tool_name: str,
+        policy_fn: PolicyFn,
+    ) -> PolicyFn: ...
+    # Also works as a decorator: @registry.register("send_email")
+
+    def evaluate(
+        self,
+        tool_name: str,
+        kwargs: Mapping[str, CaMeLValue],
+    ) -> SecurityPolicyResult: ...
+
+    @classmethod
+    def load_from_env(cls) -> PolicyRegistry: ...
+```
+
+**Composition rule:** All registered policies for a tool are required to
+return `Allowed`.  The first `Denied` short-circuits — remaining policies
+are not evaluated.  If no policies are registered for a tool, `Allowed()` is
+returned (implicit allow).
+
+### 11.4 Helper functions
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `is_trusted` | `(CaMeLValue) -> bool` | `True` if sources ⊆ `{"User literal", "CaMeL"}` |
+| `can_readers_read_value` | `(CaMeLValue, str) -> bool` | `True` if `reader` is in `value.readers` or readers is `Public` |
+| `get_all_sources` | `(CaMeLValue) -> frozenset[str]` | Returns `value.sources` |
+
+**`is_trusted` — empty sources is not trusted:** A value with an empty
+`sources` set cannot be asserted safe.
+
+### 11.5 Configuration-driven policy loading
+
+```
+CAMEL_POLICY_MODULE=myapp.security.policies
+```
+
+The module must export:
+
+```python
+def configure_policies(registry: PolicyRegistry) -> None:
+    registry.register("send_email", email_recipient_policy)
+    registry.register("write_file", file_write_policy)
+    ...
+```
+
+Load at startup with:
+
+```python
+registry = PolicyRegistry.load_from_env()
+```
+
+No core code changes are required to change the active policy set across
+deployments.
+
+### 11.6 Example policy
+
+```python
+from camel.policy import PolicyRegistry, Allowed, Denied, is_trusted
+from camel.value import CaMeLValue
+from collections.abc import Mapping
+
+def email_recipient_policy(
+    tool_name: str,
+    kwargs: Mapping[str, CaMeLValue],
+) -> SecurityPolicyResult:
+    \"\"\"Block send_email if the recipient address comes from untrusted data.\"\"\"
+    to_addr = kwargs.get("to")
+    if to_addr is not None and not is_trusted(to_addr):
+        return Denied(
+            "recipient address originates from untrusted data — "
+            "possible data exfiltration attempt"
+        )
+    return Allowed()
+```
+
+---
+
+## 12. Module Map
 
 ```
 camel/
@@ -639,6 +756,11 @@ camel/
 ├── exceptions.py            Shared exception base types
 ├── qllm_schema.py           Schema augmentation utilities (have_enough_information)
 ├── qllm_wrapper.py          QLLMWrapper (legacy path, re-exported)
+├── policy/
+│   ├── __init__.py          SecurityPolicyResult, Allowed, Denied, PolicyFn,
+│   │                        PolicyRegistry, is_trusted, can_readers_read_value,
+│   │                        get_all_sources
+│   └── interfaces.py        Full type definitions, stubs, and TRUSTED_SOURCE_LABELS
 └── llm/
     ├── __init__.py          PLLMWrapper, QLLMWrapper, ToolSignature, …
     ├── backend.py           LLMBackend Protocol, Message
@@ -669,7 +791,7 @@ tests/
 
 ---
 
-## 12. Related Documents
+## 13. Related Documents
 
 | Document | Location |
 |---|---|
@@ -686,4 +808,5 @@ tests/
 | ADR 006 — Q-LLM Schema Injection | [docs/adr/006-q-llm-dynamic-schema-injection.md](adr/006-q-llm-dynamic-schema-injection.md) |
 | ADR 007 — Execution Loop | [docs/adr/007-execution-loop-orchestrator.md](adr/007-execution-loop-orchestrator.md) |
 | ADR 008 — Isolation Test Harness | [docs/adr/008-isolation-test-harness-architecture.md](adr/008-isolation-test-harness-architecture.md) |
+| ADR 009 — Policy Engine | [docs/adr/009-policy-engine-architecture.md](adr/009-policy-engine-architecture.md) |
 | E2E Scenario Specification | [docs/e2e-scenario-specification.md](e2e-scenario-specification.md) |
