@@ -1,8 +1,13 @@
-# ADR 004 — Dependency Graph Architecture
+# ADR-004: Dependency Graph Architecture and NORMAL/STRICT Tracking Modes
 
-**Status:** Accepted
-**Date:** 2026-03-17
-**Authors:** Software Architect Persona
+| Field         | Value                                  |
+|---------------|----------------------------------------|
+| Status        | Accepted                               |
+| Date          | 2026-03-17                             |
+| Author        | Software Architect Persona             |
+| Supersedes    | —                                      |
+| Superseded by | —                                      |
+| Related       | ADR-003 (AST Interpreter Architecture) |
 
 ---
 
@@ -14,6 +19,42 @@ data-flow record enables the security policy engine to determine whether a
 value reaching a tool call was influenced by untrusted sources — and in STRICT
 mode — whether a control-flow condition or loop iterable tainted downstream
 assignments.
+
+### Security threat: control-flow side-channel (PRD §7)
+
+PRD §7.1 formalises the CaMeL security game (PI-SEC): an adversary wins if they
+can construct an initial memory state that causes the agent to produce any action
+outside the set of allowed `(tool, args, memory_state)` tuples.
+
+PRD §7.2 identifies the **trusted/untrusted boundary**: tool return values are
+untrusted.  A subtle attack class exploits this boundary through *control-flow
+side channels*:
+
+> **Side-channel leakage**: timing or exception behaviour reveals private
+> variable values to an external observer.  Example: loop count leaks a private
+> token value to an external observer (PRD §2.2, Table row "Side-channel
+> leakage").
+
+Even when the P-LLM's control flow (execution plan) is generated entirely from
+the trusted user query — satisfying the primary CaMeL invariant — an adversary
+who can observe *which branch executes* or *how many loop iterations run* can
+infer information about private `CaMeLValue`s.  For example:
+
+```python
+# Suppose 'secret' came from a restricted tool output.
+if secret == "admin":
+    notify_external_service("admin_mode_active")
+```
+
+In NORMAL mode the dependency graph records no edge from `secret` to
+`notify_external_service`'s arguments (because no direct data assignment
+occurs).  An adversary who controls `notify_external_service`'s observable
+side-effects can binary-search the private value through repeated requests.
+
+STRICT mode closes this vector by adding the `if`-test (or `for`-iterable)
+variable references as dependency edges on every assignment within the block.
+This is the formal mitigation for the "control-flow hijack" and "side-channel
+leakage" attack classes in PRD §2.2 and §7.
 
 The PRD (§6.3) specifies two tracking modes:
 
@@ -193,6 +234,87 @@ def get_dependency_graph(self, variable: str) -> DependencyGraph:
 - [ ] Expose `get_dependency_graph(self, variable: str) -> DependencyGraph` on
       `CaMeLInterpreter`
 - [ ] Update `exec()` call to `_exec_statements(..., ctx_deps=frozenset())`
+
+---
+
+## Alternatives Considered
+
+### A. Taint-flag on `CaMeLValue` (absorbing boolean)
+
+Add a boolean `is_control_flow_tainted` flag directly to `CaMeLValue` and set
+it whenever a value is assigned inside a tainted control-flow block.
+
+**Rejected because:**
+
+- The `CaMeLValue` capability system already tracks *data provenance* (sources,
+  readers).  Conflating *data provenance* with *execution-path dependency*
+  in the same type would violate the single-responsibility principle and make
+  both dimensions harder to reason about independently.
+- The dependency graph enables richer queries: the policy engine can ask "which
+  specific variables influenced this argument?" rather than just "was this
+  tainted?".  This is necessary for fine-grained policies (PRD §6.5).
+- A boolean taint flag on `CaMeLValue` would require the frozen dataclass to
+  carry additional policy-engine state, coupling the value container to the
+  execution mode (NORMAL/STRICT).  The current design keeps these concerns
+  separate.
+
+### B. Static AST analysis (pre-execution dependency scan)
+
+Scan the code AST before execution to statically determine all potential
+variable dependencies, rather than tracking them dynamically at runtime.
+
+**Rejected because:**
+
+- Static analysis cannot resolve dynamic name lookups (e.g. `d[key]` where
+  `key` is itself a variable).  It would under-approximate dependencies and
+  miss taint paths.
+- STRICT mode requires knowing which variables are referenced in an `if` test
+  *at the point the branch executes*, because earlier `exec()` calls in the
+  same session may have assigned the test variable.  Static analysis across
+  multi-call sessions is significantly more complex.
+- Runtime tracking is already needed for the `_tracking` accumulator (§3);
+  combining static pre-scan with runtime correction would add complexity
+  without benefit.
+
+### C. Whole-session graph (track all assignments globally, no per-query BFS)
+
+Pre-compute the full transitive closure for all variables after every `exec()`
+call, rather than computing it on-demand via BFS in `get_dependency_graph()`.
+
+**Rejected because:**
+
+- Sessions may contain many variables; eagerly computing all pairwise transitive
+  closures after every `exec()` is O(V² × E) in the worst case.  On-demand BFS
+  per query is O(V + E) and only pays cost when the query is actually made.
+- The frozen `DependencyGraph` snapshot is the correct API for consumers (they
+  receive a point-in-time view, not a live reference).  On-demand computation
+  ensures the snapshot is always current at the moment of the query.
+
+### D. Library-based graph (e.g. NetworkX)
+
+Use a third-party graph library instead of the custom `dict[str, set[str]]`
+adjacency-set representation.
+
+**Rejected because:**
+
+- The graph structure for a single CaMeL session is small (≪100 nodes in
+  typical agent tasks).  NetworkX's overhead is unnecessary.
+- Minimising external dependencies keeps the `camel` package lightweight and
+  reduces supply-chain risk (PRD §6.5, NFR-1).
+- The `_InternalGraph` implementation is fewer than 50 lines; there is no
+  complexity benefit from a third-party library.
+
+---
+
+## References
+
+- `camel/dependency_graph.py` — `_InternalGraph` and `DependencyGraph`
+- `camel/interpreter.py` — `_tracking` accumulator, `ctx_deps` threading
+- `tests/test_dependency_graph.py` — ≥20 test programs (NORMAL and STRICT)
+- CaMeL paper §6.3 (CaMeL Interpreter) and §7 (Security Model & Threat Model)
+- PRD §2.2 (Attack Vectors — side-channel leakage), §7.1 (PI-SEC game),
+  §7.2 (Trusted Boundary), §7.3 (Out-of-Scope Threats)
+- ADR-003: AST Interpreter Architecture and Supported Grammar Spec
 
 ---
 

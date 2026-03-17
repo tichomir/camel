@@ -16,6 +16,7 @@ graph query API, and the interface contracts Milestone 2 must satisfy.
 2. [CaMeLValue Schema & Capability Propagation Rules](#2-camelvalue-schema--capability-propagation-rules)
 3. [DependencyGraph Query API](#3-dependencygraph-query-api)
 4. [Milestone 2 Readiness Notes](#4-milestone-2-readiness-notes)
+5. [Architecture Decision Records](#5-architecture-decision-records)
 
 ---
 
@@ -677,6 +678,22 @@ snapshot = interp.store   # dict[str, CaMeLValue] — shallow copy, safe to muta
 # Seed a variable from outside the interpreter:
 interp.seed("pre_loaded", wrap("value", sources=frozenset({"external"})))
 ```
+
+---
+
+## 5. Architecture Decision Records
+
+The `docs/adr/` directory contains Architecture Decision Records (ADRs) that
+capture the key design choices made during Milestone 1.  Each ADR follows the
+standard format: Title, Status, Context, Decision, Consequences, Alternatives
+Considered, and References.
+
+| ADR | Title | Summary |
+|-----|-------|---------|
+| [ADR-001](adr/001-q-llm-isolation-contract.md) | Q-LLM Isolation Contract and Schema Conventions | How the Q-LLM is structurally prevented from calling tools or emitting free-form text; `QResponse` base schema; `have_enough_information` field semantics. |
+| [ADR-002](adr/002-camelvalue-capability-system.md) | CaMeLValue Dataclass and Capability Propagation System | Design of the `CaMeLValue` container, the `Public` singleton, `Readers` type alias, and all propagation rules (`propagate_assignment`, `propagate_binary_op`, etc.). |
+| [ADR-003](adr/003-ast-interpreter-architecture.md) | AST Interpreter Architecture and Supported Grammar Spec | Why Python's `ast` module was chosen over alternatives (custom bytecode VM, Lua, JS sandbox, S-expression DSL); the full supported grammar; `ExecutionMode` (NORMAL/STRICT); session-state lifecycle. |
+| [ADR-004](adr/004-dependency-graph-architecture.md) | Dependency Graph Architecture and NORMAL/STRICT Tracking Modes | Variable-level dependency tracking; the control-flow side-channel threat (PRD §7); why STRICT mode closes it; `DependencyGraph` frozen snapshot type; adjacency-set internal representation. |
 
 ---
 

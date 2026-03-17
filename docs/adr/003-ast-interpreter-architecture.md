@@ -482,10 +482,94 @@ Supported comparison operators: `Eq`, `NotEq`, `Lt`, `LtE`, `Gt`, `GtE`,
 
 ---
 
+## Alternatives Considered
+
+### A. Custom bytecode VM
+
+Design a dedicated bytecode format and a CaMeL-specific virtual machine instead
+of reusing Python's AST.
+
+**Rejected because:**
+
+- A custom bytecode format would require a complete toolchain: compiler,
+  assembler, disassembler, debugger support.  The P-LLM would need to emit an
+  unfamiliar, CaMeL-specific language, adding a non-trivial fine-tuning or
+  prompting burden.
+- Python's `ast` module is a mature, well-documented standard library component
+  with stable node types across CPython releases.  It gives us syntax parsing
+  for free; a custom VM would need to reinvent this.
+- The restricted Python subset is instantly readable by engineers familiar with
+  Python.  A bespoke bytecode is opaque without specialised tooling.
+
+### B. Sandboxed full Python execution (e.g. `RestrictedPython`, `exec` in a limited `__builtins__` namespace)
+
+Execute code in a restricted Python environment rather than walking the AST.
+
+**Rejected because:**
+
+- Full Python execution retains many side-channel vectors even with a stripped
+  `__builtins__`: exception tracebacks reveal internal structure, generators
+  introduce lazy evaluation, and `object.__subclasses__()` style escapes are
+  well-documented.  Whitelisting every dangerous path is an ongoing arms race.
+- Our AST walker explicitly *rejects* any node not in the supported grammar
+  (`UnsupportedSyntaxError`).  This allowlist model is strictly safer than a
+  blocklist approach, because unknown future Python constructs default to
+  rejection rather than permission.
+- Capability propagation must intercept *every* value-producing operation.
+  In a full-execution model, intercepting `+` on two integers requires
+  subclassing or `__add__` overrides on every Python type — fragile and
+  incomplete.  In the AST walker, every `ast.BinOp` node passes through one
+  `_eval_BinOp` method.
+
+### C. Lua or JavaScript sandbox (embedded scripting language)
+
+Embed a scripting language (Lua via `lupa`, or a JS engine via `quickjs` /
+`pyduktape`) as the execution substrate.
+
+**Rejected because:**
+
+- The P-LLM would need to generate Lua/JS rather than Python.  Empirical
+  evidence from the CaMeL paper shows state-of-the-art models generate
+  Python most reliably.  Switching languages would degrade plan quality and
+  increase retry rates.
+- Foreign-language bridges introduce serialisation costs and type-mapping
+  complexity.  `CaMeLValue` would need to be marshalled across the language
+  boundary for every operation.
+- Lua and JS sandboxes are not sandboxed by default; their own standard libraries
+  require careful curation, similar to the problem with full Python execution.
+
+### D. S-expression / Lisp-style DSL
+
+Design a minimal expression language with explicit syntax for capability-tagged
+values.
+
+**Rejected because:**
+
+- A Lisp-style syntax would be unfamiliar to the Python-centric LLM training
+  corpus, reducing generation accuracy.
+- The CaMeL paper authors' empirical evaluation was conducted with a Python
+  pseudo-code format; deviating from this increases experimental uncertainty.
+- A custom DSL requires parser maintenance.  Python's `ast.parse` is maintained
+  by CPython.
+
+### E. Haskell / Rust DSL (FW-1 future work)
+
+Using a language with an algebraic type system and explicit error handling
+(e.g. Haskell's `Either`, Rust's `Result`) would eliminate the exception
+side-channel class entirely, because no implicit exception propagation exists.
+
+**Deferred, not rejected.**  This is explicitly captured as open question FW-1
+in the PRD.  For Milestone 1, Python AST is chosen for pragmatic delivery
+reasons.  The Haskell/Rust DSL option remains the recommended long-term
+direction once the security model matures.
+
+---
+
 ## References
 
 - `camel/interpreter.py` — implementation (spec in module docstring + method docstrings)
 - `camel/value.py` — `CaMeLValue`, propagation functions (ADR-002)
 - `tests/test_interpreter.py` — unit test suite
 - CaMeL paper §6.3 (CaMeL Interpreter) and §7.2 (Trusted Boundary)
+- PRD §12 (Open Questions & Future Work) — FW-1: Alternative execution language
 - ADR-002: CaMeLValue Dataclass and Capability Propagation System
