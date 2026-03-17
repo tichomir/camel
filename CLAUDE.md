@@ -1045,3 +1045,24 @@ Deliverables:
 - ✅ Write unit test suite for allowlist enforcement (ForbiddenImportError, ForbiddenNameError, timing exclusion) — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 4 — Data-to-Control-Flow Escalation Detection | 2026-03-17 | ✅ done | 18 SP
+**Goal:** [Phase: Data-to-Control-Flow Escalation Detection]
+Implement runtime detection of data-to-control-flow escalation attacks, where untrusted data is used to determine which tool is invoked. This phase covers: detecting when tool name resolution depends on untrusted data and emitting a DataToControlFlowWarning (M4-F15); pausing execution and requiring elevated user consent before proceeding when such a warning is emitted, regardless of existing policy outcomes (M4-F16); recording STRICT mode dependency additions per statement in the audit log for post-execution review (M4-F18). This phase also covers the audit log enhancements for STRICT mode dependency tracing (M4-F18).
+
+Deliverables:
+- DataToControlFlowWarning detector: runtime check in interpreter identifying tool name resolution dependencies on untrusted data (M4-F15)
+- Elevated user consent gate: execution pause and elevated consent prompt triggered by DataToControlFlowWarning (M4-F16)
+- Audit log enhancement: per-statement STRICT mode dependency additions recorded for post-execution review (M4-F18)
+- Unit test suite: DataToControlFlowWarning detection covering direct and indirect untrusted tool name resolution
+- Integration test: end-to-end flow confirming execution halts and elevated consent is requested on escalation detection
+- Updated PRD Section 7.1 (Formal Security Game) and Section 7.2 (Trusted Boundary) documenting data-to-control-flow escalation as a covered attack vector
+- Updated Known Limitations & Risks table (L6) noting detection coverage and residual ROP-analogue risk
+- Updated Milestone 4 design document: escalation detection section marked complete
+
+**Delivered:**
+- ✅ Design data-to-control-flow escalation detection architecture — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement DataToControlFlowWarning detector and elevated consent gate — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write unit and integration tests for escalation detection and consent gate — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Publish updated PRD and Milestone 4 design document — Software Architect (⚡ Quick, 2 SP)
+
+---

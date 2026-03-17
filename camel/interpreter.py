@@ -108,7 +108,12 @@ from typing import Any, Literal, Protocol
 
 from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
 from camel.dependency_graph import DependencyGraph, _InternalGraph
-from camel.exceptions import ForbiddenImportError, ForbiddenNameError
+from camel.exceptions import (
+    DataToControlFlowEscalationError,
+    DataToControlFlowWarning,
+    ForbiddenImportError,
+    ForbiddenNameError,
+)
 from camel.value import (
     CaMeLValue,
     Public,
@@ -489,6 +494,135 @@ class ForbiddenNameEvent:
 
 
 # ---------------------------------------------------------------------------
+# ElevatedConsentCallback — M4-F16
+# ---------------------------------------------------------------------------
+
+
+class ElevatedConsentCallback(Protocol):
+    """Protocol for elevated-consent callbacks triggered by M4-F15/F16.
+
+    Separate from :class:`ConsentCallback` (used for policy denials) to allow
+    deployments to distinguish a routine policy override from an escalation
+    event requiring a higher level of operator attention.
+
+    Parameters
+    ----------
+    warning:
+        The :class:`~camel.exceptions.DataToControlFlowWarning` describing
+        the detection event.
+    tool_name_candidate:
+        The raw callable name the interpreter would have dispatched — provided
+        to give the operator context on what action was about to be taken.
+        May be ``None`` if the func expression does not resolve to a simple
+        name.
+
+    Returns
+    -------
+    bool
+        ``True`` to approve and proceed with the call.
+        ``False`` to reject; raises
+        :class:`~camel.exceptions.DataToControlFlowEscalationError` with
+        ``consent_outcome="rejected"``.
+    """
+
+    def __call__(
+        self,
+        warning: DataToControlFlowWarning,
+        tool_name_candidate: str | None,
+    ) -> bool:
+        """Return True to approve the escalation, False to reject it."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# DataToControlFlowAuditEvent — M4-F15 audit log entry
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DataToControlFlowAuditEvent:
+    """Audit log entry emitted when M4-F15 detects a data-to-control-flow escalation.
+
+    Appended to :attr:`CaMeLInterpreter.security_audit_log` immediately before
+    the M4-F16 elevated consent gate is invoked.
+
+    Attributes
+    ----------
+    event_type:
+        Always ``"DataToControlFlowEscalation"`` — used to filter events.
+    timestamp:
+        ISO-8601 UTC timestamp of detection.
+    lineno:
+        1-based source line number.
+    offending_variable:
+        Name of the function operand variable, or ``None``.
+    untrusted_sources:
+        List of untrusted source labels found on the function operand.
+    dependency_chain:
+        Provenance trace (variable, source) pairs — max 50 entries.
+    elevated_consent_triggered:
+        ``True`` when M4-F16 elevated consent gate was invoked.
+    consent_outcome:
+        ``"approved"`` | ``"rejected"`` | ``"evaluation_mode_raised"``
+        describing the M4-F16 gate outcome.
+    """
+
+    event_type: str = field(default="DataToControlFlowEscalation")
+    timestamp: str = field(default="")
+    lineno: int | None = field(default=None)
+    offending_variable: str | None = field(default=None)
+    untrusted_sources: list[str] = field(default_factory=list)
+    dependency_chain: list[tuple[str, str]] = field(default_factory=list)
+    elevated_consent_triggered: bool = field(default=False)
+    consent_outcome: str = field(default="")
+
+
+# ---------------------------------------------------------------------------
+# StrictDependencyAdditionEvent — M4-F18 audit log entry
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StrictDependencyAdditionEvent:
+    """Audit log entry recording STRICT mode dependency additions per statement.
+
+    Emitted once per unique ``(statement_lineno, assigned_variable)`` pair per
+    :meth:`CaMeLInterpreter.exec` call, when STRICT mode adds dependencies beyond
+    what normal direct-data-flow tracking would record (M4-F18).
+
+    Attributes
+    ----------
+    event_type:
+        Always ``"StrictDependencyAddition"`` for log filtering.
+    timestamp:
+        ISO-8601 UTC timestamp at the moment of the assignment.
+    statement_lineno:
+        1-based source line number of the assignment statement.
+        ``None`` when unavailable.
+    statement_type:
+        AST node type name: ``"Assign"``, ``"AugAssign"``, or ``"For"``.
+    assigned_variable:
+        The name of the variable receiving the assignment.
+    added_dependencies:
+        The frozenset of variable names added by the STRICT context
+        propagation rule that fired, beyond what direct data flow would have
+        contributed.
+    context_source:
+        The STRICT mode rule responsible for the addition:
+        ``"for_iterable"`` (M4-F1), ``"if_condition"`` (M4-F2),
+        ``"post_qllm"`` (M4-F3/F4), or ``"combined"`` (nested contexts).
+    """
+
+    event_type: str
+    timestamp: str
+    statement_lineno: int | None
+    statement_type: str
+    assigned_variable: str
+    added_dependencies: frozenset[str]
+    context_source: str
+
+
+# ---------------------------------------------------------------------------
 # _summarise_args helper
 # ---------------------------------------------------------------------------
 
@@ -629,6 +763,7 @@ class CaMeLInterpreter:
         policy_engine: Any | None = None,
         enforcement_mode: EnforcementMode = EnforcementMode.EVALUATION,
         consent_callback: ConsentCallback | None = None,
+        elevated_consent_callback: ElevatedConsentCallback | None = None,
     ) -> None:
         """Initialise the interpreter.
 
@@ -640,15 +775,22 @@ class CaMeLInterpreter:
           (``_ALLOWLIST_BUILTINS``) and is then updated with the caller-supplied
           ``builtins`` argument.  The allowlist is the authoritative base;
           extra callables injected via ``builtins`` extend it.
-        - ``_mode``, ``_policy_engine``, ``_enforcement_mode``, and
-          ``_consent_callback`` are stored as given.
+        - ``_mode``, ``_policy_engine``, ``_enforcement_mode``,
+          ``_consent_callback``, and ``_elevated_consent_callback`` are stored
+          as given.
         - ``ValueError`` is raised if ``enforcement_mode=PRODUCTION`` and
           ``consent_callback`` is ``None`` (security defect prevention).
         - ``_last_qllm_result_cv`` is a one-shot signal field set by
           ``_eval_Call`` when a Q-LLM tool returns, and consumed by
           ``_exec_statements`` to update the M4-F3/F4 tainting context.
-        - ``_security_audit_log`` records :class:`ForbiddenImportEvent` and
-          :class:`ForbiddenNameEvent` entries (M4-F10, M4-F14).
+        - ``_security_audit_log`` records :class:`ForbiddenImportEvent`,
+          :class:`ForbiddenNameEvent`, and :class:`DataToControlFlowAuditEvent`
+          entries (M4-F10, M4-F14, M4-F15).
+        - ``_strict_dep_audit_log`` records :class:`StrictDependencyAdditionEvent`
+          entries (M4-F18).
+        - ``_dep_ctx_source_stack`` is a parallel stack to ``_dep_ctx_stack``
+          tracking which STRICT mode rule pushed each context level
+          (``"if_condition"``, ``"for_iterable"``, ``"post_qllm"``).
         """
         if enforcement_mode is EnforcementMode.PRODUCTION and consent_callback is None:
             raise ValueError(
@@ -667,10 +809,17 @@ class CaMeLInterpreter:
         self._policy_engine = policy_engine
         self._enforcement_mode = enforcement_mode
         self._consent_callback = consent_callback
+        self._elevated_consent_callback = elevated_consent_callback
         # Security audit log (NFR-6): one entry per policy evaluate() call.
         self._audit_log: list[AuditLogEntry] = []
-        # M4-F10 / M4-F14: allowlist violation events.
-        self._security_audit_log: list[ForbiddenImportEvent | ForbiddenNameEvent] = []
+        # M4-F10 / M4-F14 / M4-F15: allowlist violation and escalation events.
+        self._security_audit_log: list[
+            ForbiddenImportEvent | ForbiddenNameEvent | DataToControlFlowAuditEvent
+        ] = []
+        # M4-F18: per-statement STRICT mode dependency addition events.
+        self._strict_dep_audit_log: list[StrictDependencyAdditionEvent] = []
+        # Deduplication set for M4-F18; reset at the start of each exec() call.
+        self._strict_dep_seen: set[tuple[int | None, str]] = set()
         # Dependency graph tracking state.
         self._dep_graph: _InternalGraph = _InternalGraph()
         # Set to a live set while evaluating an assignment RHS; None otherwise.
@@ -680,6 +829,10 @@ class CaMeLInterpreter:
         # In STRICT mode, entering an if/for block pushes a new frozenset that
         # merges the test/iterable variable names with the enclosing entry.
         self._dep_ctx_stack: list[frozenset[str]] = [frozenset()]
+        # Parallel source-tag stack for M4-F18 context_source determination.
+        # Each entry matches the corresponding _dep_ctx_stack entry.
+        # Bottom entry is "" (top-level / no STRICT context active).
+        self._dep_ctx_source_stack: list[str] = [""]
         # M4-F3/F4: one-shot signal set by _eval_Call when a Q-LLM tool
         # returns.  _exec_statements consumes this signal to taint all
         # subsequent statements in the same block.  Always None outside of
@@ -787,19 +940,36 @@ class CaMeLInterpreter:
     @property
     def security_audit_log(
         self,
-    ) -> list[ForbiddenImportEvent | ForbiddenNameEvent]:
-        """Return a snapshot of the allowlist-violation security audit log.
+    ) -> list[ForbiddenImportEvent | ForbiddenNameEvent | DataToControlFlowAuditEvent]:
+        """Return a snapshot of the security audit log.
 
-        Contains one :class:`ForbiddenImportEvent` or :class:`ForbiddenNameEvent`
-        for every import statement or disallowed name access detected during
-        this interpreter session (M4-F10, M4-F14).
+        Contains :class:`ForbiddenImportEvent`, :class:`ForbiddenNameEvent`,
+        and :class:`DataToControlFlowAuditEvent` entries for every allowlist
+        violation or data-to-control-flow escalation detected during this
+        interpreter session (M4-F10, M4-F14, M4-F15).
 
         Returns
         -------
-        list[ForbiddenImportEvent | ForbiddenNameEvent]
+        list[ForbiddenImportEvent | ForbiddenNameEvent | DataToControlFlowAuditEvent]
             Shallow copy of the internal security audit log.
         """
         return list(self._security_audit_log)
+
+    @property
+    def strict_dep_audit_log(self) -> list[StrictDependencyAdditionEvent]:
+        """Return a snapshot of the per-statement STRICT mode dependency addition log.
+
+        Contains one :class:`StrictDependencyAdditionEvent` for every unique
+        ``(statement_lineno, assigned_variable)`` pair per :meth:`exec` call
+        where STRICT mode added dependencies beyond direct data-flow tracking
+        (M4-F18).
+
+        Returns
+        -------
+        list[StrictDependencyAdditionEvent]
+            Shallow copy of the internal STRICT dependency audit log.
+        """
+        return list(self._strict_dep_audit_log)
 
     def get_dependency_graph(self, variable: str) -> DependencyGraph:
         """Return the dependency graph snapshot for *variable*.
@@ -858,6 +1028,9 @@ class CaMeLInterpreter:
            before any statement is executed (M4-F10).
         3. Call ``self._exec_statements(module.body, ctx_caps=None)``.
         """
+        # M4-F18: reset deduplication set so each exec() call produces its
+        # own complete event set without cross-call deduplication.
+        self._strict_dep_seen = set()
         module = ast.parse(code, mode="exec")
         # M4-F10: pre-scan the full AST for any import statement before
         # executing anything, ensuring no side-effects occur prior to
@@ -957,12 +1130,15 @@ class CaMeLInterpreter:
                     # push the updated dep context.
                     if qllm_ctx_pushed:
                         self._dep_ctx_stack.pop()
+                        self._dep_ctx_source_stack.pop()
                     self._dep_ctx_stack.append(new_dep_ctx)
+                    self._dep_ctx_source_stack.append("post_qllm")
                     qllm_ctx_pushed = True
         finally:
             # Always clean up any dep-ctx push made in this frame.
             if qllm_ctx_pushed:
                 self._dep_ctx_stack.pop()
+                self._dep_ctx_source_stack.pop()
 
     def _exec_statement(
         self,
@@ -1039,6 +1215,13 @@ class CaMeLInterpreter:
         combined_deps = direct_deps | self._dep_ctx_stack[-1]
         for target in node.targets:
             self._store_target(target, rhs_cv, combined_deps)
+            # M4-F18: emit per-statement STRICT dependency addition event.
+            self._emit_strict_dep_event(
+                stmt_lineno=getattr(node, "lineno", None),
+                stmt_type="Assign",
+                target=target,
+                direct_deps=direct_deps,
+            )
 
     def _exec_AugAssign(
         self,
@@ -1081,6 +1264,14 @@ class CaMeLInterpreter:
         # x += y means x depends on its previous self plus y.
         combined_deps = frozenset({name}) | direct_deps | self._dep_ctx_stack[-1]
         self._dep_graph.record(name, combined_deps)
+        # M4-F18: emit per-statement STRICT dependency addition event.
+        _aug_target = ast.Name(id=name, ctx=ast.Store())
+        self._emit_strict_dep_event(
+            stmt_lineno=getattr(node, "lineno", None),
+            stmt_type="AugAssign",
+            target=_aug_target,
+            direct_deps=direct_deps | frozenset({name}),
+        )
 
     def _exec_If(
         self,
@@ -1109,6 +1300,7 @@ class CaMeLInterpreter:
             self._tracking = None
             inner_ctx = self._merge_ctx_caps(test_cv, ctx_caps)
             self._dep_ctx_stack.append(self._dep_ctx_stack[-1] | test_deps)
+            self._dep_ctx_source_stack.append("if_condition")
         else:
             inner_ctx = ctx_caps
         try:
@@ -1119,6 +1311,7 @@ class CaMeLInterpreter:
         finally:
             if self._mode == ExecutionMode.STRICT:
                 self._dep_ctx_stack.pop()
+                self._dep_ctx_source_stack.pop()
 
     def _exec_For(
         self,
@@ -1165,6 +1358,7 @@ class CaMeLInterpreter:
         if self._mode == ExecutionMode.STRICT:
             inner_ctx2 = self._merge_ctx_caps(iter_cv, ctx_caps)
             self._dep_ctx_stack.append(outer_ctx_deps | iter_deps)
+            self._dep_ctx_source_stack.append("for_iterable")
         else:
             inner_ctx2 = ctx_caps
         # Capture inner dep-ctx before entering the loop so M4-F9 can attach
@@ -1197,6 +1391,7 @@ class CaMeLInterpreter:
         finally:
             if self._mode == ExecutionMode.STRICT:
                 self._dep_ctx_stack.pop()
+                self._dep_ctx_source_stack.pop()
 
     def _exec_Expr(
         self,
@@ -1699,6 +1894,28 @@ class CaMeLInterpreter:
 
             elif name in self._store:
                 stored_cv = self._store[name]
+                # M4-F15: check for data-to-control-flow escalation.
+                # Any call to a store variable (not a registered tool or builtin)
+                # may indicate that untrusted data is controlling which tool fires.
+                _f15_lineno: int | None = getattr(func_node, "lineno", None)
+                _f15_untrusted: set[str] = {
+                    s for s in stored_cv.sources if s not in self._TRUSTED_SOURCES
+                }
+                if not _f15_untrusted:
+                    # Also check dep graph for indirect escalation paths.
+                    _f15_untrusted = set(
+                        self._collect_untrusted_dep_sources(name)
+                    )
+                if _f15_untrusted:
+                    _f15_dep_chain = self._build_dep_chain(stored_cv, name)
+                    _f15_warning = DataToControlFlowWarning(
+                        lineno=_f15_lineno,
+                        offending_variable=name,
+                        untrusted_sources=frozenset(_f15_untrusted),
+                        dependency_chain=_f15_dep_chain,
+                    )
+                    _f15_audit = self._emit_escalation_audit_event(_f15_warning)
+                    self._handle_escalation(_f15_warning, _f15_audit, func_node)
                 if not callable(stored_cv.raw):
                     raise TypeError(f"{name!r} is not callable")
                 result_raw = stored_cv.raw(
@@ -2161,6 +2378,242 @@ class CaMeLInterpreter:
         if cv.readers is not Public and cv.readers:
             return True
         return any(src not in self._TRUSTED_SOURCES for src in cv.sources)
+
+    # ------------------------------------------------------------------
+    # M4-F15 helpers — escalation detection
+    # ------------------------------------------------------------------
+
+    def _collect_untrusted_dep_sources(self, var_name: str) -> frozenset[str]:
+        """Collect untrusted sources from the dependency graph of *var_name*.
+
+        Walks all upstream variable dependencies and returns the union of
+        untrusted source labels found in any upstream variable's
+        :class:`~camel.value.CaMeLValue` sources field.  This catches indirect
+        escalation where the callable variable is derived from (rather than
+        assigned directly from) untrusted data.
+
+        Parameters
+        ----------
+        var_name:
+            Variable name to inspect in the dependency graph.
+
+        Returns
+        -------
+        frozenset[str]
+            All untrusted source labels found in the upstream dependency chain.
+            Empty if the dependency graph has no untrusted sources.
+        """
+        dg = self._dep_graph.subgraph(var_name)
+        untrusted: set[str] = set()
+        for upstream_var in dg.all_upstream:
+            if upstream_var in self._store:
+                for src in self._store[upstream_var].sources:
+                    if src not in self._TRUSTED_SOURCES:
+                        untrusted.add(src)
+        return frozenset(untrusted)
+
+    def _build_dep_chain(
+        self,
+        func_cv: CaMeLValue,
+        offending_var: str | None,
+    ) -> list[tuple[str, str]]:
+        """Build a provenance chain for the function operand's untrusted sources.
+
+        Returns at most 50 ``(variable_name, source_label)`` pairs tracing the
+        untrusted provenance of the callable value back to its origins.
+
+        Parameters
+        ----------
+        func_cv:
+            The capability-tagged function operand value.
+        offending_var:
+            Variable name of the func operand (``ast.Name.id``), or ``None``
+            for attribute expressions.
+
+        Returns
+        -------
+        list[tuple[str, str]]
+            Ordered chain of ``(variable, source)`` pairs; max 50 entries.
+        """
+        chain: list[tuple[str, str]] = []
+        label = offending_var or "<expr>"
+        # Direct sources of the function operand value.
+        for src in func_cv.sources:
+            if src not in self._TRUSTED_SOURCES:
+                chain.append((label, src))
+        # Walk upstream dependency graph (if variable name is known).
+        if offending_var:
+            dg = self._dep_graph.subgraph(offending_var)
+            for upstream_var in dg.all_upstream:
+                if upstream_var in self._store:
+                    for src in self._store[upstream_var].sources:
+                        if src not in self._TRUSTED_SOURCES:
+                            chain.append((upstream_var, src))
+        return chain[:50]
+
+    def _emit_escalation_audit_event(
+        self,
+        warning: DataToControlFlowWarning,
+    ) -> DataToControlFlowAuditEvent:
+        """Append a :class:`DataToControlFlowAuditEvent` to the security audit log.
+
+        Called immediately before :meth:`_handle_escalation` so every M4-F15
+        detection event is recorded regardless of the M4-F16 gate outcome.
+        The returned event object is mutable so that :meth:`_handle_escalation`
+        can update ``elevated_consent_triggered`` and ``consent_outcome``.
+
+        Parameters
+        ----------
+        warning:
+            The :class:`~camel.exceptions.DataToControlFlowWarning` that was
+            just detected.
+
+        Returns
+        -------
+        DataToControlFlowAuditEvent
+            The event appended to the log (reference kept for later mutation).
+        """
+        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        event = DataToControlFlowAuditEvent(
+            timestamp=ts,
+            lineno=warning.lineno,
+            offending_variable=warning.offending_variable,
+            untrusted_sources=list(warning.untrusted_sources),
+            dependency_chain=list(warning.dependency_chain),
+        )
+        self._security_audit_log.append(event)
+        return event
+
+    def _handle_escalation(
+        self,
+        warning: DataToControlFlowWarning,
+        audit_event: DataToControlFlowAuditEvent,
+        func_node: ast.expr,
+    ) -> None:
+        """Implement the M4-F16 elevated user consent gate.
+
+        Fires unconditionally when M4-F15 detects an escalation, regardless
+        of existing policy outcomes or prior consent decisions.
+
+        In ``EVALUATION`` mode: raises
+        :class:`~camel.exceptions.DataToControlFlowEscalationError` immediately.
+
+        In ``PRODUCTION`` mode: invokes ``elevated_consent_callback`` (or the
+        always-reject default if none was provided).  Proceeds on approval;
+        raises :class:`~camel.exceptions.DataToControlFlowEscalationError` on
+        rejection.
+
+        Parameters
+        ----------
+        warning:
+            The detection warning produced by the M4-F15 check.
+        audit_event:
+            The mutable audit event to update with the gate outcome.
+        func_node:
+            The AST func expression node, used to extract the candidate name.
+        """
+        tool_name_candidate: str | None = (
+            func_node.id  # type: ignore[attr-defined]
+            if isinstance(func_node, ast.Name)
+            else None
+        )
+        audit_event.elevated_consent_triggered = True
+
+        if self._enforcement_mode is EnforcementMode.EVALUATION:
+            audit_event.consent_outcome = "evaluation_mode_raised"
+            raise DataToControlFlowEscalationError(warning=warning)
+
+        # PRODUCTION mode: invoke elevated consent gate.
+        if self._elevated_consent_callback is not None:
+            approved = self._elevated_consent_callback(warning, tool_name_candidate)
+        else:
+            # Secure default: always reject when no callback is configured.
+            approved = False
+
+        if approved:
+            audit_event.consent_outcome = "approved"
+        else:
+            audit_event.consent_outcome = "rejected"
+            raise DataToControlFlowEscalationError(warning=warning)
+
+    # ------------------------------------------------------------------
+    # M4-F18 helper — STRICT mode dependency addition audit log
+    # ------------------------------------------------------------------
+
+    def _emit_strict_dep_event(
+        self,
+        stmt_lineno: int | None,
+        stmt_type: str,
+        target: ast.expr,
+        direct_deps: frozenset[str],
+    ) -> None:
+        """Emit a :class:`StrictDependencyAdditionEvent` for an assignment.
+
+        Only emits when ALL of the following are true (M4-F18):
+        1. Execution mode is STRICT.
+        2. The current ``_dep_ctx_stack[-1]`` is non-empty.
+        3. ``strict_additions = _dep_ctx_stack[-1] - direct_deps`` is non-empty.
+
+        Uses ``_strict_dep_seen`` (reset per ``exec()`` call) for deduplication:
+        at most one event per ``(stmt_lineno, variable_name)`` pair per
+        ``exec()`` call.
+
+        Parameters
+        ----------
+        stmt_lineno:
+            1-based source line number of the statement.
+        stmt_type:
+            AST node type name (``"Assign"``, ``"AugAssign"``, etc.).
+        target:
+            The assignment target node (``ast.Name`` or ``ast.Tuple``/``ast.List``).
+        direct_deps:
+            Variable names directly referenced in the RHS expression.
+        """
+        if self._mode is not ExecutionMode.STRICT:
+            return
+        ctx_deps = self._dep_ctx_stack[-1]
+        if not ctx_deps:
+            return
+        strict_additions = ctx_deps - direct_deps
+        if not strict_additions:
+            return
+
+        # Determine context_source from the active source stack.
+        active_sources: set[str] = {
+            src for src in self._dep_ctx_source_stack if src
+        }
+        if len(active_sources) == 0:
+            return  # No STRICT context active — should not reach here.
+        elif len(active_sources) == 1:
+            context_source = next(iter(active_sources))
+        else:
+            context_source = "combined"
+
+        # Collect variable name(s) from the target.
+        target_names: list[str] = []
+        if isinstance(target, ast.Name):
+            target_names.append(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for elt in target.elts:
+                if isinstance(elt, ast.Name):
+                    target_names.append(elt.id)
+
+        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for var_name in target_names:
+            dedup_key = (stmt_lineno, var_name)
+            if dedup_key not in self._strict_dep_seen:
+                self._strict_dep_seen.add(dedup_key)
+                self._strict_dep_audit_log.append(
+                    StrictDependencyAdditionEvent(
+                        event_type="StrictDependencyAddition",
+                        timestamp=ts,
+                        statement_lineno=stmt_lineno,
+                        statement_type=stmt_type,
+                        assigned_variable=var_name,
+                        added_dependencies=frozenset(strict_additions),
+                        context_source=context_source,
+                    )
+                )
 
     @staticmethod
     def _extract_import_module_name(node: ast.Import | ast.ImportFrom) -> str:

@@ -1312,3 +1312,20 @@ class CaMeLOrchestrator:
             Snapshot of the internal audit log.
         """
         return list(self._redaction_audit_log)
+
+    @property
+    def strict_dep_audit_log(self) -> list[Any]:
+        """Return the per-statement STRICT mode dependency addition log (M4-F18).
+
+        Delegates to :attr:`CaMeLInterpreter.strict_dep_audit_log`.  Contains
+        one :class:`~camel.interpreter.StrictDependencyAdditionEvent` for every
+        unique ``(statement_lineno, assigned_variable)`` pair per :meth:`run`
+        call where STRICT mode added context-flow dependencies beyond direct
+        data-flow tracking.
+
+        Returns
+        -------
+        list[StrictDependencyAdditionEvent]
+            Snapshot of the interpreter's STRICT dependency audit log.
+        """
+        return self._interpreter.strict_dep_audit_log

@@ -15,6 +15,7 @@ Each section gates the corresponding implementation sprint.
 | [1. STRICT Mode Extension](#1-strict-mode-extension) | M4-F1 – F5 | ✅ Implemented |
 | [2. Exception Hardening & Redaction](#2-exception-hardening--redaction) | M4-F6 – F9, M4-F17 | ✅ Implemented |
 | [3. Module & Builtin Allowlist Enforcement](#3-module--builtin-allowlist-enforcement) | M4-F10 – F14 | ✅ Implemented |
+| [4. Data-to-Control-Flow Escalation Detection](#4-data-to-control-flow-escalation-detection) | M4-F15, M4-F16, M4-F18 | ✅ Implemented |
 
 The complete feature register is maintained in the CLAUDE.md sprint history.
 
@@ -689,3 +690,173 @@ _Status updated: 2026-03-17 — all M4-F10 through M4-F14 deliverables verified.
 Feature cluster M4-F10 through M4-F14 implemented and design documentation published.
 Security review gate active on `allowlist.yaml`.  Unit test suite pending (separate
 sprint deliverable).  All architecture and PRD documentation updated.
+
+---
+
+## 4. Data-to-Control-Flow Escalation Detection
+
+_Status: ✅ Implemented — M4-F15, M4-F16, and M4-F18 delivered and verified_
+
+This phase closes the data-to-control-flow escalation vector: the scenario where
+untrusted tool output or Q-LLM result data influences **which tool** is selected for
+execution at runtime, bypassing the structural guarantee that the P-LLM generates
+all control flow from the trusted user query.
+
+See the full design specification:
+[`docs/design/milestone4-escalation-detection.md`](design/milestone4-escalation-detection.md)
+
+### 4.1 Feature Register
+
+| Feature ID | Description | Status |
+|---|---|---|
+| M4-F15 | `DataToControlFlowWarning` detector — runtime check in `_eval_Call` on func operand provenance | ✅ Implemented |
+| M4-F16 | Elevated user consent gate — execution pause; elevated prompt required regardless of policy outcome | ✅ Implemented |
+| M4-F18 | Per-statement STRICT mode dependency addition recording in audit log | ✅ Implemented |
+
+### 4.2 M4-F15 — Detection Check Point
+
+The detection fires at the start of `_eval_Call` in `camel/interpreter.py`, immediately
+after evaluating the `func` operand and before any dispatch logic:
+
+1. `func_cv = _eval_expr(node.func, ctx_caps)` — evaluate function operand.
+2. Compute `untrusted_sources = {s for s in func_cv.sources if s not in TRUSTED_SOURCES}`.
+3. Walk upstream dependency graph for the func variable to capture indirect escalation.
+4. If `untrusted_sources` is non-empty: construct `DataToControlFlowWarning` and
+   invoke the M4-F16 elevated consent gate.
+
+A **literal tool name** (e.g., `send_email(...)`) is resolved through `_eval_Name`
+which wraps it with `sources=frozenset({"CaMeL"})` — trusted; no warning fired.
+Only calls where the function variable carries provenance from outside `TRUSTED_SOURCES`
+trigger the detection.
+
+#### `DataToControlFlowWarning` Structure
+
+```python
+@dataclass(frozen=True)
+class DataToControlFlowWarning:
+    lineno:             int | None           # AST source line number
+    offending_variable: str | None           # ast.Name.id, if simple name call
+    untrusted_sources:  frozenset[str]       # source labels outside TRUSTED_SOURCES
+    dependency_chain:   list[tuple[str,str]] # [(var, source), ...] — max 50 entries
+```
+
+The `dependency_chain` field contains only variable names and source labels —
+never raw runtime values — so it is safe to include in audit logs and error messages.
+
+### 4.3 M4-F16 — Elevated Consent Gate
+
+When M4-F15 fires:
+
+- **EVALUATION mode**: `DataToControlFlowEscalationError` is raised immediately
+  (no UI interaction) — consistent with how `PolicyViolationError` behaves in
+  EVALUATION mode.
+- **PRODUCTION mode**: the `ElevatedConsentCallback` is invoked with the warning
+  and a candidate tool name.  The gate fires **before** `_policy_engine.evaluate()`,
+  ensuring it cannot be bypassed by a pre-existing `Allowed` policy outcome.
+  If no `elevated_consent_callback` is configured, the secure default (always reject)
+  is applied.
+
+If elevated consent is **approved**, execution resumes and the normal policy check
+runs next — elevated consent does not grant policy bypass.
+
+#### Key exception
+
+```python
+@dataclass
+class DataToControlFlowEscalationError(Exception):
+    warning: DataToControlFlowWarning
+    # message: contains only variable names + source labels; no untrusted values
+```
+
+### 4.4 M4-F18 — STRICT Mode Dependency Addition Audit Events
+
+For every assignment executed in STRICT mode where the context dependency set is
+non-empty, a `StrictDependencyAdditionEvent` is emitted to
+`interpreter._strict_dep_audit_log`:
+
+```python
+@dataclass(frozen=True)
+class StrictDependencyAdditionEvent:
+    event_type:           str              # "StrictDependencyAddition"
+    timestamp:            str              # ISO-8601 UTC
+    statement_lineno:     int | None
+    statement_type:       str              # "Assign" | "AugAssign" | "For"
+    assigned_variable:    str
+    added_dependencies:   frozenset[str]   # deps added by STRICT context
+    context_source:       str              # "for_iterable" | "if_condition"
+                                           #   | "post_qllm" | "combined"
+```
+
+Events are emitted **only** when STRICT mode genuinely adds dependencies beyond what
+NORMAL mode would record.  Loop deduplication prevents O(n) event floods: at most one
+event per `(lineno, variable)` pair per `exec()` call, with subsequent iterations
+counted rather than producing additional events.
+
+### 4.5 Audit Log Integration
+
+| Log attribute | Event type | Description |
+|---|---|---|
+| `interpreter._security_audit_log` | `DataToControlFlowAuditEvent` | One entry per M4-F15 detection with consent outcome |
+| `interpreter._strict_dep_audit_log` | `StrictDependencyAdditionEvent` | One (deduped) entry per STRICT mode taint addition |
+
+Both logs are exposed via public properties on `CaMeLInterpreter` and delegated
+through `CaMeLOrchestrator`.
+
+### 4.6 Security Outcome
+
+| Vector | Mitigation |
+|---|---|
+| Untrusted data → callable → tool dispatch | M4-F15 detects; M4-F16 blocks |
+| Policy bypass via `Allowed` outcome | M4-F16 gate precedes policy evaluation |
+| Silent escalation approval | `DataToControlFlowAuditEvent` with consent outcome emitted unconditionally |
+| STRICT mode taint opacity | M4-F18 provides complete per-statement dependency-addition trace |
+| Residual ROP-analogue chaining | Documented in §4.7; requires defence-in-depth (FW-6) |
+
+### 4.7 Residual Risk
+
+M4-F15/F16 detect and block the case where a single untrusted-derived callable fires.
+The **ROP-analogue** attack — chaining individually-approved tool calls to produce a
+collectively malicious outcome — is **not** covered by this feature.  This residual
+risk is documented in PRD §10 L6 and is the subject of future work FW-6 (action-sequence
+anomaly detection via dependency graph analysis).
+
+### 4.8 Design Document Reference
+
+Full architecture: [`docs/design/milestone4-escalation-detection.md`](design/milestone4-escalation-detection.md)
+
+Sections:
+- §2: M4-F15 detection algorithm, `DataToControlFlowWarning` structure, dep-chain construction
+- §3: M4-F16 gate flow, `ElevatedConsentCallback` protocol, bypass-prevention guarantee
+- §4: M4-F18 `StrictDependencyAdditionEvent` schema, emission conditions, deduplication
+- §5: Integration architecture with existing audit logs and exception redaction
+- §7: Security properties and residual risks
+- §8: Test coverage requirements
+
+### 4.9 Implementation Completion Record
+
+_Status updated: 2026-03-17 — all M4-F15, M4-F16, M4-F18 deliverables implemented and verified._
+
+| Deliverable | Status | Location |
+|---|---|---|
+| `DataToControlFlowWarning` frozen dataclass | ✅ Complete | `camel/exceptions.py` |
+| `DataToControlFlowEscalationError` dataclass | ✅ Complete | `camel/exceptions.py` |
+| M4-F15 detection check in `_eval_Call` | ✅ Complete | `camel/interpreter.py` |
+| `_handle_escalation()` method | ✅ Complete | `camel/interpreter.py` |
+| `ElevatedConsentCallback` Protocol | ✅ Complete | `camel/interpreter.py` |
+| `elevated_consent_callback` constructor param | ✅ Complete | `camel/interpreter.py` |
+| `DataToControlFlowAuditEvent` dataclass | ✅ Complete | `camel/interpreter.py` |
+| `_emit_escalation_audit_event()` helper | ✅ Complete | `camel/interpreter.py` |
+| `StrictDependencyAdditionEvent` frozen dataclass | ✅ Complete | `camel/interpreter.py` |
+| `_emit_strict_dep_event()` with deduplication | ✅ Complete | `camel/interpreter.py` |
+| `strict_dep_audit_log` public property | ✅ Complete | `camel/interpreter.py` |
+| Orchestrator `strict_dep_audit_log` delegation | ✅ Complete | `camel/execution_loop.py` |
+| Exports: `DataToControlFlowWarning`, `DataToControlFlowEscalationError`, `StrictDependencyAdditionEvent` | ✅ Complete | `camel/__init__.py` |
+| PRD §7.1 (Formal Security Game) — escalation as covered vector | ✅ Complete | `docs/architecture.md §10.1` |
+| PRD §7.2 (Trusted Boundary) — tool name resolution from untrusted data documented | ✅ Complete | `docs/architecture.md §10.2` |
+| Known Limitations L6 — runtime detection coverage noted, residual ROP-analogue distinguished | ✅ Complete | `docs/architecture.md §10.5` |
+| Unit test suite (M4-F15 detection, M4-F16 gate modes, M4-F18 events) | ✅ Complete | `tests/test_escalation_detection.py` |
+
+**Audit trail entry — 2026-03-17:**
+Feature cluster M4-F15, M4-F16, M4-F18 implemented, tested, and documented.  The
+data-to-control-flow escalation attack vector is now runtime-detected and blocked.
+PRD security model (§7.1, §7.2, §10 L6) updated to reflect implementation status.

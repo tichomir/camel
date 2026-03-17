@@ -1,6 +1,6 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.4.2 (Milestone 4 — Module & Builtin Allowlist Enforcement)
+**Version:** 0.4.3 (Milestone 4 — Data-to-Control-Flow Escalation Detection Design)
 **Date:** 2026-03-17
 **Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
@@ -749,15 +749,25 @@ CaMeL's design prevents this by ensuring:
    via the P-LLM, which never observes tool return values.
 2. **Data flow** (values passed to tool arguments) is governed by capability tags and security
    policies evaluated synchronously before every tool call.
+3. **Tool selection at runtime** is guarded against data-to-control-flow escalation: the
+   interpreter detects, via `DataToControlFlowWarning` (M4-F15), any attempt to invoke a
+   callable whose identity was derived from untrusted data, and blocks the call via the
+   elevated consent gate (M4-F16) before any policy evaluation or tool dispatch occurs.
 
 ### 10.2 Trusted vs Untrusted Boundary (PRD §7.2)
 
 | Trusted | Untrusted |
 |---|---|
 | User query | Tool return values |
-| P-LLM generated literals | Q-LLM outputs (until capability-validated) |
+| P-LLM generated literals (including literal tool names in code) | Q-LLM outputs (until capability-validated) |
 | Platform security policies | Web pages, emails, documents |
 | Interpreter-derived transformations (`"CaMeL"` source) | External API responses |
+| Direct tool-name tokens in P-LLM-generated code | Variables whose value was derived from tool output or Q-LLM results |
+
+**Escalation boundary (M4-F15/F16):** The `func` operand of any call expression is
+inspected at runtime.  If it resolves to a `CaMeLValue` with sources outside
+`{"User literal", "CaMeL"}`, the call is treated as a data-to-control-flow escalation
+attempt and blocked by the elevated consent gate regardless of existing policy outcomes.
 
 ### 10.3 Attack Vectors Mitigated
 
@@ -765,7 +775,7 @@ CaMeL's design prevents this by ensuring:
 |---|---|
 | **Control flow hijack** — malicious content overrides the plan | P-LLM isolation: plan generated from trusted query only; tool values never reach P-LLM |
 | **Data flow manipulation** — injected arguments to legitimate tool calls | Capability tagging + policy engine: untrusted-sourced values require explicit policy approval before flowing to tool arguments |
-| **Data-to-control escalation** — untrusted data drives tool selection | P-LLM generates all branching logic; untrusted values cannot influence AST structure |
+| **Data-to-control escalation** — untrusted data drives tool selection | P-LLM generates all branching logic (structural guarantee); M4-F15/F16 runtime detection and elevated consent gate blocks any attempt to call a variable-derived callable whose provenance includes untrusted sources |
 | **Exception side-channel** — error content leaks private values to P-LLM | Exception redaction engine strips messages from untrusted-dependency failures |
 | **Timing / control-flow side-channel** — branch observation leaks private booleans | STRICT mode propagates branch condition as dependency to all inner-block variables |
 
@@ -783,7 +793,27 @@ CaMeL's design prevents this by ensuring:
   See `docs/security_hardening_allowlist.md §5` for the full residual risk catalogue.
 - Formal verification of interpreter correctness (future work — FW-2)
 
-### 10.5 Security Metrics
+### 10.5 Known Limitations & Residual Risks
+
+| # | Limitation | Severity | Mitigation Status |
+|---|---|---|---|
+| L1 | Data-requires-action failure: P-LLM cannot plan actions that depend on reading untrusted data | Medium | Documented design constraint; future: nested P-LLM tool (FW-4) |
+| L3 | Exception-based side channel (residual): M4-F6 through M4-F9 close primary exception channels; deeply nested tool call exception propagation remains a documented residual | Low | M4-F6/F7/F8/F9 implemented; see `docs/design/milestone4-exception-hardening.md §9.2` |
+| L6 | **ROP-analogue action chaining**: an adversary may chain individually-approved tool calls to produce a collectively malicious outcome. M4-F15/F16 runtime detection closes the **single-escalation** vector (one untrusted-derived callable per call site), but chaining of individually *trusted* actions remains a residual risk. | Medium-High | **Partially mitigated by M4-F15/F16** (single-step escalation blocked at runtime). Residual chain risk documented; future: action-sequence anomaly detection via dependency graph analysis (FW-6); defence-in-depth with model-level robustness training |
+| L4 | User fatigue from policy / escalation denials | Medium | Granular policies; elevated consent provides clear escalation reason |
+| L5 | Token cost overhead (~2.82× input tokens vs native tool-calling) | Low-Medium | Expected to decrease as models follow subset spec more closely |
+
+**L6 detail:** M4-F15 detects and M4-F16 blocks the case where a *single* tool call's
+function identity derives from untrusted data.  The ROP-analogue scenario — where each
+individual tool call is to a statically-named (trusted) tool but the sequence of calls,
+driven by untrusted branching, collectively exfiltrates data — is **not** eliminated by
+M4-F15/F16.  STRICT mode (M4-F1/F2) propagates untrusted branch conditions to all
+inner-block assignments, ensuring those variables carry the correct taint; however, an
+adversary crafting a sequence of fully-legitimate tool calls where each call is
+individually policy-approved can still construct a collectively malicious trace.  This
+is the subject of future work FW-6.
+
+### 10.6 Security Metrics
 
 | Metric | Target | Achieved |
 |---|---|---|

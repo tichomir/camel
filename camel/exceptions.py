@@ -127,3 +127,69 @@ class ConfigurationSecurityError(RuntimeError):
     The error message describes the specific violation so operators can
     correct the configuration before restarting.
     """
+
+
+@dataclass(frozen=True)
+class DataToControlFlowWarning:
+    """Runtime warning emitted when a call's function operand has untrusted provenance.
+
+    Indicates a data-to-control-flow escalation attempt (M4-F15).
+
+    Attributes
+    ----------
+    lineno:
+        1-based source line number of the offending call expression.
+        ``None`` when AST line information is unavailable.
+    offending_variable:
+        The identifier name of the ``ast.Name`` node in the ``func``
+        position, if the call is of the form ``variable_name(args)``.
+        ``None`` for more complex function-expression forms (e.g.,
+        attribute access ``obj.method(...)``).
+    untrusted_sources:
+        Frozenset of source labels from the function operand's capability
+        graph that are outside ``TRUSTED_SOURCES``.  Always non-empty when
+        a warning is emitted.
+    dependency_chain:
+        Ordered list of ``(variable_name, source_label)`` pairs tracing
+        the provenance of the function operand back to its untrusted
+        origins.  Capped at 50 entries.  Contains only variable names and
+        source labels — no raw untrusted values — safe to log.
+    """
+
+    lineno: int | None
+    offending_variable: str | None
+    untrusted_sources: frozenset[str]
+    dependency_chain: list[tuple[str, str]]
+
+
+@dataclass
+class DataToControlFlowEscalationError(Exception):
+    """Raised in EVALUATION mode when a data-to-control-flow escalation is detected.
+
+    Raised by the M4-F16 elevated consent gate when the interpreter is in
+    ``EVALUATION`` enforcement mode and ``M4-F15`` detects that a callable's
+    identity was derived from untrusted data.
+
+    In ``PRODUCTION`` mode this error is also raised when the operator
+    explicitly rejects the elevated consent prompt.
+
+    Attributes
+    ----------
+    warning:
+        The :class:`DataToControlFlowWarning` that triggered this error.
+        Contains the line number, offending variable, untrusted sources,
+        and dependency chain.
+    """
+
+    warning: DataToControlFlowWarning
+
+    def __post_init__(self) -> None:
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return (
+            f"Data-to-control-flow escalation detected at line "
+            f"{self.warning.lineno}: function operand "
+            f"{self.warning.offending_variable!r} has untrusted sources "
+            f"{sorted(self.warning.untrusted_sources)} (M4-F15/F16)"
+        )

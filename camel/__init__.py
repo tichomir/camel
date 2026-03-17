@@ -1,6 +1,6 @@
 """CaMeL — Capabilities for Machine Learning runtime.
 
-Public API for Milestone 3 (v0.3.0):
+Public API for Milestone 4 (v0.4.0):
 
 Value & capability system
 --------------------------
@@ -22,6 +22,12 @@ Interpreter
 :class:`ExecutionMode`      ``NORMAL`` / ``STRICT`` tracking-mode flag.
 :class:`UnsupportedSyntaxError`  Raised for grammar outside the supported subset.
 :class:`PolicyViolationError`    Raised when a security policy blocks a tool call.
+:class:`StrictDependencyAdditionEvent`  Per-statement STRICT mode dep addition (M4-F18).
+
+Escalation detection (M4-F15/F16)
+----------------------------------
+:class:`DataToControlFlowWarning`       Warning emitted on escalation detection.
+:class:`DataToControlFlowEscalationError`  Raised when escalation gate fires.
 
 Dependency graph
 ----------------
@@ -30,10 +36,15 @@ Dependency graph
 """
 
 from camel.dependency_graph import DependencyGraph
+from camel.exceptions import (
+    DataToControlFlowEscalationError,
+    DataToControlFlowWarning,
+)
 from camel.interpreter import (
     CaMeLInterpreter,
     ExecutionMode,
     PolicyViolationError,
+    StrictDependencyAdditionEvent,
     UnsupportedSyntaxError,
 )
 from camel.value import (
@@ -50,7 +61,7 @@ from camel.value import (
     wrap,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # Version
@@ -72,6 +83,10 @@ __all__ = [
     "ExecutionMode",
     "UnsupportedSyntaxError",
     "PolicyViolationError",
+    "StrictDependencyAdditionEvent",
+    # Escalation detection
+    "DataToControlFlowWarning",
+    "DataToControlFlowEscalationError",
     # Dependency graph
     "DependencyGraph",
     "get_dependency_graph",
