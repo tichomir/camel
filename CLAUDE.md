@@ -203,11 +203,13 @@ Custom Python interpreter operating over a restricted Python subset.
 Built on Python's ast library (recursive AST node interpretation).
 Maintains a data flow graph: for every variable, tracks all upstream dependencies.
 Supports two execution modes (STRICT is the default as of v0.4.0 — Milestone 4, M4-F5):
-STRICT mode (default): Closes control-flow and Q-LLM side-channel vectors via three propagation rules:
-  (M4-F1) For-loop iterable — the iterable's capability and dependency set is merged into every assignment inside the loop body, including nested blocks.
-  (M4-F2) If/else test — the condition's capability and dependency set is merged into every assignment in both the true and false branches.
-  (M4-F3/F4) Post-query_quarantined_llm() remainder — all assignments following a Q-LLM call in the same code block inherit the Q-LLM result's capabilities as additional context dependencies; the flag is scoped to the current block and resets on block exit.
+STRICT mode (default): Closes control-flow and Q-LLM side-channel vectors via three propagation rules (M4-F1 through M4-F4, Milestone 4). This is the production-safe mode and the constructor default; no additional configuration is required. Security deployments must never opt out without explicit risk acceptance.
 NORMAL mode (explicit opt-in: pass mode=ExecutionMode.NORMAL to CaMeLInterpreter): Dependencies tracked only via direct data assignments; no control-flow taint propagation. Use only for debugging or non-security-sensitive scenarios.
+STRICT Mode Propagation Rules (M4-F1 through M4-F4 — Milestone 4):
+  (M4-F1) For-loop iterable — the iterable's capability and dependency set is merged into every assignment inside the loop body, including nested blocks. Security rationale: an adversary who controls the iterable expression indirectly influences every value produced inside the loop; without this rule the policy engine would approve tool calls that carry the iterable's untrusted provenance undetected, enabling a data-flow injection that bypasses capability tracking.
+  (M4-F2) If/else test — the condition's capability and dependency set is merged into every assignment in both the true and false branches. Security rationale: when a branch is taken based on untrusted data, all values assigned inside either branch are implicitly tainted by that input; an adversary observing which downstream tool calls occur can infer the condition's value (control-flow side-channel, PRD §7.3); M4-F2 closes this vector by propagating the condition's dependency set to all inner-block assignments.
+  (M4-F3/F4) Post-query_quarantined_llm() remainder — all assignments following a Q-LLM call in the same code block inherit the Q-LLM result's capabilities as additional context dependencies; the flag is scoped to the current block and resets on block exit. Security rationale: the Q-LLM processes untrusted data and returns structured but still-untrusted results; assignments that do not directly reference the Q-LLM result variable may still be transitively influenced by its output; M4-F3/F4 closes this Q-LLM data-to-assignment channel by tainting all subsequent block-level assignments, ensuring Q-LLM-derived provenance is surfaced to the policy engine before any tool call proceeds.
+Side-channel mitigation: M4-F1 closes the for-loop iteration channel; M4-F2 closes the branch-observation channel; M4-F3/F4 closes the Q-LLM data-to-assignment channel. Together these three rules prevent untrusted data from propagating to tool arguments without policy detection.
 Exception redaction engine (Milestone 4, M4-F6 through M4-F9, M4-F17): All exception-handling pathways are hardened to prevent exception-based information leakage:
   (M4-F6) Dependency-graph-aware taint check: the failing statement's dependency graph is consulted; exception messages are replaced with [REDACTED] (represented as message=None in RedactedError) when any upstream source of a referenced variable is outside {"User literal", "CaMeL"}.
   (M4-F9) Loop-body exception STRICT propagation: when an exception originates inside a for-loop body with a non-public iterable (in STRICT mode), the iterable's dependency set and capability context are attached to the exception and pre-seeded into the regenerated plan's dependency context, ensuring the iterable's taint is never silently dropped across retry cycles.
@@ -316,7 +318,7 @@ Require tool providers to supply typed return schemas; Q-LLM fallback for unstru
 L3
 Exception-based side channel (residual): Adversary-controlled tool data can still trigger exceptions that exception hardening does not fully cover
 Low
-M4-F6 dependency-graph-aware redaction, M4-F7 NEIE hardening, M4-F8 annotation preservation, and M4-F9 loop-body propagation close the primary exception side-channel vectors; adversarial exception triggering via tool data is significantly harder; residual risk documented
+M4-F6 dependency-graph-aware redaction, M4-F7 NEIE hardening, M4-F8 annotation preservation, and M4-F9 loop-body propagation close the primary exception side-channel vectors; additionally, M4-F3/F4 post-Q-LLM contamination propagation further reduces the residual risk surface by ensuring Q-LLM-derived taint is carried through subsequent assignments and checked by the policy engine before any tool call, narrowing the set of exception-triggering inputs that could encode side-channel information; adversarial exception triggering via tool data is significantly harder; residual risk documented
 L4
 User fatigue from policy denials: Overly strict policies may generate frequent consent prompts, leading users to approve without review
 Medium
@@ -974,5 +976,26 @@ Deliverables:
 - ✅ Implement enforcement hook, dual-mode consent flow, and security audit log — Backend Developer (◉ Deep, 8 SP)
 - ✅ Implement policy testing harness with AgentDojo scenario replay — Backend Developer (◉ Deep, 5 SP)
 - ✅ Write end-to-end integration and NFR compliance test suite — Qa Engineer (◉ Deep, 5 SP)
+
+---
+### Milestone 4 — STRICT Mode Validation & Hardening | 2026-03-17 | ✅ done | 18 SP
+**Goal:** [Phase: STRICT Mode Validation & Hardening]
+Fully validate, extend, and test the STRICT mode execution path in the CaMeL interpreter. This phase covers: confirming that for-loop iterables and if/else conditional test expressions propagate dependencies to all statements within those blocks (M4-F1, M4-F2); extending STRICT mode to cover all statements following a query_quarantined_llm() call for the remainder of the current code block (M4-F3, M4-F4); and enforcing STRICT mode as the default execution mode with NORMAL mode requiring explicit opt-in (M4-F5). Automated unit and integration tests are written to prove each dependency propagation rule is correctly applied.
+
+Deliverables:
+- Extended CaMeL interpreter: for-loop iterable dependency propagation (M4-F1)
+- Extended CaMeL interpreter: if/else conditional test dependency propagation (M4-F2)
+- Extended CaMeL interpreter: post-Q-LLM-call statement dependency propagation (M4-F3, M4-F4)
+- Configuration flag: STRICT mode as default, NORMAL mode as explicit opt-in (M4-F5)
+- Unit test suite: STRICT mode dependency propagation covering all three propagation rules
+- Integration test: end-to-end execution trace confirming STRICT mode dependency graph correctness
+- Updated PRD Section 6.3 (CaMeL Interpreter) documenting STRICT mode default behaviour
+- Updated Milestone 4 design document reflecting STRICT mode extension scope
+
+**Delivered:**
+- ✅ Design STRICT mode extension architecture for M4-F1 through M4-F5 — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement STRICT mode dependency propagation (M4-F1, M4-F2, M4-F3, M4-F4) and default-mode flag (M4-F5) — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write unit and integration test suite for STRICT mode dependency propagation — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Update PRD Section 6.3 and Milestone 4 design document for STRICT mode default behaviour — Software Architect (⚡ Quick, 2 SP)
 
 ---

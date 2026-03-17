@@ -304,7 +304,90 @@ _exec_statements(stmts, ctx_caps=None)
 
 ---
 
-## 7. Open Questions
+## 7. PRD Section 6.3 Exact Wording Changes
+
+This section satisfies the acceptance criterion requiring exact before/after wording for the
+CaMeL Interpreter description in `CLAUDE.md` PRD §6.3 and `docs/architecture.md`.
+
+### 7.1 CLAUDE.md — PRD §6.3 Default-Mode Statement
+
+**Before (pre-M4-F5):**
+```
+Supports two execution modes (NORMAL is the default):
+- STRICT mode: ...
+- NORMAL mode (default): ...
+```
+
+**After (M4-F5):**
+```
+Supports two execution modes (STRICT is the default as of v0.4.0 — Milestone 4, M4-F5):
+- STRICT mode (default): Closes control-flow and Q-LLM side-channel vectors via three
+  propagation rules: ...
+- NORMAL mode (explicit opt-in: pass mode=ExecutionMode.NORMAL to CaMeLInterpreter):
+  Dependencies tracked only via direct data assignments; no control-flow taint propagation.
+  Use only for debugging or non-security-sensitive scenarios.
+```
+
+**Rationale:** `ExecutionMode.STRICT` is now the constructor default (§2.4).  Any deployment
+that does not explicitly opt out is automatically protected by all three propagation rules.
+
+---
+
+### 7.2 CLAUDE.md — PRD §6.3 Interpreter Description Additions
+
+Add the following bullet points to the `CaMeL Interpreter` subsection of §6.3 to document
+the three new STRICT mode propagation rules (M4-F1 through M4-F4):
+
+**Add after the STRICT/NORMAL mode paragraph:**
+```
+  (M4-F1) For-loop iterable — the iterable's capability and dependency set is merged into
+  every assignment inside the loop body, including nested blocks.
+  (M4-F2) If/else test — the condition's capability and dependency set is merged into every
+  assignment in both the true and false branches.
+  (M4-F3/F4) Post-query_quarantined_llm() remainder — all assignments following a Q-LLM call
+  in the same code block inherit the Q-LLM result's capabilities as additional context
+  dependencies; the flag is scoped to the current block and resets on block exit.
+```
+
+---
+
+### 7.3 docs/architecture.md — Execution Mode Table Update
+
+**Before (pre-M4-F5):**
+```
+| `STRICT` | No — opt-in | Data + control-flow | Closes timing/control-flow channels |
+| `NORMAL` | **Yes** (default) | Data assignments only | No control-flow taint |
+```
+
+**After (M4-F5):**
+```
+| `STRICT` | **Yes** (v0.4.0+) | Data + control-flow (if-test, for-iterable, post-Q-LLM) | Closes timing/control-flow channels |
+| `NORMAL` | No — explicit opt-in | Data assignments only | No control-flow taint |
+```
+
+---
+
+### 7.4 docs/api/interpreter.md — `mode` Parameter Docstring
+
+**Before:**
+```
+mode:
+    Execution mode controlling dependency tracking.
+    Defaults to ``ExecutionMode.NORMAL``.
+```
+
+**After:**
+```
+mode:
+    Execution mode controlling side-channel capability propagation.
+    Defaults to ``ExecutionMode.STRICT`` (recommended for production use).
+    Pass ``ExecutionMode.NORMAL`` only for debugging or performance-sensitive
+    scenarios where side-channel mitigations are not required.
+```
+
+---
+
+## 8. Open Questions (Pre-Implementation)
 
 1. **Q-LLM name registration:** Should the Q-LLM detection in `_eval_Call` be
    hardcoded to `"query_quarantined_llm"` or should it check a configurable
@@ -322,7 +405,7 @@ _exec_statements(stmts, ctx_caps=None)
 
 ---
 
-## 8. Review Checklist
+## 9. Review Checklist
 
 _Signed off post-implementation — all items verified._
 
@@ -334,12 +417,13 @@ _Signed off post-implementation — all items verified._
 - [x] New state field `_last_qllm_result_cv` is described with type, lifecycle,
       and producer/consumer sites (§4, §5)
 - [x] Files requiring modification are enumerated (§6)
-- [x] Open questions are captured for the implementation team (§7)
-- [x] Document is internally consistent (no contradictions between §2 and §3–§5)
+- [x] PRD §6.3 exact wording changes listed (§7)
+- [x] Open questions are captured for the implementation team (§8)
+- [x] Document is internally consistent (no contradictions between §2 and §3–§6)
 
 ---
 
-## 9. Verification
+## 10. Verification
 
 _Added post-implementation to record test evidence for each delivered feature._
 
@@ -359,11 +443,11 @@ policy evaluation.
 
 ---
 
-## 10. Exception Hardening — M4-F6, M4-F7, M4-F8, M4-F9, M4-F17
+## 11. Exception Hardening — M4-F6, M4-F7, M4-F8, M4-F9, M4-F17
 
 _Author: Software Architect | Date: 2026-03-17 | Status: Implemented — all M4-F6 through M4-F9 and M4-F17 features delivered and verified — 2026-03-17_
 
-### 10.1 Overview
+### 11.1 Overview
 
 This section specifies the design for hardening all exception-handling pathways
 in the CaMeL interpreter and execution loop to eliminate exception-based
@@ -383,9 +467,9 @@ These features extend the existing `ExceptionRedactor` class
 
 ---
 
-### 10.2 M4-F6 — Dependency-Aware Exception Message Redaction
+### 11.2 M4-F6 — Dependency-Aware Exception Message Redaction
 
-#### 10.2.1 Problem
+#### 11.2.1 Problem
 
 The current `ExceptionRedactor.classify()` inspects the interpreter store
 **snapshot** to decide whether any in-scope variable has untrusted provenance.
@@ -399,7 +483,7 @@ untrusted data through the graph.  In STRICT mode, the dependency graph is the
 authoritative record of taint propagation and must be the primary input to the
 redaction decision.
 
-#### 10.2.2 Taint Check Algorithm
+#### 11.2.2 Taint Check Algorithm
 
 The enhanced taint check for a failing statement at line `L` is:
 
@@ -434,7 +518,7 @@ function is_tainted(exc, interpreter) -> bool:
 
 `TRUSTED_SOURCES` remains `frozenset({"User literal", "CaMeL"})`.
 
-#### 10.2.3 `[REDACTED]` Substitution Rule
+#### 11.2.3 `[REDACTED]` Substitution Rule
 
 When `is_tainted()` returns `True`:
 
@@ -446,9 +530,9 @@ When `is_tainted()` returns `True`:
 
 The string literal `"[REDACTED]"` is **not** placed in `RedactedError.message`
 — `None` is the sentinel.  `[REDACTED]` appears only in the audit log entry
-(§10.6) to make the redaction visible to operators.
+(§11.6) to make the redaction visible to operators.
 
-#### 10.2.4 Traceback Scrubbing Scope
+#### 11.2.4 Traceback Scrubbing Scope
 
 Tracebacks are **never** forwarded to the P-LLM.  `RetryPromptBuilder.build()`
 accepts only `RedactedError` (a dataclass with no traceback field); the raw
@@ -456,15 +540,15 @@ exception and its traceback are consumed entirely within
 `CaMeLOrchestrator._handle_exception()` and discarded after `classify()`
 returns.  No additional traceback-scrubbing logic is needed at the prompt layer.
 
-For the audit log (§10.6), a sanitised traceback summary may be included, but
+For the audit log (§11.6), a sanitised traceback summary may be included, but
 only the frame function names and line numbers — never local variable values or
 exception message text when the exception is tainted.
 
 ---
 
-### 10.3 M4-F7 — `NotEnoughInformationError` Handler
+### 11.3 M4-F7 — `NotEnoughInformationError` Handler
 
-#### 10.3.1 Invariant
+#### 11.3.1 Invariant
 
 When `NotEnoughInformationError` (either `camel.exceptions.NotEnoughInformationError`
 or `camel.llm.exceptions.NotEnoughInformationError`) propagates out of the
@@ -482,7 +566,7 @@ for this case:
 | `message` | `None` | Never included — would risk exposing Q-LLM output |
 | `trust_level` | `"not_enough_information"` | Identifies the redaction rule applied |
 
-#### 10.3.2 Call-Site Line Number Extraction
+#### 11.3.2 Call-Site Line Number Extraction
 
 The current implementation sets `lineno=None` for NEIE.  This must change to
 `lineno=<AST line number of the query_quarantined_llm() call>`.
@@ -513,7 +597,7 @@ def _attach_lineno(exc: BaseException, node: ast.AST) -> BaseException:
 The `ExceptionRedactor.classify()` method reads `exc.__lineno__` for NEIE
 (falling back to `getattr(exc, "lineno", None)` for other exception types).
 
-#### 10.3.3 Mapping to the P-LLM Retry Loop (NFR-5)
+#### 11.3.3 Mapping to the P-LLM Retry Loop (NFR-5)
 
 NFR-5 requires the retry loop to handle up to 10 code-generation failures
 gracefully without exposing untrusted error content.  The NEIE path maps into
@@ -529,7 +613,7 @@ NEIE caught by orchestrator
   │                                     trust_level="not_enough_information"
   │                                  )
   │
-  ├─ AcceptedState snapshot taken  (see §10.4 for STRICT annotation preservation)
+  ├─ AcceptedState snapshot taken  (see §11.4 for STRICT annotation preservation)
   │
   ├─ RetryPromptBuilder.build()    → user-turn message with:
   │     • error_type only (no message, no Q-LLM content)
@@ -554,9 +638,9 @@ fixed advisory.
 
 ---
 
-### 10.4 M4-F8 — STRICT Mode Annotation Preservation Across NEIE Re-generation
+### 11.4 M4-F8 — STRICT Mode Annotation Preservation Across NEIE Re-generation
 
-#### 10.4.1 Problem
+#### 11.4.1 Problem
 
 When NEIE is raised and the orchestrator triggers a P-LLM re-generation, the
 interpreter is **not** reset.  The accepted state (variable names) is preserved
@@ -570,7 +654,7 @@ previously updated `_last_qllm_result_cv`), the annotations accumulated up to
 that point must be **preserved and restored** after re-generation, so that the
 regenerated code picks up the correct dependency context.
 
-#### 10.4.2 Variable Scopes Snapshotted
+#### 11.4.2 Variable Scopes Snapshotted
 
 The `AcceptedState` object is extended with two new fields:
 
@@ -597,7 +681,7 @@ i.e., every variable that was assigned before the NEIE-raising statement.
 capture point.  This is the stack used by STRICT mode to propagate dependencies
 from enclosing `for`/`if` blocks and post-Q-LLM remainders.
 
-#### 10.4.3 Snapshot and Restore Protocol
+#### 11.4.3 Snapshot and Restore Protocol
 
 ```
 On NEIE caught by orchestrator:
@@ -608,7 +692,7 @@ On NEIE caught by orchestrator:
        → executed_statement_count  = <count before failing stmt>
        → remaining_source          = <ast.unparse of unexecuted stmts>
   2. Construct AcceptedState with all five fields.
-  3. Build retry prompt (see §10.3.3).
+  3. Build retry prompt (see §11.3.3).
   4. Obtain regenerated plan from P-LLM.
   5. Before executing the regenerated plan, call:
        interpreter.restore_accepted_state(accepted_state):
@@ -621,7 +705,7 @@ On successful plan completion after retry:
      interpreter as the regenerated plan executes.
 ```
 
-#### 10.4.4 Scope of Preservation
+#### 11.4.4 Scope of Preservation
 
 Only NEIE triggers the snapshot-restore cycle.  Other exception types that
 trigger the retry loop do **not** use this mechanism:
@@ -640,9 +724,9 @@ the correct response.
 
 ---
 
-### 10.5 M4-F9 — Loop-Body Exception STRICT Propagation for Non-Public-Iterable Loops
+### 11.5 M4-F9 — Loop-Body Exception STRICT Propagation for Non-Public-Iterable Loops
 
-#### 10.5.1 Problem
+#### 11.5.1 Problem
 
 In STRICT mode, M4-F1 ensures that every **assignment** inside a `for`-loop
 body carries the iterable's dependency.  However, if an exception is raised
@@ -652,7 +736,7 @@ plan, those post-exception statements in the regenerated code must still inherit
 the iterable's dependency — otherwise a partial execution followed by retry
 could silently drop the iterable's taint from downstream values.
 
-#### 10.5.2 Trigger Condition
+#### 11.5.2 Trigger Condition
 
 M4-F9 applies when ALL of the following are true:
 
@@ -666,7 +750,7 @@ M4-F9 applies when ALL of the following are true:
 If any condition is false, M4-F9 does not apply and normal redaction rules
 (M4-F6/F7) govern the exception.
 
-#### 10.5.3 Implementation — Loop-Exception Context Annotation
+#### 11.5.3 Implementation — Loop-Exception Context Annotation
 
 The `_exec_For` method in the interpreter is modified to wrap the loop body
 execution in a `try/except` block that, on exception, **attaches the iterable's
@@ -695,7 +779,7 @@ def _exec_For(self, node: ast.For, ctx_caps, dep_ctx) -> None:
         raise
 ```
 
-#### 10.5.4 Use in Post-Exception Statement Annotation
+#### 11.5.4 Use in Post-Exception Statement Annotation
 
 When the orchestrator catches an exception carrying `__loop_iter_deps__`, the
 `AcceptedState` snapshot is extended with:
@@ -713,7 +797,7 @@ before the regenerated code executes.  This ensures the first assignment in the
 regenerated code already carries the iterable's dependency — exactly as if the
 loop body had continued executing.
 
-#### 10.5.5 `_is_non_public` Helper
+#### 11.5.5 `_is_non_public` Helper
 
 ```python
 def _is_non_public(self, cv: CaMeLValue) -> bool:
@@ -726,9 +810,9 @@ def _is_non_public(self, cv: CaMeLValue) -> bool:
 
 ---
 
-### 10.6 M4-F17 — Audit Log Event Schema for Redaction Events
+### 11.6 M4-F17 — Audit Log Event Schema for Redaction Events
 
-#### 10.6.1 Overview
+#### 11.6.1 Overview
 
 Per NFR-6, every redaction event must be written to the security audit log.
 The existing audit log infrastructure (introduced in Milestone 3 Enforcement
@@ -736,7 +820,7 @@ Integration) emits `AuditLogEntry` records for policy evaluation outcomes and
 user consent decisions.  M4-F17 extends this with a new event type:
 `RedactionAuditEvent`.
 
-#### 10.6.2 Event Schema
+#### 11.6.2 Event Schema
 
 ```python
 @dataclass(frozen=True)
@@ -792,7 +876,7 @@ class RedactionAuditEvent:
     m4_f9_applied: bool
 ```
 
-#### 10.6.3 Emission Point
+#### 11.6.3 Emission Point
 
 `RedactionAuditEvent` is emitted inside `ExceptionRedactor.classify()`,
 immediately after the `RedactedError` is constructed and before the method
@@ -811,7 +895,7 @@ class ExceptionRedactor:
 `audit_log` is `None`, the event is silently dropped (backward-compatible
 default for tests that do not configure a log).
 
-#### 10.6.4 Dependency Chain Population
+#### 11.6.4 Dependency Chain Population
 
 The `dependency_chain` field is populated by traversing the dependency graph
 for each variable involved in the failing statement:
@@ -835,7 +919,7 @@ growth in deeply nested dependency graphs.
 
 ---
 
-### 10.7 Interaction Summary
+### 11.7 Interaction Summary
 
 The five features interact as follows during a single execution cycle:
 
@@ -872,7 +956,7 @@ Exception raised inside interpreter
 
 ---
 
-### 10.8 Files to be Modified
+### 11.8 Files to be Modified
 
 | File | Change |
 |------|--------|
@@ -886,7 +970,7 @@ Exception raised inside interpreter
 
 ---
 
-### 10.9 PRD Cross-References
+### 11.9 PRD Cross-References
 
 This design updates the following PRD sections (to be reflected in
 `docs/architecture.md`):
@@ -908,7 +992,7 @@ This design updates the following PRD sections (to be reflected in
 
 ---
 
-### 10.10 Open Questions
+### 11.10 Open Questions
 
 1. **`dep_graph.export()` format:** Should the export format be a plain
    `dict[str, frozenset[str]]` (variable → upstream set) or a full serialised
@@ -917,7 +1001,7 @@ This design updates the following PRD sections (to be reflected in
 
 2. **Audit log sink availability:** The `ExceptionRedactor` currently has no
    reference to the audit log.  The cleanest injection point is the constructor
-   (as specified in §10.6.3).  Alternative: use a module-level singleton.
+   (as specified in §11.6.3).  Alternative: use a module-level singleton.
    Recommendation: constructor injection for testability (NFR-9).
 
 3. **`lineno` attachment for non-NEIE exceptions:** Should `_attach_lineno` be
@@ -934,31 +1018,31 @@ This design updates the following PRD sections (to be reflected in
 
 ---
 
-### 10.11 Review Checklist
+### 11.11 Review Checklist
 
 _Signed off post-implementation — all items verified._
 
-- [x] M4-F6: dependency taint check algorithm specified (§10.2.2)
+- [x] M4-F6: dependency taint check algorithm specified (§11.2.2)
 - [x] M4-F6: `[REDACTED]` substitution rule clarified — `None` in model,
-      `[REDACTED]` in audit log only (§10.2.3)
-- [x] M4-F6: traceback scrubbing scope confirmed — tracebacks never reach P-LLM (§10.2.4)
-- [x] M4-F7: exact fields populated in `RedactedError` for NEIE (§10.3.1 table)
-- [x] M4-F7: call-site lineno extraction mechanism specified (§10.3.2)
-- [x] M4-F7: mapping to P-LLM retry loop (NFR-5) with advisory sentence (§10.3.3)
-- [x] M4-F8: variable scopes snapshotted: dep graph + dep-ctx stack (§10.4.2)
-- [x] M4-F8: snapshot-restore protocol (§10.4.3)
-- [x] M4-F8: scope limited to NEIE; other exception types excluded with rationale (§10.4.4)
-- [x] M4-F9: trigger condition (3 conditions) specified (§10.5.2)
-- [x] M4-F9: `_exec_For` modification with `_is_non_public` helper (§10.5.3–§10.5.5)
-- [x] M4-F17: `RedactionAuditEvent` schema with all fields defined (§10.6.2)
-- [x] M4-F17: emission point and audit-log injection mechanism (§10.6.3)
-- [x] M4-F17: dependency chain population algorithm with 50-entry cap (§10.6.4)
-- [x] §10.7 interaction diagram covers all five features
-- [x] Files to be modified enumerated (§10.8)
-- [x] PRD §6.2 and §6.3 cross-references specified (§10.9)
-- [x] Open questions captured (§10.10)
+      `[REDACTED]` in audit log only (§11.2.3)
+- [x] M4-F6: traceback scrubbing scope confirmed — tracebacks never reach P-LLM (§11.2.4)
+- [x] M4-F7: exact fields populated in `RedactedError` for NEIE (§11.3.1 table)
+- [x] M4-F7: call-site lineno extraction mechanism specified (§11.3.2)
+- [x] M4-F7: mapping to P-LLM retry loop (NFR-5) with advisory sentence (§11.3.3)
+- [x] M4-F8: variable scopes snapshotted: dep graph + dep-ctx stack (§11.4.2)
+- [x] M4-F8: snapshot-restore protocol (§11.4.3)
+- [x] M4-F8: scope limited to NEIE; other exception types excluded with rationale (§11.4.4)
+- [x] M4-F9: trigger condition (3 conditions) specified (§11.5.2)
+- [x] M4-F9: `_exec_For` modification with `_is_non_public` helper (§11.5.3–§11.5.5)
+- [x] M4-F17: `RedactionAuditEvent` schema with all fields defined (§11.6.2)
+- [x] M4-F17: emission point and audit-log injection mechanism (§11.6.3)
+- [x] M4-F17: dependency chain population algorithm with 50-entry cap (§11.6.4)
+- [x] §11.7 interaction diagram covers all five features
+- [x] Files to be modified enumerated (§11.8)
+- [x] PRD §6.2 and §6.3 cross-references specified (§11.9)
+- [x] Open questions captured (§11.10)
 
-### 10.12 Verification
+### 11.12 Verification
 
 _Added post-implementation to record test evidence for each delivered feature._
 

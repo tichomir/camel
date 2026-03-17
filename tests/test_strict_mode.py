@@ -477,3 +477,137 @@ for item in items:
         assert "items" in _deps(interp, "item"), (
             f"Loop target 'item' must carry 'items' as dep in {mode.value} mode (M4-F1)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — M4-F1: nested loops — inner body carries both iterables
+# ---------------------------------------------------------------------------
+
+
+def test_m4f1_nested_loops_inner_body_carries_both_iterables():
+    """M4-F1: In STRICT mode, nested loop body vars carry deps from both iterables.
+
+    Feature: M4-F1
+    Given:  outer_list = get_items()   (sources={"get_items"})
+            inner_list = get_email()   (sources={"get_email"})
+            for outer in outer_list:
+                for inner in inner_list:
+                    body = inner
+    Expect: 'outer_list' in deps of 'body' AND 'inner_list' in deps of 'body'.
+    """
+    def _get_inner() -> CaMeLValue:
+        """Return a second untrusted list."""
+        return wrap([4, 5], sources=frozenset({"get_email"}))
+
+    interp = _make_interp(
+        ExecutionMode.STRICT,
+        get_inner=_get_inner,
+    )
+    interp.exec("outer_list = get_items()")
+    interp.exec("inner_list = get_inner()")
+    interp.exec("""
+for outer in outer_list:
+    for inner in inner_list:
+        body = inner
+""")
+    assert "outer_list" in _deps(interp, "body"), (
+        "STRICT nested loops: outer iterable must be dep of inner body (M4-F1)"
+    )
+    assert "inner_list" in _deps(interp, "body"), (
+        "STRICT nested loops: inner iterable must be dep of inner body (M4-F1)"
+    )
+    assert "get_items" in _sources(interp, "body"), (
+        "STRICT nested loops: outer iterable sources must propagate to body (M4-F1)"
+    )
+    assert "get_email" in _sources(interp, "body"), (
+        "STRICT nested loops: inner iterable sources must propagate to body (M4-F1)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 17 — M4-F2: if inside for-loop body carries both test and iterable dep
+# ---------------------------------------------------------------------------
+
+
+def test_m4f2_if_inside_for_loop_carries_both_deps():
+    """M4-F2 + M4-F1: if inside a loop body carries test dep AND iterable dep.
+
+    Feature: M4-F1, M4-F2
+    Given:  items = get_items()   (untrusted iterable)
+            flag = get_email()    (untrusted if-test)
+            for item in items:
+                if flag:
+                    result = item
+    Expect (STRICT): 'result' deps include both 'items' and 'flag';
+                     sources include both "get_items" and "get_email".
+    """
+
+    def _get_flag() -> CaMeLValue:
+        """Return a truthy untrusted flag."""
+        return wrap(1, sources=frozenset({"get_email"}))
+
+    interp = _make_interp(ExecutionMode.STRICT, get_flag=_get_flag)
+    interp.exec("items = get_items()")
+    interp.exec("flag = get_flag()")
+    interp.exec("""
+for item in items:
+    if flag:
+        result = item
+""")
+    deps_result = _deps(interp, "result")
+    assert "items" in deps_result, (
+        "STRICT (M4-F1): loop iterable 'items' must be dep of 'result'"
+    )
+    assert "flag" in deps_result, (
+        "STRICT (M4-F2): if-test 'flag' must be dep of 'result' inside loop"
+    )
+    assert "get_items" in _sources(interp, "result"), (
+        "STRICT (M4-F1): loop iterable sources must propagate to 'result'"
+    )
+    assert "get_email" in _sources(interp, "result"), (
+        "STRICT (M4-F2): if-test sources must propagate to 'result'"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 18 — M4-F3/F4: Q-LLM call inside for-loop body taints subsequent vars
+# ---------------------------------------------------------------------------
+
+
+def test_m4f3_f4_qllm_inside_loop_body_taints_subsequent():
+    """M4-F3/F4 + M4-F1: Q-LLM call inside a loop body taints subsequent vars.
+
+    Feature: M4-F3, M4-F4, M4-F1
+    Given:  items = get_items()
+            for item in items:
+                extracted = query_quarantined_llm(item, "schema")
+                post = "after"
+    Expect (STRICT):
+        - 'extracted' dep includes 'item' (direct arg)
+        - 'post' dep includes 'extracted' (M4-F4 Q-LLM dep ctx)
+        - 'post' sources include "query_quarantined_llm" (M4-F3)
+        - 'post' sources include "get_items" (M4-F1 iterable propagation)
+    """
+    interp = _make_interp(ExecutionMode.STRICT)
+    interp.exec("items = get_items()")
+    interp.exec("""
+for item in items:
+    extracted = query_quarantined_llm(item, "schema")
+    post = "after"
+""")
+    # Direct arg dep: extracted depends on item
+    assert "item" in _deps(interp, "extracted"), (
+        "STRICT (M4-F4): 'extracted' must depend on 'item' (direct Q-LLM arg)"
+    )
+    # Q-LLM dep ctx: post carries extracted as dep (M4-F4)
+    assert "extracted" in _deps(interp, "post"), (
+        "STRICT (M4-F4): 'post' must carry 'extracted' dep (Q-LLM inside loop)"
+    )
+    # Q-LLM capability taint: post carries Q-LLM sources (M4-F3)
+    assert "query_quarantined_llm" in _sources(interp, "post"), (
+        "STRICT (M4-F3): 'post' must carry Q-LLM sources (Q-LLM inside loop)"
+    )
+    # Iterable taint: post is inside the loop so must carry get_items sources (M4-F1)
+    assert "get_items" in _sources(interp, "post"), (
+        "STRICT (M4-F1): 'post' inside loop must carry iterable sources"
+    )

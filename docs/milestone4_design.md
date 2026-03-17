@@ -22,7 +22,28 @@ The complete feature register is maintained in the CLAUDE.md sprint history.
 
 ## 1. STRICT Mode Extension
 
-See the dedicated design document:
+### 1.1 Extension Scope
+
+The STRICT mode hardening sprint (Milestone 4) delivered five features that collectively
+close the primary control-flow and Q-LLM side-channel vectors identified in the threat
+model (PRD §7.3, §10 L3):
+
+| Feature ID | Description | Status |
+|---|---|---|
+| M4-F1 | For-loop iterable dependency propagation — iterable caps/deps merged into all loop-body assignments, including nested blocks | ✅ Implemented |
+| M4-F2 | If/else conditional test propagation — condition caps/deps merged into all assignments in both the true and false branches | ✅ Implemented |
+| M4-F3 | Post-Q-LLM call remainder tainting — `_exec_statements` activates a remainder flag when `query_quarantined_llm()` is called, propagating Q-LLM result caps to all subsequent assignments in the block | ✅ Implemented |
+| M4-F4 | Block-scoped remainder flag — the M4-F3 remainder flag is scoped to the current `_exec_statements` frame; resets on block exit; does not retroactively affect prior statements | ✅ Implemented |
+| M4-F5 | STRICT mode as default — `ExecutionMode.STRICT` is now the `CaMeLInterpreter` constructor default; NORMAL mode requires `mode=ExecutionMode.NORMAL` explicit opt-in | ✅ Implemented |
+
+**Security outcome:** M4-F1 closes the for-loop iteration side-channel; M4-F2 closes the
+branch-observation side-channel (PRD §7.3); M4-F3/F4 close the Q-LLM data-to-assignment
+channel, ensuring Q-LLM-derived taint is surfaced to the policy engine before any
+downstream tool call.  M4-F5 ensures all new deployments benefit from these protections
+without requiring explicit configuration.  Together, these five features eliminate the
+primary untrusted-data propagation vectors identified in PRD §10 L3.
+
+See the full design specification and verification record:
 [`docs/design/milestone4-strict-mode-extension.md`](design/milestone4-strict-mode-extension.md)
 
 ---
