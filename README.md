@@ -1,7 +1,7 @@
 # CaMeL — Capabilities for Machine Learning
 
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -16,18 +16,79 @@ control flow management, data flow tracking, and capability-based access control
 
 ---
 
+## Security Guarantees
+
+CaMeL provides **provable, system-level** security against prompt injection — not
+probabilistic defences:
+
+| Metric | Result |
+|---|---|
+| AgentDojo task success rate | **77%** (vs. 84% without any defence) |
+| Prompt injection attack success rate (ASR) | **0** on AgentDojo benchmark |
+| Data exfiltration events blocked | **100%** of policy-covered scenarios |
+
+The security guarantee is formalised via the **PI-SEC game**: CaMeL prevents any
+adversary from constructing tool return values that cause the agent to take actions
+outside the set permitted by the original user query.
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        User Query                       │
+└──────────────────────────┬──────────────────────────────┘
+                           │ Trusted input
+                           ▼
+              ┌────────────────────────┐
+              │    Privileged LLM      │  Generates pseudo-Python plan
+              │    (P-LLM)             │  Never sees tool output values
+              └────────────┬───────────┘
+                           │ Code (control + data flow)
+                           ▼
+              ┌────────────────────────┐
+              │   CaMeL Interpreter    │  Executes plan step-by-step
+              │                        │  Maintains data flow graph
+              │   ┌────────────────┐   │  Propagates capabilities
+              │   │ Data Flow Graph│   │  Enforces security policies
+              │   └────────────────┘   │
+              └──────┬────────┬────────┘
+                     │        │
+          Untrusted  │        │  Policy-guarded tool calls
+          data       ▼        ▼
+    ┌──────────────────┐   ┌──────────────────┐
+    │  Quarantined LLM │   │  Tool Executor   │
+    │  (Q-LLM)         │   │  (email, drive,  │
+    │  No tool access  │   │   calendar, etc.)│
+    │  Structured I/O  │   └──────────────────┘
+    └──────────────────┘
+```
+
+**Key principle:** The P-LLM sees only the user's query and the code it
+generates — never the values returned by tools.  Values live in the
+interpreter's memory, tagged with capabilities.
+
+See [docs/architecture.md](docs/architecture.md) for the full system architecture
+reference including isolation invariants, exception redaction logic, retry
+mechanics, and the security model.
+
+---
+
 ## Current Status
 
-**Milestone 1 — Foundation (v0.1.0)** — released 2026-03-17
-
-The Milestone 1 package delivers the core runtime foundation:
+**Milestone 2 — Dual LLM Pattern & Interpreter Integration (v0.2.0)** — released 2026-03-17
 
 | Component | Module | Status |
 |---|---|---|
 | `CaMeLValue` & capability system | `camel.value` | ✅ Released |
 | AST interpreter (restricted Python subset) | `camel.interpreter` | ✅ Released |
 | Dependency graph (NORMAL + STRICT modes) | `camel.dependency_graph` | ✅ Released |
+| P-LLM wrapper (plan generation, isolation contract) | `camel.llm.p_llm` | ✅ Released |
 | Q-LLM wrapper (schema-validated structured output) | `camel.llm.qllm` | ✅ Released |
+| LLM backend adapters (Claude, Gemini) | `camel.llm.adapters` | ✅ Released |
+| Execution loop orchestrator (retry, redaction, trace) | `camel.execution_loop` | ✅ Released |
+| Isolation verification test harness | `tests/harness/` | ✅ Released |
 
 ---
 
@@ -36,6 +97,8 @@ The Milestone 1 package delivers the core runtime foundation:
 ```bash
 pip install camel
 ```
+
+### Interpreter only (Milestone 1 API)
 
 ```python
 from camel import CaMeLInterpreter, ExecutionMode
@@ -60,19 +123,73 @@ print(result.raw)      # 42
 print(result.sources)  # frozenset({'get_inbox_count'})
 ```
 
+### Full execution loop (Milestone 2 API)
+
+```python
+import asyncio
+from camel import CaMeLInterpreter, ExecutionMode
+from camel.execution_loop import CaMeLOrchestrator
+from camel.llm import PLLMWrapper, QLLMWrapper, ToolSignature
+from camel.llm.adapters import ClaudeBackend
+from camel.value import wrap, Public, CaMeLValue
+
+# 1. Define tools (must return CaMeLValue)
+def get_email_count() -> CaMeLValue:
+    return wrap(7, sources=frozenset({"get_email_count"}), readers=Public)
+
+tool_signatures = [
+    ToolSignature(
+        name="get_email_count",
+        description="Returns the number of unread emails.",
+        parameters={},
+        return_type="int",
+    ),
+]
+
+# 2. Wire up the components
+backend = ClaudeBackend(model="claude-sonnet-4-6")
+p_llm = PLLMWrapper(backend=backend)
+q_llm = QLLMWrapper(backend=backend)
+
+interpreter = CaMeLInterpreter(
+    tools={"get_email_count": get_email_count},
+    mode=ExecutionMode.STRICT,
+)
+
+orchestrator = CaMeLOrchestrator(
+    p_llm=p_llm,
+    interpreter=interpreter,
+    tool_signatures=tool_signatures,
+)
+
+# 3. Run a user query end-to-end
+result = asyncio.run(orchestrator.run("How many unread emails do I have?"))
+
+# 4. Inspect the execution trace
+for record in result.trace:
+    print(record.tool_name, record.args)
+```
+
 ---
 
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API, Milestone 2 readiness |
-| [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, known limitations, troubleshooting |
+| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model |
+| [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
+| [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, known limitations |
 | [Exit Criteria Checklist](docs/exit_criteria_checklist.md) | Milestone 1 sign-off checklist with test evidence |
+| [M2 Exit Criteria Report](docs/milestone-2-exit-criteria-report.md) | Milestone 2 sign-off report |
 | [ADR 001 — Q-LLM Isolation Contract](docs/adr/001-q-llm-isolation-contract.md) | Q-LLM isolation guarantees and schema conventions |
 | [ADR 002 — CaMeLValue Capability System](docs/adr/002-camelvalue-capability-system.md) | Detailed capability data model spec |
 | [ADR 003 — AST Interpreter Architecture](docs/adr/003-ast-interpreter-architecture.md) | Full interpreter design spec |
 | [ADR 004 — Dependency Graph Architecture](docs/adr/004-dependency-graph-architecture.md) | Full dependency tracking design spec |
+| [ADR 005 — P-LLM Wrapper Architecture](docs/adr/005-p-llm-wrapper-architecture.md) | P-LLM isolation contract and prompt builder design |
+| [ADR 006 — Q-LLM Dynamic Schema Injection](docs/adr/006-q-llm-dynamic-schema-injection.md) | Q-LLM schema augmentation and NotEnoughInformationError |
+| [ADR 007 — Execution Loop Orchestrator](docs/adr/007-execution-loop-orchestrator.md) | Retry loop, exception redaction, trace recorder design |
+| [ADR 008 — Isolation Test Harness](docs/adr/008-isolation-test-harness-architecture.md) | Isolation verification test harness architecture |
+| [E2E Scenario Specification](docs/e2e-scenario-specification.md) | End-to-end test scenario inventory |
 
 ---
 
@@ -101,11 +218,16 @@ pre-commit install
 ## Running Tests
 
 ```bash
-pytest                          # full suite
-pytest tests/test_value.py      # capability system
-pytest tests/test_interpreter.py
-pytest tests/test_dependency_graph.py
-pytest tests/test_exit_criteria.py   # M1 exit criteria sign-off
+pytest                                   # full suite
+pytest tests/test_value.py               # capability system
+pytest tests/test_interpreter.py         # AST interpreter
+pytest tests/test_dependency_graph.py    # dependency graph
+pytest tests/test_exit_criteria.py       # M1 exit criteria sign-off
+pytest tests/llm/test_pllm.py           # P-LLM wrapper
+pytest tests/llm/test_qllm.py           # Q-LLM wrapper
+pytest tests/test_execution_loop.py      # execution loop orchestrator
+pytest tests/test_isolation_harness.py   # isolation invariant verification
+pytest tests/test_e2e_scenarios.py       # end-to-end scenarios
 ```
 
 ---
@@ -128,39 +250,60 @@ The CI step fails on any PR that drops public-symbol coverage below 90%.
 
 ---
 
-## Architecture Overview
+## Core Components
 
-```
-User Query
-    │ Trusted input
-    ▼
-┌────────────────────────┐
-│    Privileged LLM      │  Generates pseudo-Python plan
-│    (P-LLM)             │  Never sees tool output values
-└────────────┬───────────┘
-             │ Code (control + data flow)
-             ▼
-┌────────────────────────┐
-│   CaMeL Interpreter    │  Executes plan step-by-step
-│                        │  Maintains data flow graph
-│   ┌────────────────┐   │  Propagates capabilities
-│   │ Data Flow Graph│   │  Enforces security policies
-│   └────────────────┘   │
-└──────┬────────┬────────┘
-       │        │
-       │        │  Policy-guarded tool calls
-       ▼        ▼
-┌──────────────────┐   ┌──────────────────┐
-│  Quarantined LLM │   │  Tool Executor   │
-│  (Q-LLM)         │   │  (email, drive,  │
-│  No tool access  │   │   calendar, etc.)│
-│  Structured I/O  │   └──────────────────┘
-└──────────────────┘
+### Privileged LLM (P-LLM)
+
+Receives the user query and a system prompt describing available tools as Python
+function signatures.  Generates a pseudo-Python execution plan.  **Never observes
+tool return values** — this is the primary isolation invariant.
+
+```python
+# camel/llm/p_llm.py
+from camel.llm import PLLMWrapper
 ```
 
-**Key principle:** The P-LLM sees only the user's query and the code it
-generates — never the values returned by tools.  Values live in the
-interpreter's memory, tagged with capabilities.
+### Quarantined LLM (Q-LLM)
+
+Receives unstructured data from tools and extracts structured output conforming
+to a caller-specified Pydantic schema.  Has **no tool-calling capability**.  When
+it lacks sufficient information it raises `NotEnoughInformationError` — the
+error type is forwarded to the P-LLM but the missing-data content is never
+revealed.
+
+```python
+# camel/llm/qllm.py
+from camel.llm import QLLMWrapper
+from pydantic import BaseModel
+
+class EmailSummary(BaseModel):
+    subject: str
+    sender: str
+
+summary = q_llm.extract(raw_email_text, EmailSummary)
+print(summary.subject)
+```
+
+### CaMeL Interpreter
+
+Custom AST-walking interpreter for a **restricted Python subset**.  Wraps every
+runtime value in `CaMeLValue`, tracks data flow dependencies, and enforces
+security policies before each tool call.
+
+### Capabilities (`CaMeLValue`)
+
+Every runtime value carries a capability tag:
+
+| Field | Description | Example |
+|---|---|---|
+| `sources` | Origin of the data | `{"get_last_email"}`, `{"User literal"}` |
+| `inner_source` | Sub-source within a tool | `"sender"` field of an email |
+| `readers` | Allowed recipients | `{"alice@co.com"}` or `Public` |
+
+### Security Policies
+
+Expressed as Python functions `(tool_name, kwargs) → Allowed() | Denied(reason)`.
+Evaluated synchronously before every tool call — no LLM involvement.
 
 ---
 
@@ -185,17 +328,6 @@ The interpreter executes a **restricted Python subset** to minimise the attack s
 | `yield` / `await` | Async/generator execution models |
 | `assert` / `del` | Out of scope for the core execution model |
 
-```python
-from camel import CaMeLInterpreter, UnsupportedSyntaxError
-
-interp = CaMeLInterpreter()
-try:
-    interp.exec("while True: pass")
-except UnsupportedSyntaxError as e:
-    print(e.node_type)  # "While"
-    print(e.lineno)     # 1
-```
-
 See the [Developer Guide — Grammar Reference](docs/developer_guide.md#1-supported-python-grammar-reference) for the complete node-by-node specification.
 
 ---
@@ -204,58 +336,16 @@ See the [Developer Guide — Grammar Reference](docs/developer_guide.md#1-suppor
 
 CaMeL tracks data flow dependencies in two modes, configurable per interpreter instance.
 
-### NORMAL mode (default)
-
-Dependencies are recorded only via **data assignment**.  Control-flow constructs
-do not add dependency edges.
-
-```python
-from camel import CaMeLInterpreter, ExecutionMode, get_dependency_graph
-from camel.value import wrap
-
-def get_flag():
-    return wrap(True, sources=frozenset({"tool_flag"}))
-
-interp = CaMeLInterpreter(tools={"get_flag": get_flag}, mode=ExecutionMode.NORMAL)
-interp.exec("""
-flag = get_flag()
-x = 1
-if flag:
-    x = 2
-""")
-
-dg = get_dependency_graph(interp, "x")
-assert "flag" not in dg.all_upstream   # if-test adds no dependency in NORMAL
-```
-
-### STRICT mode (recommended for production)
-
-In STRICT mode, variables referenced in `if` tests and `for` iterables become
-dependencies of **every variable assigned within that block**.  This closes the
-timing side-channel where an adversary could learn the value of a private boolean
-by observing which branch the agent takes (PRD §7.3).
-
-```python
-interp_strict = CaMeLInterpreter(
-    tools={"get_flag": get_flag},
-    mode=ExecutionMode.STRICT,
-)
-interp_strict.exec("""
-flag = get_flag()
-x = 1
-if flag:
-    x = 2
-""")
-
-dg = get_dependency_graph(interp_strict, "x")
-assert "flag" in dg.all_upstream   # STRICT: if-test taint propagates to x
-assert "flag" in dg.direct_deps
-```
-
 | Mode | Dependency tracking | Side-channel mitigation |
 |---|---|---|
 | `NORMAL` | Data assignments only | No control-flow taint |
 | `STRICT` | Data + control-flow (if-test, for-iterable) | Closes timing/control-flow channels |
+
+**STRICT mode is recommended for production.**  It closes the timing side-channel
+where an adversary could learn the value of a private boolean by observing which
+branch the agent takes (PRD §7.3).
+
+See [Architecture Reference — Interpreter Modes](docs/architecture.md#interpreter-execution-modes) for details.
 
 ---
 
@@ -268,12 +358,14 @@ CaMeL prevents two classes of prompt injection attack:
 
 It achieves this by:
 
-1. Separating trusted (user query, P-LLM literals) from untrusted (tool returns, Q-LLM outputs) data
+1. Separating trusted (user query, P-LLM literals) from untrusted (tool returns, Q-LLM outputs)
 2. Tagging every runtime value with capability metadata (`sources`, `readers`)
 3. Enforcing capability-based policies before every tool call
 4. Tracking data flow dependencies (STRICT mode also tracks control-flow taint)
+5. Redacting exception messages from untrusted-dependency failures before P-LLM retry
 
-See the [Developer Guide](docs/developer_guide.md) for the full security model.
+See [Architecture Reference — Security Model](docs/architecture.md#security-model) for the full
+threat model, PI-SEC game definition, and trusted/untrusted boundary table.
 
 ---
 

@@ -92,7 +92,85 @@ coherent `camel` package with a stable public API.
 
 ---
 
+## [0.2.0] — 2026-03-17
+
+### Milestone 2 — Dual LLM & Interpreter
+
+This release wires the P-LLM wrapper, Q-LLM wrapper, CaMeL interpreter, and
+tool executor into a complete end-to-end execution loop with security isolation
+verified by an automated test harness.
+
+#### Added
+
+**P-LLM Wrapper** (`camel/llm/p_llm.py`)
+
+- `PLLMWrapper` — system prompt builder, tool signature injection, user context
+  assembly, and Markdown-fenced code-plan parser.
+- `ToolSignature` — typed descriptor for tool names, parameters, and return
+  types surfaced to the P-LLM.
+- `UserContext` — typed container for the user query passed into each
+  planning call.
+- Isolation contract: `PLLMWrapper` runtime guard rejects any message that
+  contains a `CaMeLValue` (tool return value) — the P-LLM never observes tool
+  output.
+
+**Q-LLM Wrapper** (`camel/llm/qllm.py`)
+
+- `QLLMWrapper` — schema-validated structured-output wrapper; enforces Pydantic
+  output schemas on every Q-LLM response.
+- Automatic `have_enough_information: bool` field injection into all caller
+  schemas.
+- `NotEnoughInformationError` — raised (and redacted) when the Q-LLM signals
+  it lacks sufficient data; the missing-data content is never surfaced to the
+  P-LLM.
+
+**LLM Backend Layer** (`camel/llm/backend.py`, `camel/llm/adapters/`)
+
+- `LLMBackend` — `runtime_checkable` Protocol with `generate` (free-form) and
+  `generate_structured` (Pydantic-constrained) async methods.
+- `ClaudeBackend` — Anthropic Claude adapter using the synthetic extraction
+  tool pattern for structured output.
+- `GeminiBackend` — Google Gemini adapter using `response_mime_type` +
+  `response_schema` for JSON-constrained output.
+- `get_backend(provider, **kwargs)` — lazy-import factory; swaps providers
+  without code changes.
+- `LLMBackendError` — unified exception wrapping provider-specific SDK errors.
+
+**Execution Loop Orchestrator** (`camel/execution_loop.py`)
+
+- `CaMeLOrchestrator` — async `run(user_query)` entry point wiring P-LLM,
+  interpreter, Q-LLM, and tool dispatch.
+- `ExceptionRedactor` — three-tier redaction: full message for trusted
+  exceptions; type + line number for exceptions with any untrusted dependency;
+  fully redacted for `NotEnoughInformationError`.
+- `RetryPromptBuilder` — reconstructs P-LLM retry prompt including
+  accepted-state variable names and remaining unexecuted code (M2-F14).
+- Retry loop with 10-attempt ceiling; `MaxRetriesExceededError` on exhaustion
+  (M2-F8).
+- `ExecutionTrace` / `TraceRecord` — ordered `(tool_name, args,
+  memory_snapshot)` tuples appended after each successful tool call (M2-F12).
+- `DisplayChannel` — `print()` calls in execution plans are routed to a
+  separate display stream, distinct from the execution trace (M2-F10).
+
+**Isolation Verification Test Harness** (`tests/harness/`)
+
+- `RecordingBackend` — intercepts all `LLMBackend.complete()` calls for
+  post-hoc inspection.
+- `IsolationAssertions` — three invariant checkers: no tool output in P-LLM
+  context; no free-form Q-LLM output in P-LLM context; redaction completeness.
+- `ResultsReporter` — generates a structured sign-off report from harness runs.
+- Validated across 50 execution runs and 10 adversarial redaction cases.
+
+#### Architecture Decision Records
+
+- `docs/adr/005-p-llm-wrapper-architecture.md`
+- `docs/adr/006-q-llm-dynamic-schema-injection.md`
+- `docs/adr/007-execution-loop-orchestrator.md`
+- `docs/adr/008-isolation-test-harness-architecture.md`
+
+---
+
 ## [Unreleased]
 
-_Milestone 2 — Dual LLM & Interpreter integration (P-LLM wrapper, tool
-executor, end-to-end pipeline)._
+_Milestone 3 — Capabilities & Policies (security policy engine, capability
+annotation framework, AgentDojo integration)._

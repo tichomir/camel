@@ -742,3 +742,14 @@ Deliverables:
 - ✅ Author M2 exit criteria sign-off report — Qa Engineer (⚡ Quick, 2 SP)
 
 ---
+### Milestone 2 — Documentation Sprint | 2026-03-17 | 📋 reviewing | 16 SP
+**Goal:** Let's documet everything if not done already - Architecture - Github Readme - Manuals etc...
+
+**Delivered:**
+- ❌ Write GitHub README for CaMeL repository — Software Architect (◈ Standard, 3 SP)
+- ❌ Document system architecture in docs/architecture.md — Software Architect (◉ Deep, 5 SP)
+- ✅ Write developer setup and contribution guide — Backend Developer (◈ Standard, 3 SP)
+- ⏭ Produce M2 component API reference docs — Backend Developer (◈ Standard, 3 SP)
+- ⏭ Review and QA all documentation for accuracy and completeness — Qa Engineer (⚡ Quick, 2 SP)
+
+---
