@@ -779,3 +779,24 @@ Deliverables:
 - ✅ Fix: Bump version from 0.1.0 to 0.2.0 in pyproject.toml and __init__.py — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 3 — Capability Assignment Engine | 2026-03-17 | ✅ done | 13 SP
+**Goal:** [Phase: Capability Assignment Engine]
+Design and implement the core CaMeLValue data structure and the capability annotation system. This phase establishes how every runtime value produced by a tool call is tagged with provenance metadata (sources, inner_source, readers). It covers the CaMeLValue type definition, the capability_annotation function contract, default capability assignment for unannotated tools, tool registration integration, and specific annotations for read_email and cloud storage tools. This is the foundational data layer on which policy enforcement depends.
+
+Deliverables:
+- CaMeLValue data structure with sources, inner_source, and readers fields fully defined and unit-tested
+- Default capability annotation logic (sources={tool_id}, readers=Public) applied to all unannotated tools
+- capability_annotation(return_value, tool_kwargs) -> CaMeLValue contract defined and enforced at tool registration time
+- read_email tool annotated: sender field tagged as inner_source, body and subject fields tagged separately
+- Cloud storage tools annotated: readers field populated from document sharing permissions (Set[str] or Public)
+- Public vs Set[str] readers type support implemented and tested
+- Tool registration API updated to accept optional capability_annotation parameter
+- Unit test suite for capability assignment covering all annotation scenarios
+
+**Delivered:**
+- ✅ Design CaMeLValue data structure and capability annotation contract — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement CaMeLValue core, default annotation, and tool registration API — Backend Developer (◉ Deep, 5 SP)
+- ✅ Implement read_email and cloud storage capability annotations — Backend Developer (◈ Standard, 3 SP)
+- ✅ Write unit test suite for capability assignment — Qa Engineer (◈ Standard, 3 SP)
+
+---

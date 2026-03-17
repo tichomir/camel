@@ -221,6 +221,51 @@ class CaMeLValue:
         """
         return self.value
 
+    def merge(self, other: CaMeLValue) -> CaMeLValue:
+        """Return a new :class:`CaMeLValue` with capabilities unioned from *self* and *other*.
+
+        The underlying value is taken from *self*.  This is used to combine
+        capability metadata from two values when one is derived from or
+        associated with another.
+
+        Union rules
+        -----------
+        * ``sources`` = ``self.sources`` ∪ ``other.sources``
+        * ``readers`` = ``self.readers`` ∪ ``other.readers``
+          (:data:`Public` is absorbing — ``Public`` ∪ anything = ``Public``)
+        * ``inner_source`` = ``None`` (the merged value is considered derived)
+
+        Parameters
+        ----------
+        other:
+            The :class:`CaMeLValue` whose capabilities are merged into *self*.
+
+        Returns
+        -------
+        CaMeLValue
+            A new instance with the value of *self* and the union of both
+            capability sets.
+
+        Examples
+        --------
+        ::
+
+            a = CaMeLValue(value="hello", sources=frozenset({"tool_a"}),
+                           inner_source=None, readers=frozenset({"alice@x.com"}))
+            b = CaMeLValue(value="world", sources=frozenset({"tool_b"}),
+                           inner_source=None, readers=Public)
+            merged = a.merge(b)
+            assert merged.value == "hello"
+            assert merged.sources == frozenset({"tool_a", "tool_b"})
+            assert merged.readers is Public
+        """
+        return CaMeLValue(
+            value=self.value,
+            sources=_union_sources(self.sources, other.sources),
+            inner_source=None,
+            readers=_union_readers(self.readers, other.readers),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Module-level raw value accessor
