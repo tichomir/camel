@@ -842,3 +842,24 @@ Deliverables:
 - ✅ Write comprehensive policy unit test suite and AgentDojo adversarial mapping tests — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Milestone 3 — Enforcement Integration & Consent Flow | 2026-03-17 | ✅ done | 21 SP
+**Goal:** [Phase: Enforcement Integration & Consent Flow]
+Wire the policy evaluation engine into the CaMeL interpreter's tool-call pre-execution hook, implement dual-mode enforcement (production mode with user consent prompts, evaluation/test mode with PolicyViolationError), build the security audit log for all policy evaluation outcomes and consent decisions, and deliver the policy testing harness. This phase closes the enforcement loop and makes the capability and policy system end-to-end functional within the interpreter. NFR-2, NFR-4, NFR-6, and NFR-9 compliance is verified here.
+
+Deliverables:
+- Interpreter pre-execution hook: PolicyRegistry.evaluate called before every tool call; blocked calls do not proceed without resolution
+- Production mode consent prompt: displays tool name, human-readable argument summary, and denial reason; resumes on approval, cancels on rejection
+- Evaluation/test mode: PolicyViolationError raised on denial with no UI interaction, enabling automated AgentDojo benchmarking
+- Security audit log: all policy evaluation outcomes (tool name, policy name, result, reason) and user consent decisions (approved/rejected) written per NFR-6
+- Policy testing harness: test utilities for simulating trusted/untrusted CaMeLValue inputs, asserting Allowed/Denied outcomes, and replaying AgentDojo attack scenarios
+- NFR-4 compliance: interpreter overhead including policy evaluation measured and confirmed ≤100ms per tool call
+- NFR-9 compliance: policy engine, capability system, and enforcement hook independently unit-testable
+- End-to-end integration test: full pipeline from user query through P-LLM plan generation, interpreter execution, capability assignment, policy evaluation, and enforcement across all six reference policies
+
+**Delivered:**
+- ✅ Design enforcement hook, consent flow, and audit log architecture — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement enforcement hook, dual-mode consent flow, and security audit log — Backend Developer (◉ Deep, 8 SP)
+- ✅ Implement policy testing harness with AgentDojo scenario replay — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write end-to-end integration and NFR compliance test suite — Qa Engineer (◉ Deep, 5 SP)
+
+---
