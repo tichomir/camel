@@ -51,10 +51,9 @@ may break if the field is renamed.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Final, Sequence, Union
-
-from typing_extensions import TypeAlias
+from typing import Any, Final, TypeAlias
 
 # ---------------------------------------------------------------------------
 # Public singleton — open-readers sentinel
@@ -111,7 +110,7 @@ Public: Final[_PublicType] = _PublicType()
 #:
 #: An *empty* ``frozenset()`` means the value has no authorised readers and
 #: must not be forwarded to any external principal.
-Readers: TypeAlias = Union[frozenset[str], _PublicType]
+Readers: TypeAlias = frozenset[str] | _PublicType
 
 
 # ---------------------------------------------------------------------------

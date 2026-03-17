@@ -107,8 +107,7 @@ by an untrusted source variable (STRICT mode closes the control-flow channel).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # DependencyGraph — public, frozen snapshot

@@ -32,7 +32,7 @@ jobs:
           pip install pytest-cov
 
       - name: Lint (ruff)
-        run: ruff check camel/ tests/
+        run: ruff check .
 
       - name: Type-check (mypy)
         run: mypy camel/

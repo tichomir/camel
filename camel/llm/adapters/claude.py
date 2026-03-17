@@ -29,11 +29,9 @@ Requirements
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from camel.llm.protocols import Message, QResponseT
-from camel.llm.schemas import QResponse
 
 _EXTRACTION_TOOL_NAME = "extract_structured_data"
 
@@ -90,7 +88,6 @@ class ClaudeBackend:
         joined into a single Anthropic ``system`` prompt; the remaining
         turns form the ``messages`` list.
         """
-        import anthropic  # noqa: PLC0415
 
         system_parts = [m["content"] for m in messages if m.get("role") == "system"]
         chat_messages = [m for m in messages if m.get("role") != "system"]

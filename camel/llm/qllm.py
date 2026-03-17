@@ -56,7 +56,7 @@ import textwrap
 from typing import TypeVar
 
 from camel.llm.exceptions import NotEnoughInformationError
-from camel.llm.protocols import Message, QlLMBackend, QResponseT
+from camel.llm.protocols import Message, QlLMBackend
 from camel.llm.schemas import QResponse
 
 T = TypeVar("T", bound=QResponse)

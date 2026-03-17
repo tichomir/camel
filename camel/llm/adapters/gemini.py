@@ -22,7 +22,6 @@ import json
 from typing import Any
 
 from camel.llm.protocols import Message, QResponseT
-from camel.llm.schemas import QResponse
 
 
 class GeminiBackend:

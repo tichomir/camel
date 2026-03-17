@@ -29,7 +29,8 @@ All other statement types raise :class:`UnsupportedSyntaxError`.
 - ``ast.BinOp``       — arithmetic, bitwise, and matrix-multiply operators
 - ``ast.UnaryOp``     — ``-``, ``+``, ``not``, ``~``
 - ``ast.BoolOp``      — ``and`` / ``or`` (all operands evaluated for caps)
-- ``ast.Compare``     — ``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``in``, ``not in``, ``is``, ``is not``
+- ``ast.Compare``     — ``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``,
+  ``in``, ``not in``, ``is``, ``is not``
 - ``ast.Call``        — function / tool calls
 - ``ast.Attribute``   — attribute access (``obj.field``)
 - ``ast.Subscript``   — subscript access (``container[key]``)
@@ -48,7 +49,8 @@ The wrapping rules are:
 - **Constants**: ``sources=frozenset({"User literal"})``, ``readers=Public``.
 - **Variable loads**: return the stored :class:`~camel.value.CaMeLValue` unchanged.
 - **Binary / augmented operations**: :func:`~camel.value.propagate_binary_op`.
-- **Unary operations**: :func:`~camel.value.propagate_assignment` (preserve operand caps, new raw value).
+- **Unary operations**: :func:`~camel.value.propagate_assignment`
+  (preserve operand caps, new raw value).
 - **BoolOp / Compare**: fold operands left-to-right with :func:`~camel.value.propagate_binary_op`.
 - **List / Tuple**: :func:`~camel.value.propagate_list_construction`.
 - **Dict**: :func:`~camel.value.propagate_dict_construction` (both keys and values contribute).
@@ -82,9 +84,10 @@ from __future__ import annotations
 import ast
 import inspect
 import operator as _operator
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from camel.dependency_graph import DependencyGraph, _InternalGraph
 from camel.value import (
@@ -1093,7 +1096,8 @@ class CaMeLInterpreter:
            Call ``_policy_engine.check(tool_name, kwargs_mapping)``.
            If denied: raise :class:`PolicyViolationError`.
         2. **Call** the tool with raw values:
-           ``result_cv = tool(*[a.raw for a in pos_args], **{k: v.raw for k, v in kw_args.items()})``
+           ``result_cv = tool(*[a.raw for a in pos_args],``
+           ``**{k: v.raw for k, v in kw_args.items()})``
         3. **Type assertion**: ``isinstance(result_cv, CaMeLValue)`` → raise
            ``TypeError`` if not.
         4. Return ``result_cv``.
@@ -1465,7 +1469,8 @@ class CaMeLInterpreter:
         value: CaMeLValue,
         deps: frozenset[str] = frozenset(),
     ) -> None:
-        """Store a :class:`~camel.value.CaMeLValue` into the variable store for an assignment target.
+        """Store a :class:`~camel.value.CaMeLValue` into the variable store
+        for an assignment target.
 
         Supported target types
         ----------------------
@@ -1475,7 +1480,8 @@ class CaMeLInterpreter:
         ``ast.Tuple`` or ``ast.List`` (flat, all elements are ``ast.Name``):
             Tuple-unpack ``value.raw`` into the named variables.
             For each ``(i, name_node)`` pair:
-            ``elem_cv = propagate_subscript(value, wrap(i, sources=frozenset({"CaMeL"})), value.raw[i])``
+            ``elem_cv = propagate_subscript(value,``
+            ``wrap(i, sources=frozenset({"CaMeL"})), value.raw[i])``
             ``self._store[name_node.id] = elem_cv``
 
         Raises :class:`UnsupportedSyntaxError` for:

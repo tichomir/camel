@@ -601,3 +601,68 @@ Deliverables:
 - ✅ Validate and publish docs coverage report + update CI to enforce it — Devops Engineer (⚡ Quick, 2 SP)
 
 ---
+### Sprint — Milestone 1 Lint Fixes (E501) | 2026-03-17 | ✅ done | 2 SP
+**Goal:** Let's fix couple of errors found from lint: 
+
+ruff check --fix .
+E501 Line too long (108 > 100)
+  --> interpreter.py:32:101
+   |
+30 | - ``ast.UnaryOp``     — ``-``, ``+``, ``not``, ``~``
+31 | - ``ast.BoolOp``      — ``and`` / ``or`` (all operands evaluated for caps)
+32 | - ``ast.Compare``     — ``==``, ``!=``, ``<``, ``>``, ``<=``, ``>=``, ``in``, ``not in``, ``is``, ``is not``
+   |                                                                                                     ^^^^^^^^
+33 | - ``ast.Call``        — function / tool calls
+34 | - ``ast.Attribute``   — attribute access (``obj.field``)
+   |
+
+E501 Line too long (105 > 100)
+  --> interpreter.py:51:101
+   |
+49 | - **Variable loads**: return the stored :class:`~camel.value.CaMeLValue` unchanged.
+50 | - **Binary / augmented operations**: :func:`~camel.value.propagate_binary_op`.
+51 | - **Unary operations**: :func:`~camel.value.propagate_assignment` (preserve operand caps, new raw value).
+   |                                                                                                     ^^^^^
+52 | - **BoolOp / Compare**: fold operands left-to-right with :func:`~camel.value.propagate_binary_op`.
+53 | - **List / Tuple**: :func:`~camel.value.propagate_list_construction`.
+   |
+
+E501 Line too long (101 > 100)
+    --> interpreter.py:1097:101
+     |
+1095 |            If denied: raise :class:`PolicyViolationError`.
+1096 |         2. **Call** the tool with raw values:
+1097 |            ``result_cv = tool(*[a.raw for a in pos_args], **{k: v.raw for k, v in kw_args.items()})``
+     |                                                                                                     ^
+1098 |         3. **Type assertion**: ``isinstance(result_cv, CaMeLValue)`` → raise
+1099 |            ``TypeError`` if not.
+     |
+
+E501 Line too long (101 > 100)
+    --> interpreter.py:1469:101
+     |
+1467 |         deps: frozenset[str] = frozenset(),
+1468 |     ) -> None:
+1469 |         """Store a :class:`~camel.value.CaMeLValue` into the variable store for an assignment target.
+     |                                                                                                     ^
+1470 |
+1471 |         Supported target types
+     |
+
+E501 Line too long (105 > 100)
+    --> interpreter.py:1479:101
+     |
+1477 |             Tuple-unpack ``value.raw`` into the named variables.
+1478 |             For each ``(i, name_node)`` pair:
+1479 |             ``elem_cv = propagate_subscript(value, wrap(i, sources=frozenset({"CaMeL"})), value.raw[i])``
+     |                                                                                                     ^^^^^
+1480 |             ``self._store[name_node.id] = elem_cv``
+     |
+
+Found 5 errors.
+
+**Delivered:**
+- ✅ Fix all E501 line-too-long lint errors in interpreter.py — Backend Developer (⚡ Quick, 1 SP)
+- ✅ Update CI to enforce ruff line-length check on every PR — Devops Engineer (⚡ Quick, 1 SP)
+
+---
