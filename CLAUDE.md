@@ -524,3 +524,22 @@ Deliverables:
 - ✅ Write tests/test_interpreter.py — full test suite with negative suite and session-persistence tests — Qa Engineer (◉ Deep, 5 SP)
 
 ---
+### Sprint 1 | 2026-03-17 | ✅ done | 15 SP
+**Goal:** [Phase: Dependency Graph & Tracking Modes]
+Implement the data flow graph that tracks upstream dependencies for every variable in the interpreter. Deliver both NORMAL mode (dependencies via direct data assignment only) and STRICT mode (control-flow constructs add their test/iterable as a dependency on all variables assigned within the block). Provide the get_dependency_graph(variable_name) query utility. Validate correctness across at least 20 hand-crafted test programs in both modes. STRICT/NORMAL is a per-session configurable flag.
+
+Deliverables:
+- camel/dependency_graph.py: DependencyGraph data structure and recursive upstream-query interface
+- NORMAL mode dependency tracking integrated into interpreter execution
+- STRICT mode dependency tracking: if-condition and for-iterable propagation to inner assigned variables
+- get_dependency_graph(variable_name) -> DependencyGraph public API
+- Per-session STRICT/NORMAL mode configuration flag
+- tests/test_dependency_graph.py: ≥20 hand-crafted programs covering NORMAL and STRICT correctness, including nested loops and conditionals
+- STRICT mode regression: confirm loop-body variables carry iterable dependency
+
+**Delivered:**
+- ✅ Design DependencyGraph data structure and NORMAL/STRICT mode tracking spec — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement camel/dependency_graph.py and integrate tracking into interpreter — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write tests/test_dependency_graph.py — ≥20 hand-crafted programs covering NORMAL and STRICT correctness — Qa Engineer (◉ Deep, 5 SP)
+
+---

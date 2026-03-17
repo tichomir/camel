@@ -86,6 +86,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
+from camel.dependency_graph import DependencyGraph, _InternalGraph
 from camel.value import (
     CaMeLValue,
     Public,
@@ -374,6 +375,15 @@ class CaMeLInterpreter:
         self._builtins = merged_builtins
         self._mode = mode
         self._policy_engine = policy_engine
+        # Dependency graph tracking state.
+        self._dep_graph: _InternalGraph = _InternalGraph()
+        # Set to a live set while evaluating an assignment RHS; None otherwise.
+        self._tracking: set[str] | None = None
+        # Stack of accumulated context-flow dependency sets (variable names).
+        # The bottom element is always frozenset() (top-level, no enclosing block).
+        # In STRICT mode, entering an if/for block pushes a new frozenset that
+        # merges the test/iterable variable names with the enclosing entry.
+        self._dep_ctx_stack: list[frozenset[str]] = [frozenset()]
 
     # ------------------------------------------------------------------
     # Public API
@@ -437,6 +447,46 @@ class CaMeLInterpreter:
                 f"seed: expected CaMeLValue, got {type(value).__name__!r}"
             )
         self._store[name] = value
+
+    def set_mode(self, mode: ExecutionMode | str) -> None:
+        """Set the execution mode for this session.
+
+        Parameters
+        ----------
+        mode:
+            Either an :class:`ExecutionMode` enum member or its string value
+            (``"normal"`` or ``"strict"``).  The change takes effect
+            immediately for subsequent :meth:`exec` calls.
+
+        Raises
+        ------
+        ValueError
+            If *mode* is a string that does not match any :class:`ExecutionMode`
+            member.
+        """
+        if isinstance(mode, str):
+            mode = ExecutionMode(mode)
+        self._mode = mode
+
+    def get_dependency_graph(self, variable: str) -> DependencyGraph:
+        """Return the dependency graph snapshot for *variable*.
+
+        Delegates to :meth:`_InternalGraph.subgraph`; returns an immutable
+        :class:`DependencyGraph` with all upstream variable dependencies
+        computed transitively.
+
+        Parameters
+        ----------
+        variable:
+            The variable name to query.
+
+        Returns
+        -------
+        DependencyGraph
+            Frozen snapshot.  All fields are empty if *variable* has never
+            been assigned in this session.
+        """
+        return self._dep_graph.subgraph(variable)
 
     def exec(self, code: str) -> None:
         """Parse and execute a restricted-Python code string.
@@ -567,11 +617,15 @@ class CaMeLInterpreter:
         Multiple targets (``a = b = expr``) are each stored with the same
         ``rhs_cv``.
         """
+        self._tracking = set()
         rhs_cv = self._eval(node.value, ctx_caps)
+        direct_deps = frozenset(self._tracking)
+        self._tracking = None
         if self._mode == ExecutionMode.STRICT:
             rhs_cv = self._merge_ctx_caps(rhs_cv, ctx_caps)
+        combined_deps = direct_deps | self._dep_ctx_stack[-1]
         for target in node.targets:
-            self._store_target(target, rhs_cv)
+            self._store_target(target, rhs_cv, combined_deps)
 
     def _exec_AugAssign(
         self,
@@ -599,7 +653,10 @@ class CaMeLInterpreter:
         if name not in self._store:
             raise NameError(f"name {name!r} is not defined")
         current = self._store[name]
+        self._tracking = set()
         rhs_cv = self._eval(node.value, ctx_caps)
+        direct_deps = frozenset(self._tracking)
+        self._tracking = None
         op_type = type(node.op)
         if op_type not in _BINOP_MAP:
             raise self._unsupported(node)
@@ -608,6 +665,9 @@ class CaMeLInterpreter:
         if self._mode == ExecutionMode.STRICT:
             result_cv = self._merge_ctx_caps(result_cv, ctx_caps)
         self._store[name] = result_cv
+        # x += y means x depends on its previous self plus y.
+        combined_deps = frozenset({name}) | direct_deps | self._dep_ctx_stack[-1]
+        self._dep_graph.record(name, combined_deps)
 
     def _exec_If(
         self,
@@ -627,16 +687,25 @@ class CaMeLInterpreter:
         4. Else: execute ``node.orelse`` with ``inner_ctx``.
            (``node.orelse`` is an empty list when there is no ``else`` clause.)
         """
+        if self._mode == ExecutionMode.STRICT:
+            self._tracking = set()
         test_cv = self._eval(node.test, ctx_caps)
         inner_ctx: CaMeLValue | None
         if self._mode == ExecutionMode.STRICT:
+            test_deps = frozenset(self._tracking or ())
+            self._tracking = None
             inner_ctx = self._merge_ctx_caps(test_cv, ctx_caps)
+            self._dep_ctx_stack.append(self._dep_ctx_stack[-1] | test_deps)
         else:
             inner_ctx = ctx_caps
-        if test_cv.raw:
-            self._exec_statements(node.body, inner_ctx)
-        else:
-            self._exec_statements(node.orelse, inner_ctx)
+        try:
+            if test_cv.raw:
+                self._exec_statements(node.body, inner_ctx)
+            else:
+                self._exec_statements(node.orelse, inner_ctx)
+        finally:
+            if self._mode == ExecutionMode.STRICT:
+                self._dep_ctx_stack.pop()
 
     def _exec_For(
         self,
@@ -670,19 +739,32 @@ class CaMeLInterpreter:
         """
         if node.orelse:
             raise self._unsupported(node)
+        # Always track iterable variables so the loop target's direct dep is
+        # recorded correctly in both NORMAL and STRICT mode.
+        self._tracking = set()
         iter_cv = self._eval(node.iter, ctx_caps)
+        iter_deps = frozenset(self._tracking)
+        self._tracking = None
+        outer_ctx_deps = self._dep_ctx_stack[-1]
+        # The loop target depends on iter_deps plus any enclosing ctx deps.
+        target_deps = iter_deps | outer_ctx_deps
         inner_ctx2: CaMeLValue | None
         if self._mode == ExecutionMode.STRICT:
             inner_ctx2 = self._merge_ctx_caps(iter_cv, ctx_caps)
+            self._dep_ctx_stack.append(outer_ctx_deps | iter_deps)
         else:
             inner_ctx2 = ctx_caps
-        for idx, element_raw in enumerate(iter_cv.raw):
-            idx_cv = wrap(idx, sources=frozenset({"CaMeL"}))
-            element_cv = propagate_subscript(iter_cv, idx_cv, element_raw)
+        try:
+            for idx, element_raw in enumerate(iter_cv.raw):
+                idx_cv = wrap(idx, sources=frozenset({"CaMeL"}))
+                element_cv = propagate_subscript(iter_cv, idx_cv, element_raw)
+                if self._mode == ExecutionMode.STRICT:
+                    element_cv = self._merge_ctx_caps(element_cv, inner_ctx2)
+                self._store_target(node.target, element_cv, target_deps)
+                self._exec_statements(node.body, inner_ctx2)
+        finally:
             if self._mode == ExecutionMode.STRICT:
-                element_cv = self._merge_ctx_caps(element_cv, inner_ctx2)
-            self._store_target(node.target, element_cv)
-            self._exec_statements(node.body, inner_ctx2)
+                self._dep_ctx_stack.pop()
 
     def _exec_Expr(
         self,
@@ -821,6 +903,9 @@ class CaMeLInterpreter:
         if name in self._builtins:
             return wrap(self._builtins[name], sources=frozenset({"CaMeL"}), readers=Public)
         if name in self._store:
+            # Record this variable reference for dependency tracking.
+            if self._tracking is not None:
+                self._tracking.add(name)
             return self._store[name]
         raise NameError(f"name {name!r} is not defined")
 
@@ -1378,6 +1463,7 @@ class CaMeLInterpreter:
         self,
         target: ast.expr,
         value: CaMeLValue,
+        deps: frozenset[str] = frozenset(),
     ) -> None:
         """Store a :class:`~camel.value.CaMeLValue` into the variable store for an assignment target.
 
@@ -1403,9 +1489,13 @@ class CaMeLInterpreter:
             The ``ast.expr`` node representing the assignment target.
         value:
             The :class:`~camel.value.CaMeLValue` to store.
+        deps:
+            Dependency variable names to record for each assigned variable.
+            Defaults to ``frozenset()`` (no variable dependencies).
         """
         if isinstance(target, ast.Name):
             self._store[target.id] = value
+            self._dep_graph.record(target.id, deps)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for i, elem_target in enumerate(target.elts):
                 if not isinstance(elem_target, ast.Name):
@@ -1413,6 +1503,7 @@ class CaMeLInterpreter:
                 idx_cv = wrap(i, sources=frozenset({"CaMeL"}))
                 elem_cv = propagate_subscript(value, idx_cv, value.raw[i])
                 self._store[elem_target.id] = elem_cv
+                self._dep_graph.record(elem_target.id, deps)
         elif isinstance(target, (ast.Subscript, ast.Attribute)):
             raise self._unsupported(target)
         else:
