@@ -1,7 +1,9 @@
 """Google Gemini backend adapter.
 
 Implements both :class:`~camel.llm.protocols.LLMBackend` (P-LLM) and
-:class:`~camel.llm.protocols.QlLMBackend` (Q-LLM) structural protocols.
+:class:`~camel.llm.protocols.QlLMBackend` (Q-LLM) structural protocols,
+as well as the unified :class:`~camel.llm.backend.LLMBackend` protocol
+(``generate`` / ``generate_structured``).
 
 Structured-output strategy
 --------------------------
@@ -20,6 +22,8 @@ from __future__ import annotations
 
 import json
 from typing import Any
+
+from pydantic import BaseModel
 
 from camel.llm.protocols import Message, QResponseT
 
@@ -112,6 +116,104 @@ class GeminiBackend:
 
         raw: dict[str, Any] = json.loads(response.text)
         return schema.model_validate(raw)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Unified LLMBackend protocol (generate / generate_structured)
+    # ------------------------------------------------------------------
+
+    async def generate(
+        self,
+        messages: list[Message],
+        **kwargs: Any,
+    ) -> str:
+        """Return a free-form completion for *messages* (unified P-LLM path).
+
+        Delegates to :meth:`complete` and wraps any provider error as
+        :class:`~camel.llm.backend.LLMBackendError`.
+
+        Parameters
+        ----------
+        messages:
+            Ordered list of chat messages.
+        **kwargs:
+            Forwarded to :meth:`complete` (and then to the Gemini API).
+
+        Returns
+        -------
+        str
+            The model's text response.
+
+        Raises
+        ------
+        ~camel.llm.backend.LLMBackendError
+            On any Google AI API failure.
+        """
+        from camel.llm.backend import LLMBackendError  # noqa: PLC0415
+
+        try:
+            return await self.complete(messages, **kwargs)
+        except Exception as exc:
+            raise LLMBackendError(str(exc), cause=exc) from exc
+
+    async def generate_structured(
+        self,
+        messages: list[Message],
+        schema: type[BaseModel],
+    ) -> BaseModel:
+        """Return a schema-validated structured response (unified path).
+
+        Uses the same ``response_mime_type`` + ``response_schema`` pattern
+        as :meth:`structured_complete` but accepts any
+        :class:`pydantic.BaseModel` subclass.  Provider errors are wrapped
+        as :class:`~camel.llm.backend.LLMBackendError`.
+
+        Parameters
+        ----------
+        messages:
+            Ordered list of chat messages providing the content to parse.
+        schema:
+            A :class:`pydantic.BaseModel` subclass describing the expected
+            output shape.
+
+        Returns
+        -------
+        BaseModel
+            A validated instance of *schema*.
+
+        Raises
+        ------
+        ~camel.llm.backend.LLMBackendError
+            On any Google AI API failure.
+        """
+        from camel.llm.backend import LLMBackendError  # noqa: PLC0415
+
+        try:
+            import google.generativeai.types as genai_types  # noqa: PLC0415
+
+            json_schema = schema.model_json_schema()
+            generation_config = genai_types.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=json_schema,
+            )
+
+            model = self._genai.GenerativeModel(model_name=self._model_name)
+            contents = self._messages_to_contents(messages)
+
+            response = await model.generate_content_async(
+                contents,
+                generation_config=generation_config,
+            )
+
+            raw: dict[str, Any] = json.loads(response.text)
+            return schema.model_validate(raw)
+        except LLMBackendError:
+            raise
+        except Exception as exc:
+            raise LLMBackendError(str(exc), cause=exc) from exc
 
     # ------------------------------------------------------------------
     # Helpers

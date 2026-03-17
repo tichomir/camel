@@ -666,3 +666,21 @@ Found 5 errors.
 - ✅ Update CI to enforce ruff line-length check on every PR — Devops Engineer (⚡ Quick, 1 SP)
 
 ---
+### Sprint — Milestone 2: P-LLM Wrapper Implementation | 2026-03-17 | ✅ done | 18 SP
+**Goal:** [Phase: P-LLM Wrapper Implementation]
+Implement the Privileged LLM wrapper including system prompt construction, tool signature injection, user context assembly, code plan parsing from Markdown-fenced output, and the provider-agnostic LLMBackend interface. Establish the foundational isolation contract ensuring P-LLM never receives tool return values.
+
+Deliverables:
+- P-LLM wrapper class with system prompt builder (CaMeL Python subset spec, tool signatures, user context sections)
+- Markdown-fenced code block parser that extracts valid restricted Python execution plans from P-LLM responses
+- LLMBackend Protocol interface definition with concrete adapters for at least two providers (e.g., Claude, Gemini)
+- Unit tests confirming P-LLM prompt construction never includes tool return values
+- P-LLM system prompt template with opaque-variable instruction (M2-F13) and print() usage guidance (M2-F10)
+
+**Delivered:**
+- ✅ Design P-LLM wrapper architecture and LLMBackend Protocol interface — Software Architect (⚡ Quick, 2 SP)
+- ✅ Implement LLMBackend Protocol and concrete adapters (Claude, Gemini) — Backend Developer (◉ Deep, 5 SP)
+- ✅ Implement PLLMWrapper with system prompt builder and code plan parser — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write isolation contract enforcement tests for P-LLM — Qa Engineer (◈ Standard, 3 SP)
+
+---

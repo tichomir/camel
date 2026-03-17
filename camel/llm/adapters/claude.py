@@ -1,7 +1,9 @@
 """Anthropic Claude backend adapter.
 
 Implements both :class:`~camel.llm.protocols.LLMBackend` (P-LLM) and
-:class:`~camel.llm.protocols.QlLMBackend` (Q-LLM) structural protocols.
+:class:`~camel.llm.protocols.QlLMBackend` (Q-LLM) structural protocols,
+as well as the unified :class:`~camel.llm.backend.LLMBackend` protocol
+(``generate`` / ``generate_structured``).
 
 Structured-output strategy
 --------------------------
@@ -30,6 +32,8 @@ Requirements
 from __future__ import annotations
 
 from typing import Any
+
+from pydantic import BaseModel
 
 from camel.llm.protocols import Message, QResponseT
 
@@ -168,3 +172,115 @@ class ClaudeBackend:
             f"Claude did not return a '{_EXTRACTION_TOOL_NAME}' tool_use block. "
             f"Full response: {response}"
         )
+
+    # ------------------------------------------------------------------
+    # Unified LLMBackend protocol (generate / generate_structured)
+    # ------------------------------------------------------------------
+
+    async def generate(
+        self,
+        messages: list[Message],
+        **kwargs: Any,
+    ) -> str:
+        """Return a free-form completion for *messages* (unified P-LLM path).
+
+        Delegates to :meth:`complete` and wraps any provider error as
+        :class:`~camel.llm.backend.LLMBackendError`.
+
+        Parameters
+        ----------
+        messages:
+            Ordered list of chat messages.
+        **kwargs:
+            Forwarded to :meth:`complete` (and then to the Anthropic API).
+
+        Returns
+        -------
+        str
+            The model's text response.
+
+        Raises
+        ------
+        ~camel.llm.backend.LLMBackendError
+            On any Anthropic API failure.
+        """
+        from camel.llm.backend import LLMBackendError  # noqa: PLC0415
+
+        try:
+            return await self.complete(messages, **kwargs)
+        except Exception as exc:
+            raise LLMBackendError(str(exc), cause=exc) from exc
+
+    async def generate_structured(
+        self,
+        messages: list[Message],
+        schema: type[BaseModel],
+    ) -> BaseModel:
+        """Return a schema-validated structured response (unified path).
+
+        Uses the same synthetic extraction tool pattern as
+        :meth:`structured_complete` but accepts any
+        :class:`pydantic.BaseModel` subclass (not just
+        :class:`~camel.llm.schemas.QResponse`).  Provider errors are
+        wrapped as :class:`~camel.llm.backend.LLMBackendError`.
+
+        Parameters
+        ----------
+        messages:
+            Ordered list of chat messages providing the content to parse.
+        schema:
+            A :class:`pydantic.BaseModel` subclass describing the expected
+            output shape.
+
+        Returns
+        -------
+        BaseModel
+            A validated instance of *schema*.
+
+        Raises
+        ------
+        ~camel.llm.backend.LLMBackendError
+            On any Anthropic API failure.
+        """
+        from camel.llm.backend import LLMBackendError  # noqa: PLC0415
+
+        try:
+            json_schema = schema.model_json_schema()
+            extraction_tool = {
+                "name": _EXTRACTION_TOOL_NAME,
+                "description": (
+                    "Extract structured data from the provided content.  "
+                    "Return ALL fields according to the schema."
+                ),
+                "input_schema": json_schema,
+            }
+
+            system_parts = [m["content"] for m in messages if m.get("role") == "system"]
+            chat_messages = [m for m in messages if m.get("role") != "system"]
+
+            create_kwargs: dict[str, Any] = {
+                **self._default_kwargs,
+                "model": self._model,
+                "max_tokens": self._max_tokens,
+                "messages": chat_messages,
+                "tools": [extraction_tool],
+                "tool_choice": {"type": "tool", "name": _EXTRACTION_TOOL_NAME},
+            }
+            if system_parts:
+                create_kwargs["system"] = "\n\n".join(system_parts)
+
+            response = await self._client.messages.create(**create_kwargs)
+
+            for block in response.content:
+                if block.type == "tool_use" and block.name == _EXTRACTION_TOOL_NAME:
+                    raw: dict[str, Any] = block.input  # type: ignore[assignment]
+                    return schema.model_validate(raw)
+
+            raise ValueError(  # pragma: no cover
+                f"Claude did not return a '{_EXTRACTION_TOOL_NAME}' tool_use block. "
+                f"Full response: {response}"
+            )
+        except LLMBackendError:
+            raise
+        except Exception as exc:
+            raise LLMBackendError(str(exc), cause=exc) from exc
