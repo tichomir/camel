@@ -1,6 +1,6 @@
 """CaMeL — Capabilities for Machine Learning runtime.
 
-Public API for Milestone 1 (v0.1.0):
+Public API for Milestone 3 (v0.3.0):
 
 Value & capability system
 --------------------------
@@ -50,7 +50,7 @@ from camel.value import (
     wrap,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Version

@@ -140,22 +140,14 @@ the top-level return value to help policies trace the sub-field origin.
 
 ### Step 3 — (Optional) Register a security policy
 
-Policies are Python callables with signature
-`(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> PolicyResult`.
+Use `PolicyRegistry` from `camel.policy` to register callable policies.
+Each policy has the signature
+`(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult`.
 
 ```python
-from typing import Mapping
-from camel.interpreter import PolicyViolationError
-from camel.value import CaMeLValue, Public
-
-
-class Allowed:
-    """Tool call is permitted."""
-
-
-class Denied:
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
+from collections.abc import Mapping
+from camel.policy import PolicyRegistry, Allowed, Denied, is_trusted
+from camel.value import CaMeLValue
 
 
 def send_email_policy(
@@ -163,40 +155,65 @@ def send_email_policy(
     kwargs: Mapping[str, CaMeLValue],
 ) -> Allowed | Denied:
     """Block send_email if the 'to' address comes from an untrusted source."""
-    if tool_name != "send_email":
-        return Allowed()
-
     to_value: CaMeLValue = kwargs["to"]
     # Allow only if 'to' was a user-typed literal (trusted source):
-    if "User literal" in to_value.sources:
+    if is_trusted(to_value):
         return Allowed()
     # Allow if 'to' is already an authorized reader of the body:
-    body_value: CaMeLValue = kwargs.get("body", CaMeLValue(
-        value="", sources=frozenset(), inner_source=None, readers=Public
-    ))
-    if isinstance(body_value.readers, frozenset) and to_value.raw in body_value.readers:
-        return Allowed()
+    body_value = kwargs.get("body")
+    if body_value is not None:
+        from camel.policy import can_readers_read_value
+        if can_readers_read_value(body_value, to_value.raw):
+            return Allowed()
     return Denied(
         reason=f"Recipient '{to_value.raw}' not from a trusted source."
     )
 
 
-class MyPolicyEngine:
-    def check(
-        self, tool_name: str, kwargs: Mapping[str, CaMeLValue]
-    ) -> Allowed | Denied:
-        return send_email_policy(tool_name, kwargs)
-
+registry = PolicyRegistry()
+registry.register("send_email", send_email_policy)
 
 interp = CaMeLInterpreter(
     tools={"send_email": send_email, "get_email": get_email},
-    policy_engine=MyPolicyEngine(),
+    policy_engine=registry,
 )
 ```
 
-When `policy_engine.check()` returns `Denied`, the interpreter raises
+The `PolicyRegistry` can also be used as a decorator:
+
+```python
+@registry.register("send_email")
+def send_email_policy(tool_name, kwargs):
+    ...
+```
+
+For multi-policy composition, register several policies for the same tool — all
+must return `Allowed` for the call to proceed.  The first `Denied` short-circuits
+evaluation.
+
+To load the six **reference policies** shipped with CaMeL:
+
+```python
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
+
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@company.com")
+
+interp = CaMeLInterpreter(
+    tools=my_tools,
+    policy_engine=registry,
+)
+```
+
+See [Reference Policy Specification](policies/reference-policy-spec.md) for
+full logic, denial reasons, and AgentDojo attack-scenario mappings.
+
+When a policy returns `Denied`, the interpreter raises
 `PolicyViolationError(tool_name, reason)` and the execution loop triggers a
-P-LLM retry (up to 10 times, M2-F8).
+P-LLM retry (up to 10 times, M2-F8).  In `PRODUCTION` enforcement mode a
+`ConsentCallback` is invoked before raising, allowing the user to approve or
+reject the call interactively.
 
 ---
 

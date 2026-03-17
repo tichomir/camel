@@ -1,12 +1,12 @@
-# CaMeL Developer Guide — Milestone 1
+# CaMeL Developer Guide
 
-**Version:** 0.1.0
+**Version:** 0.3.0
 **Date:** 2026-03-17
 **Status:** Released
 
-This guide covers the four core components of the CaMeL Milestone 1 foundation:
+This guide covers the core components of the CaMeL foundation through Milestone 3:
 the supported Python grammar, the `CaMeLValue` capability schema, the dependency
-graph query API, and the interface contracts Milestone 2 must satisfy.
+graph query API, and the integration contracts for tools and security policies.
 
 ---
 
@@ -15,7 +15,7 @@ graph query API, and the interface contracts Milestone 2 must satisfy.
 1. [Supported Python Grammar Reference](#1-supported-python-grammar-reference)
 2. [CaMeLValue Schema & Capability Propagation Rules](#2-camelvalue-schema--capability-propagation-rules)
 3. [DependencyGraph Query API](#3-dependencygraph-query-api)
-4. [Milestone 2 Readiness Notes](#4-milestone-2-readiness-notes)
+4. [Integration Contracts](#4-integration-contracts)
 5. [Architecture Decision Records](#5-architecture-decision-records)
 
 ---
@@ -489,10 +489,10 @@ assert ("b", "a") in dg.edges
 
 ---
 
-## 4. Milestone 2 Readiness Notes
+## 4. Integration Contracts
 
-This section defines the interface contracts that Milestone 2 components must
-satisfy to integrate with the Milestone 1 foundation.
+This section defines the interface contracts all components must satisfy when
+integrating with the CaMeL runtime.
 
 ### 4.1 Tool Executor Contract
 
@@ -500,7 +500,7 @@ Each tool registered with `CaMeLInterpreter` must conform to the following
 callable signature:
 
 ```python
-from typing import Callable, Mapping
+from typing import Callable
 from camel.value import CaMeLValue
 
 ToolCallable = Callable[..., CaMeLValue]
@@ -535,41 +535,46 @@ def get_email(email_id: CaMeLValue) -> CaMeLValue:
 | Capability tagging | The returned `CaMeLValue` must have `sources` set to the tool's registered name (or a descriptive label). |
 | `readers` assignment | The tool must set `readers` according to the data's intended audience. Use `Public` for unrestricted data; use a `frozenset[str]` of authorized principals for restricted data. |
 | `inner_source` | Set to the sub-field name when the value represents a specific field of a structured response (e.g. `"sender"`, `"subject"`). `None` otherwise. |
-| No side effects before policy check | The policy engine is invoked **before** the tool callable is called. Tools must not perform side effects in `__init__` or before the body executes. |
+| No side effects before policy check | The policy engine is invoked **before** the tool callable is called. Tools must not perform side effects before the body executes. |
 | Raw argument extraction | Tool implementations receive `CaMeLValue` arguments. Extract raw values using `arg.raw` or `raw_value(arg)` before passing to external APIs. |
 
-**Policy engine interface** (injected at `CaMeLInterpreter` construction time):
+**Policy engine — `PolicyRegistry`:**
+
+The `CaMeLInterpreter` accepts a `PolicyRegistry` instance as its `policy_engine`
+parameter.  Import from `camel.policy`:
 
 ```python
-from typing import Protocol, Mapping
+from camel.policy import PolicyRegistry, Allowed, Denied, is_trusted
 from camel.value import CaMeLValue
+from collections.abc import Mapping
 
-class PolicyResult:
-    """Base type for policy decisions."""
+def send_email_policy(
+    tool_name: str,
+    kwargs: Mapping[str, CaMeLValue],
+) -> Allowed | Denied:
+    """Block send_email if the recipient address is not trusted."""
+    to_value = kwargs.get("to")
+    if to_value is not None and not is_trusted(to_value):
+        return Denied("recipient address originates from untrusted data")
+    return Allowed()
 
-class Allowed(PolicyResult):
-    """The tool call is permitted."""
-
-class Denied(PolicyResult):
-    def __init__(self, reason: str) -> None: ...
-    reason: str
-
-class PolicyEngine(Protocol):
-    def check(
-        self,
-        tool_name: str,
-        kwargs: Mapping[str, CaMeLValue],
-    ) -> PolicyResult: ...
+registry = PolicyRegistry()
+registry.register("send_email", send_email_policy)
 ```
 
 If `policy_engine=None` (default), all tool calls are permitted.  A `Denied`
 result causes the interpreter to raise `PolicyViolationError(tool_name, reason)`.
+
+All policies for a given tool must return `Allowed` for the call to proceed.
+The first `Denied` short-circuits evaluation.
 
 **Tool registration example:**
 
 ```python
 from camel import CaMeLInterpreter
 from camel.value import CaMeLValue, wrap, Public
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
 
 def get_inbox_count() -> CaMeLValue:
     """Returns the number of unread emails — public information."""
@@ -577,16 +582,18 @@ def get_inbox_count() -> CaMeLValue:
 
 def send_email(to: CaMeLValue, body: CaMeLValue) -> CaMeLValue:
     """Sends an email. Requires 'to' address to pass the policy check."""
-    # Called only after policy engine approves the call.
     result = _actual_send_api(to.raw, body.raw)
     return wrap(True, sources=frozenset({"send_email"}), readers=Public)
+
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@example.com")
 
 interp = CaMeLInterpreter(
     tools={
         "get_inbox_count": get_inbox_count,
         "send_email": send_email,
     },
-    policy_engine=MyPolicyEngine(),
+    policy_engine=registry,
 )
 ```
 
@@ -684,9 +691,11 @@ interp.seed("pre_loaded", wrap("value", sources=frozenset({"external"})))
 ## 5. Architecture Decision Records
 
 The `docs/adr/` directory contains Architecture Decision Records (ADRs) that
-capture the key design choices made during Milestone 1.  Each ADR follows the
+capture the key design choices made across all milestones.  Each ADR follows the
 standard format: Title, Status, Context, Decision, Consequences, Alternatives
 Considered, and References.
+
+### Milestone 1 — Foundation
 
 | ADR | Title | Summary |
 |-----|-------|---------|
@@ -695,12 +704,28 @@ Considered, and References.
 | [ADR-003](adr/003-ast-interpreter-architecture.md) | AST Interpreter Architecture and Supported Grammar Spec | Why Python's `ast` module was chosen over alternatives (custom bytecode VM, Lua, JS sandbox, S-expression DSL); the full supported grammar; `ExecutionMode` (NORMAL/STRICT); session-state lifecycle. |
 | [ADR-004](adr/004-dependency-graph-architecture.md) | Dependency Graph Architecture and NORMAL/STRICT Tracking Modes | Variable-level dependency tracking; the control-flow side-channel threat (PRD §7); why STRICT mode closes it; `DependencyGraph` frozen snapshot type; adjacency-set internal representation. |
 
+### Milestone 2 — Dual LLM & Interpreter
+
+| ADR | Title | Summary |
+|-----|-------|---------|
+| [ADR-005](adr/005-p-llm-wrapper-architecture.md) | P-LLM Wrapper Architecture | Isolation contract for the Privileged LLM; system prompt builder; tool signature injection; `LLMBackend` Protocol. |
+| [ADR-006](adr/006-q-llm-dynamic-schema-injection.md) | Q-LLM Dynamic Schema Injection | Automatic `have_enough_information` field injection; `NotEnoughInformationError` semantics; schema validation enforcement. |
+| [ADR-007](adr/007-execution-loop-orchestrator.md) | Execution Loop Orchestrator | Retry loop design; exception redaction engine (trusted / untrusted / NEIE tiers); partial re-execution prompt; trace recorder. |
+| [ADR-008](adr/008-isolation-test-harness-architecture.md) | Isolation Test Harness Architecture | `RecordingBackend` spy design; three-invariant checker approach; 50-run parametrised validation. |
+
+### Milestone 3 — Capabilities & Policies
+
+| ADR | Title | Summary |
+|-----|-------|---------|
+| [ADR-009](adr/009-policy-engine-architecture.md) | Policy Engine Architecture | `PolicyRegistry` design; `SecurityPolicyResult` sealed type; `Allowed`/`Denied` composition rule; `is_trusted`, `can_readers_read_value`, `get_all_sources` helpers; `load_from_env`. |
+| [ADR-010](adr/010-enforcement-hook-consent-audit-harness.md) | Enforcement Hook, Consent Flow & Audit Log | Dual-mode enforcement (`EVALUATION` / `PRODUCTION`); `ConsentCallback` protocol; `AuditLogEntry` schema; policy testing harness design. |
+
 ---
 
-## Appendix A — Quick Reference: Public API Surface (v0.1.0)
+## Appendix A — Quick Reference: Public API Surface (v0.3.0)
 
 ```python
-# camel package top-level exports
+# ── Milestone 1: Value, Interpreter, Dependency Graph ──────────────────────
 from camel import (
     # Value & capability system
     CaMeLValue,     # frozen dataclass: value, sources, inner_source, readers
@@ -726,6 +751,46 @@ from camel import (
     DependencyGraph,        # variable, direct_deps, all_upstream, edges
     get_dependency_graph,   # module-level helper
 )
+
+# ── Milestone 2: LLM Backends, Execution Loop ───────────────────────────────
+from camel.llm import PLLMWrapper, QLLMWrapper, ToolSignature
+from camel.llm.backend import LLMBackend, get_backend
+from camel.llm.adapters import ClaudeBackend, GeminiBackend
+from camel.llm.exceptions import LLMBackendError, NotEnoughInformationError
+from camel.execution_loop import (
+    CaMeLOrchestrator,      # run(user_query) → ExecutionResult
+    ExecutionResult,        # trace, print_outputs, final_store, loop_attempts
+    TraceRecord,            # tool_name, args, memory_snapshot
+    MaxRetriesExceededError,
+)
+
+# ── Milestone 3: Capabilities & Policy Engine ───────────────────────────────
+from camel.capabilities import (
+    CapabilityAnnotationFn,         # (return_value, tool_kwargs) → CaMeLValue
+    default_capability_annotation,  # fallback: sources={tool_id}, readers=Public
+    annotate_read_email,
+    annotate_read_document,
+    annotate_get_file,
+    register_built_in_tools,        # registers all built-in annotators
+)
+
+from camel.policy import (
+    SecurityPolicyResult,   # sealed base type
+    Allowed,                # tool call permitted
+    Denied,                 # tool call blocked (carries reason: str)
+    PolicyFn,               # Callable[[str, Mapping[str, CaMeLValue]], SecurityPolicyResult]
+    PolicyRegistry,         # register(), evaluate(), load_from_env()
+    is_trusted,             # sources ⊆ {"User literal", "CaMeL"}
+    can_readers_read_value, # reader ∈ value.readers or readers is Public
+    get_all_sources,        # returns value.sources
+)
+
+from camel.policy.reference_policies import configure_reference_policies
+# registers: send_email, send_money, create_calendar_event,
+#            write_file, post_message, fetch_external_url
+
+from camel.interpreter import EnforcementMode, ConsentCallback, AuditLogEntry
+# EnforcementMode: EVALUATION (raises immediately) | PRODUCTION (consent callback)
 ```
 
 ---

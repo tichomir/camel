@@ -1,7 +1,7 @@
 # CaMeL — Capabilities for Machine Learning
 
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -77,7 +77,7 @@ mechanics, and the security model.
 
 ## Current Status
 
-**Milestone 2 — Dual LLM Pattern & Interpreter Integration (v0.2.0)** — released 2026-03-17
+**Milestone 3 — Capabilities & Policies (v0.3.0)** — released 2026-03-17
 
 | Component | Module | Status |
 |---|---|---|
@@ -89,6 +89,11 @@ mechanics, and the security model.
 | LLM backend adapters (Claude, Gemini) | `camel.llm.adapters` | ✅ Released |
 | Execution loop orchestrator (retry, redaction, trace) | `camel.execution_loop` | ✅ Released |
 | Isolation verification test harness | `tests/harness/` | ✅ Released |
+| Capability assignment engine (tool annotations) | `camel.capabilities` | ✅ Released |
+| Policy engine & registry | `camel.policy` | ✅ Released |
+| Reference policy library (6 policies) | `camel.policy.reference_policies` | ✅ Released |
+| Enforcement hook, consent flow, audit log | `camel.interpreter` | ✅ Released |
+| Policy testing harness (AgentDojo scenarios) | `tests/harness/policy_harness.py` | ✅ Released |
 
 ---
 
@@ -176,12 +181,15 @@ for record in result.trace:
 
 | Document | Description |
 |---|---|
-| [API Reference](docs/api/index.md) | M2 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop |
-| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model |
+| [API Reference](docs/api/index.md) | M2/M3 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop, Policy Engine, Capabilities |
+| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine |
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
-| [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, known limitations |
+| [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, policy configuration, known limitations |
+| [Reference Policy Specification](docs/policies/reference-policy-spec.md) | Authoritative spec for all six reference security policies |
 | [Exit Criteria Checklist](docs/exit_criteria_checklist.md) | Milestone 1 sign-off checklist with test evidence |
 | [M2 Exit Criteria Report](docs/milestone-2-exit-criteria-report.md) | Milestone 2 sign-off report |
+| [M3 Exit Criteria Checklist](docs/milestone-3-exit-criteria-checklist.md) | Milestone 3 exit criteria mapped to test evidence (16 criteria, ~291 tests) |
+| [M3 Exit Criteria Report](docs/milestone-3-exit-criteria-report.md) | Milestone 3 sign-off report — capability assignment, policy engine, reference policies, enforcement hook |
 | [ADR 001 — Q-LLM Isolation Contract](docs/adr/001-q-llm-isolation-contract.md) | Q-LLM isolation guarantees and schema conventions |
 | [ADR 002 — CaMeLValue Capability System](docs/adr/002-camelvalue-capability-system.md) | Detailed capability data model spec |
 | [ADR 003 — AST Interpreter Architecture](docs/adr/003-ast-interpreter-architecture.md) | Full interpreter design spec |
@@ -190,6 +198,8 @@ for record in result.trace:
 | [ADR 006 — Q-LLM Dynamic Schema Injection](docs/adr/006-q-llm-dynamic-schema-injection.md) | Q-LLM schema augmentation and NotEnoughInformationError |
 | [ADR 007 — Execution Loop Orchestrator](docs/adr/007-execution-loop-orchestrator.md) | Retry loop, exception redaction, trace recorder design |
 | [ADR 008 — Isolation Test Harness](docs/adr/008-isolation-test-harness-architecture.md) | Isolation verification test harness architecture |
+| [ADR 009 — Policy Engine Architecture](docs/adr/009-policy-engine-architecture.md) | PolicyRegistry, SecurityPolicyResult sealed type, helper functions |
+| [ADR 010 — Enforcement Hook, Consent Flow & Audit](docs/adr/010-enforcement-hook-consent-audit-harness.md) | Dual-mode enforcement, consent callback, audit log, policy harness |
 | [E2E Scenario Specification](docs/e2e-scenario-specification.md) | End-to-end test scenario inventory |
 
 ---
@@ -219,16 +229,21 @@ pre-commit install
 ## Running Tests
 
 ```bash
-pytest                                   # full suite
-pytest tests/test_value.py               # capability system
-pytest tests/test_interpreter.py         # AST interpreter
-pytest tests/test_dependency_graph.py    # dependency graph
-pytest tests/test_exit_criteria.py       # M1 exit criteria sign-off
-pytest tests/llm/test_pllm.py           # P-LLM wrapper
-pytest tests/llm/test_qllm.py           # Q-LLM wrapper
-pytest tests/test_execution_loop.py      # execution loop orchestrator
-pytest tests/test_isolation_harness.py   # isolation invariant verification
-pytest tests/test_e2e_scenarios.py       # end-to-end scenarios
+pytest                                        # full suite
+pytest tests/test_value.py                    # capability system
+pytest tests/test_interpreter.py              # AST interpreter
+pytest tests/test_dependency_graph.py         # dependency graph
+pytest tests/test_exit_criteria.py            # M1 exit criteria sign-off
+pytest tests/llm/test_pllm.py                # P-LLM wrapper
+pytest tests/llm/test_qllm.py                # Q-LLM wrapper
+pytest tests/test_execution_loop.py           # execution loop orchestrator
+pytest tests/test_isolation_harness.py        # isolation invariant verification
+pytest tests/test_e2e_scenarios.py            # end-to-end scenarios (no policies)
+pytest tests/test_capability_assignment.py    # capability assignment engine
+pytest tests/test_policy.py                   # policy engine & registry
+pytest tests/policies/test_reference_policies.py  # reference policy library
+pytest tests/test_policy_harness.py           # policy testing harness
+pytest tests/test_e2e_enforcement.py          # end-to-end enforcement integration
 ```
 
 ---
@@ -301,10 +316,43 @@ Every runtime value carries a capability tag:
 | `inner_source` | Sub-source within a tool | `"sender"` field of an email |
 | `readers` | Allowed recipients | `{"alice@co.com"}` or `Public` |
 
-### Security Policies
+### Capability Assignment Engine (`camel.capabilities`)
+
+Every tool's return value is annotated with provenance metadata via a
+`capability_annotation` function.  Built-in annotators are provided for
+`read_email`, `read_document`, and `get_file`:
+
+```python
+from camel.capabilities import annotate_read_email, register_built_in_tools
+from camel.tools.registry import ToolRegistry
+
+registry = ToolRegistry()
+register_built_in_tools(registry)   # registers email + cloud storage annotators
+```
+
+Default annotation for unannotated tools: `sources={tool_name}`, `readers=Public`.
+
+### Security Policies (`camel.policy`)
 
 Expressed as Python functions `(tool_name, kwargs) → Allowed() | Denied(reason)`.
-Evaluated synchronously before every tool call — no LLM involvement.
+Evaluated synchronously before every tool call — no LLM involvement (NFR-2).
+
+```python
+from camel.policy import PolicyRegistry, Allowed, Denied, is_trusted
+from camel.policy.reference_policies import configure_reference_policies
+
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@example.com")
+
+# Inject into the interpreter
+from camel import CaMeLInterpreter
+interp = CaMeLInterpreter(tools=my_tools, policy_engine=registry)
+```
+
+Six reference policies are shipped: `send_email`, `send_money`,
+`create_calendar_event`, `write_file`, `post_message`, `fetch_external_url`.
+See [Reference Policy Specification](docs/policies/reference-policy-spec.md) for
+full logic, denial reasons, and AgentDojo attack-scenario mappings.
 
 ---
 

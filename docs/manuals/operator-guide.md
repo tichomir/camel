@@ -1,12 +1,12 @@
-# CaMeL Operator Guide — Milestone 1
+# CaMeL Operator Guide — Milestone 3
 
-**Version:** 0.1.0
+**Version:** 0.3.0
 **Date:** 2026-03-17
 **Status:** Released
 
 This guide is for platform engineers and security engineers deploying the CaMeL
-Milestone 1 foundation package.  It covers system requirements, installation,
-configuration, test execution, known limitations, and a troubleshooting FAQ.
+package.  It covers system requirements, installation, configuration (including
+policy module setup), test execution, known limitations, and a troubleshooting FAQ.
 
 ---
 
@@ -18,7 +18,7 @@ configuration, test execution, known limitations, and a troubleshooting FAQ.
 4. [Running the Test Suite](#4-running-the-test-suite)
 5. [STRICT vs NORMAL Mode](#5-strict-vs-normal-mode)
 6. [Known Limitations](#6-known-limitations)
-7. [Milestone 2 Readiness — Config Surface](#7-milestone-2-readiness--config-surface)
+7. [Milestone 4 Readiness — Config Surface](#7-milestone-4-readiness--config-surface)
 8. [Troubleshooting FAQ](#8-troubleshooting-faq)
 
 ---
@@ -58,8 +58,8 @@ python --version   # must be 3.11 or later
 pip install camel
 ```
 
-> **Note:** The package is currently in pre-release (v0.1.0).  Once published to
-> PyPI the above command installs the Milestone 1 foundation.
+> **Note:** The package is currently at v0.3.0 (Milestone 3).  Once published
+> to PyPI the above command installs the full Milestone 3 package.
 
 ### 2.2 Development install from source
 
@@ -78,7 +78,7 @@ pip install -e ".[dev]"
 
 # 4. Verify the installation
 python -c "import camel; print(camel.__version__)"
-# Expected output: 0.1.0
+# Expected output: 0.3.0
 ```
 
 ### 2.3 Pre-commit hooks (dev only)
@@ -121,31 +121,66 @@ pre-commit run --all-files
 
 ## 3. Environment Configuration
 
-### 3.1 Milestone 1 — no secrets required
+### 3.1 Core modules — no secrets required
 
-The Milestone 1 package (`camel.interpreter`, `camel.value`,
-`camel.dependency_graph`) contains **no network calls** and **requires no
-environment variables**.  You can import and use these modules in a fully offline
-environment.
+The core modules (`camel.interpreter`, `camel.value`, `camel.dependency_graph`,
+`camel.capabilities`, `camel.policy`) contain **no network calls** and **require
+no environment variables**.  You can import and use these modules in a fully
+offline environment.
 
-### 3.2 Q-LLM backend — optional at M1, required at M2
+### 3.2 LLM backend credentials
 
-The `camel.llm` sub-package ships with two LLM backend adapters:
-
-| Module | Backend | Status at M1 |
-|---|---|---|
-| `camel.llm.adapters.claude` | Anthropic Claude API | Present but unused by core |
-| `camel.llm.adapters.gemini` | Google Gemini API | Present but unused by core |
-
-These adapters require credentials if instantiated:
+The `camel.llm` sub-package ships with two LLM backend adapters.  These
+adapters require credentials if instantiated:
 
 | Environment variable | Purpose | Required by |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key | `ClaudeAdapter` |
-| `GOOGLE_API_KEY` | Google Gemini API key | `GeminiAdapter` (if used) |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key | `ClaudeBackend` |
+| `GOOGLE_API_KEY` | Google Gemini API key | `GeminiBackend` (if used) |
 
-At Milestone 1, the interpreter, capability system, and dependency graph are
-fully functional without these keys.
+The interpreter, capability system, dependency graph, and policy engine are
+fully functional without these keys (they require no LLM calls).
+
+### 3.3 Policy module configuration
+
+Deploy-specific security policies are loaded via the `CAMEL_POLICY_MODULE`
+environment variable:
+
+```bash
+export CAMEL_POLICY_MODULE=myapp.security.policies
+```
+
+The referenced module must export a `configure_policies(registry)` function:
+
+```python
+# myapp/security/policies.py
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
+
+def configure_policies(registry: PolicyRegistry) -> None:
+    configure_reference_policies(registry, file_owner="alice@company.com")
+```
+
+Load at application startup:
+
+```python
+from camel.policy import PolicyRegistry
+
+registry = PolicyRegistry.load_from_env()
+```
+
+To use the six **reference policies** directly without a custom module:
+
+```python
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
+
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@company.com")
+```
+
+See [Reference Policy Specification](../policies/reference-policy-spec.md) for
+full policy logic, denial reasons, and AgentDojo attack-scenario mappings.
 
 ### 3.3 Logging
 
@@ -304,91 +339,88 @@ print(interp.mode)   # ExecutionMode.NORMAL or ExecutionMode.STRICT
 The table below maps each PRD limitation (§10) to its current status in the
 Milestone 1 implementation.
 
-| # | Limitation | Severity | PRD Mitigation | M1 Status |
+| # | Limitation | Severity | PRD Mitigation | M3 Status |
 |---|---|---|---|---|
 | L1 | **Data-requires-action failure** — P-LLM cannot plan actions that depend on reading untrusted data (e.g., "do whatever the email says") | Medium | Document as design constraint; future: nested P-LLM tool | **By design.** The interpreter enforces this intentionally. P-LLM never sees tool output values. Workaround: use Q-LLM to extract structured fields first, then act on those fields. |
-| L2 | **Underdocumented tool APIs** — P-LLM cannot correctly parse output from tools with undocumented return schemas | Medium | Require typed return schemas; Q-LLM fallback for unstructured parsing | **Not applicable at M1.** Tool schemas are defined by the developer registering tools. Use Pydantic models for structured return types. Q-LLM wrapper available in `camel.llm.qllm`. |
-| L3 | **Exception-based side channel (residual)** — adversary-controlled tool data can still trigger exceptions that STRICT mode doesn't cover | Low–Medium | STRICT mode closes primary vector; adversarial exception triggering via tool data is harder | **Partially mitigated.** STRICT mode is implemented. The residual risk from adversarially crafted exception messages remains. The P-LLM retry protocol redacts tool-originating error content (see error-reporting protocol in developer guide §4.2). |
-| L4 | **User fatigue from policy denials** — overly strict policies may generate frequent consent prompts | Medium | Granular policies; policy tuning guidance | **Not applicable at M1.** Policy engine is an optional interface (`policy_engine=None` default). Implement and tune policies in M3. |
-| L5 | **Token cost** — CaMeL requires ~2.82× more input tokens than native tool-calling | Low–Medium | Expected to decrease as models improve; cheaper Q-LLM reduces cost | **Not measured at M1.** Token overhead will be benchmarked in M3/M4 when P-LLM integration is complete. Q-LLM adapter supports using a cheaper model (e.g., `claude-haiku`). |
-| L6 | **ROP-analogous attacks** — attacker chains individually allowed actions for collectively malicious outcome | Medium–High | Defense-in-depth: combine with model-level robustness; monitor action chains | **Out of scope at M1.** Requires full P-LLM + policy engine integration (M3+). |
-| L7 | **Ecosystem adoption** — third-party tools without capability annotations degrade policy granularity | Medium | CaMeL agent as central capability authority; adapter templates | **Out of scope at M1.** Tool capability annotation API is defined (see developer guide §4.1). Third-party adapter guide planned for M3. |
-| L8 | **Formal verification gap** — no machine-verified proof of interpreter correctness | Low | Future work: formal verification via Coq/Lean | **Accepted risk.** No formal verification at M1. Test coverage (>95% on core modules) is the primary correctness assurance. |
+| L2 | **Underdocumented tool APIs** — P-LLM cannot correctly parse output from tools with undocumented return schemas | Medium | Require typed return schemas; Q-LLM fallback for unstructured parsing | **Mitigated.** Use Pydantic models for structured return types; Q-LLM wrapper available in `camel.llm.qllm`. Capability annotators in `camel.capabilities` improve tool output tagging. |
+| L3 | **Exception-based side channel (residual)** — adversary-controlled tool data can still trigger exceptions that STRICT mode doesn't cover | Low–Medium | STRICT mode closes primary vector; adversarial exception triggering via tool data is harder | **Partially mitigated.** STRICT mode and exception redaction engine implemented. Residual risk documented in ADR-007. |
+| L4 | **User fatigue from policy denials** — overly strict policies may generate frequent consent prompts | Medium | Granular policies; policy tuning guidance | **Addressed.** Six granular reference policies delivered in M3 with documented allow/deny logic. `EnforcementMode.PRODUCTION` with `ConsentCallback` enables user consent prompts. Tune by adjusting registered policies or using `EnforcementMode.EVALUATION` in non-production. |
+| L5 | **Token cost** — CaMeL requires ~2.82× more input tokens than native tool-calling | Low–Medium | Expected to decrease as models improve; cheaper Q-LLM reduces cost | **Not yet measured end-to-end.** Token overhead benchmarking deferred to M4/M5. Q-LLM adapter supports a cheaper model via `CAMEL_QLLM_MODEL`. |
+| L6 | **ROP-analogous attacks** — attacker chains individually allowed actions for collectively malicious outcome | Medium–High | Defense-in-depth: combine with model-level robustness; monitor action chains | **Partially addressed.** Policy engine provides fine-grained per-call enforcement. Action-chain anomaly detection is future work (FW-6). |
+| L7 | **Ecosystem adoption** — third-party tools without capability annotations degrade policy granularity | Medium | CaMeL agent as central capability authority; adapter templates | **Foundation delivered.** `camel.capabilities` provides the annotation protocol, built-in annotators for `read_email` and cloud storage tools, and `default_capability_annotation` as a fallback. Third-party adapter templates planned for M5. |
+| L8 | **Formal verification gap** — no machine-verified proof of interpreter correctness | Low | Future work: formal verification via Coq/Lean | **Accepted risk.** No formal verification at M3. Test coverage (>95% on core modules) is the primary correctness assurance. |
 
 ---
 
-## 7. Milestone 2 Readiness — Config Surface
+## 7. Milestone 4 Readiness — Config Surface
 
-This section documents the environment variables, configuration points, and
-interface contracts that will be required when integrating Milestone 2
-components (Dual LLM + Interpreter wiring).
+This section documents the environment variables and configuration points for
+the Milestone 3 stack, and flags what Milestone 4 will add.
 
-### 7.1 Required environment variables at M2
+### 7.1 Required environment variables (current)
 
 | Variable | Purpose | Example |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Authenticate the P-LLM and Q-LLM Claude backends | `sk-ant-...` |
-| `CAMEL_PLLLM_MODEL` | Override the P-LLM model name | `claude-sonnet-4-6` |
+| `CAMEL_CLAUDE_MODEL` | Override the P-LLM Claude model name | `claude-sonnet-4-6` |
 | `CAMEL_QLLM_MODEL` | Override the Q-LLM model name (cheaper model reduces cost) | `claude-haiku-4-5-20251001` |
-| `CAMEL_MAX_RETRIES` | Maximum P-LLM code-generation retries per task (default: 10, per PRD §6.1) | `10` |
+| `CAMEL_MAX_RETRIES` | Maximum P-LLM code-generation retries per task (default: 10) | `10` |
 | `CAMEL_EXECUTION_MODE` | Default execution mode: `NORMAL` or `STRICT` | `STRICT` |
+| `CAMEL_POLICY_MODULE` | Python module path exporting `configure_policies(registry)` | `myapp.security.policies` |
 
-### 7.2 Policy engine interface
+### 7.2 Policy engine — M3 delivered
 
-At M2+, inject a policy engine at interpreter construction time:
+The `PolicyRegistry` is now the standard policy engine interface.  Inject at
+interpreter construction time:
 
 ```python
-from camel import CaMeLInterpreter
-from camel.value import CaMeLValue
-from typing import Mapping
+from camel import CaMeLInterpreter, ExecutionMode
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
+from camel.interpreter import EnforcementMode
 
-class MyPolicyEngine:
-    def check(
-        self,
-        tool_name: str,
-        kwargs: Mapping[str, CaMeLValue],
-    ) -> "Allowed | Denied":
-        ...
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@example.com")
 
 interp = CaMeLInterpreter(
     tools={"send_email": send_email},
-    policy_engine=MyPolicyEngine(),
+    policy_engine=registry,
     mode=ExecutionMode.STRICT,
+    enforcement_mode=EnforcementMode.PRODUCTION,
+    consent_callback=my_consent_fn,
 )
 ```
 
-See developer guide §4.1 for the full `PolicyEngine` protocol and
-`Allowed` / `Denied` return types.
+### 7.3 Audit log — M3 delivered
 
-### 7.3 Audit logging interface (M2+)
-
-Per NFR-6, all tool calls, policy evaluations, and capability assignments must
-be written to a security audit log.  At M1, no audit logger is wired.  At M2,
-the interpreter will accept an optional `audit_logger` parameter:
+Per NFR-6, all tool calls, policy evaluations, and consent decisions are written
+to `CaMeLInterpreter.audit_log` as a list of `AuditLogEntry` instances.
+Retrieve and persist at application level:
 
 ```python
-# Planned M2 interface (not yet implemented):
-interp = CaMeLInterpreter(
-    tools=...,
-    audit_logger=my_structured_logger,  # must implement AuditLogger protocol
-)
+import json
+from datetime import datetime, timezone
+
+for entry in interp.audit_log:
+    record = {
+        "timestamp": entry.timestamp,
+        "tool_name": entry.tool_name,
+        "outcome": entry.outcome,
+        "reason": entry.reason,
+        "consent_decision": entry.consent_decision,
+    }
+    # Write to your SIEM / structured log sink:
+    write_to_audit_sink(json.dumps(record))
 ```
 
-Implement a conforming logger before upgrading to M2:
+### 7.4 Milestone 4 — planned additions
 
-```python
-class AuditLogger(Protocol):
-    def log_tool_call(self, tool_name: str, kwargs: Mapping[str, CaMeLValue], result: CaMeLValue) -> None: ...
-    def log_policy_decision(self, tool_name: str, decision: "Allowed | Denied") -> None: ...
-    def log_capability_assignment(self, variable: str, value: CaMeLValue) -> None: ...
-```
+Milestone 4 (Hardening & Side-Channel Mitigations) will address:
 
-### 7.4 P-LLM wiring (M2)
-
-The P-LLM wrapper will call `CaMeLInterpreter.exec()` with the generated code
-plan and read back only variable *names* (not values) to inform the next
-generation step.  No additional interpreter API changes are required for M2
-wiring.
+- Token cost benchmarking (NFR-3) with optimisation recommendations
+- Additional side-channel mitigation test coverage
+- Formal timing-channel analysis for STRICT mode
+- Extended AgentDojo evaluation suite with M3 policies active
 
 ---
 

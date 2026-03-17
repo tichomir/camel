@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 0.2.0 (Milestone 2)
+**Version:** 0.3.0 (Milestone 3)
 **Date:** 2026-03-17
-**Source:** PRD v1.0 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.3 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -19,8 +19,11 @@
 9. [Execution Trace Recorder](#9-execution-trace-recorder)
 10. [Security Model](#10-security-model)
 11. [Policy Engine](#11-policy-engine)
-12. [Module Map](#12-module-map)
-13. [Related Documents](#13-related-documents)
+12. [Capability Assignment Engine](#12-capability-assignment-engine)
+13. [Reference Policy Library](#13-reference-policy-library)
+14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow)
+15. [Module Map](#15-module-map)
+16. [Related Documents](#16-related-documents)
 
 ---
 
@@ -738,7 +741,339 @@ def email_recipient_policy(
 
 ---
 
-## 12. Module Map
+## 12. Capability Assignment Engine
+
+**Module:** `camel/capabilities/` | **Module:** `camel/tools/registry.py`
+
+The Capability Assignment Engine bridges raw tool return values and the
+`CaMeLValue` capability system.  It ensures every value entering the
+interpreter's variable store carries correct provenance metadata.
+
+### 12.1 CapabilityAnnotationFn Contract
+
+```python
+CapabilityAnnotationFn = Callable[
+    [Any, Mapping[str, Any]],   # (return_value, tool_kwargs)
+    CaMeLValue,
+]
+```
+
+A capability annotation function receives the **raw return value** from the
+underlying tool and a mapping of the **keyword arguments** passed to the tool.
+It returns a fully-tagged `CaMeLValue`.
+
+### 12.2 Default Capability Annotation
+
+When no custom annotator is registered, `default_capability_annotation` is applied:
+
+```python
+CaMeLValue(
+    value=return_value,
+    sources=frozenset({tool_id}),
+    inner_source=None,
+    readers=Public,
+)
+```
+
+This is the safe baseline: the return value originates from the tool (tainted),
+with no reader restriction (`Public`).
+
+### 12.3 Built-in Tool Annotators
+
+Three annotators ship with CaMeL for tools that require fine-grained tagging:
+
+#### `annotate_read_email`
+
+| Field | Value |
+|---|---|
+| `sources` | `frozenset({"read_email"})` |
+| `inner_source` | Sender email address string (e.g. `"alice@example.com"`) |
+| `readers` | `Public` |
+| `value` | Modified dict with `body`, `subject`, `sender` each wrapped as nested `CaMeLValue` |
+
+Nested field wrappers each have `inner_source` set to the field name, allowing
+policies to reason at the sub-field level.
+
+**Expected tool return shape:**
+
+```python
+{
+    "sender":  str,
+    "subject": str,
+    "body":    str,
+    # additional fields are left unwrapped
+}
+```
+
+#### `annotate_read_document` / `annotate_get_file`
+
+Cloud storage annotators that extract `readers` from a `"permissions"` key:
+
+| Permissions shape | `readers` value |
+|---|---|
+| `{"type": "public"}` | `Public` |
+| `{"type": "restricted", "readers": [...]}` | `frozenset[str]` of addresses |
+| Absent / unrecognised | `Public` (safe fallback) |
+
+**Expected tool return shape:**
+
+```python
+{
+    "content": str,
+    "permissions": {
+        "type": "public" | "restricted",
+        "readers": ["alice@example.com", ...]
+    },
+}
+```
+
+### 12.4 ToolRegistry
+
+The `ToolRegistry` (`camel/tools/registry.py`) associates each tool name with
+its callable and optional annotator.  `as_interpreter_tools()` returns wrapped
+callables that:
+
+1. Call the underlying tool with raw Python values (unwrapped from `CaMeLValue`).
+2. Pass the return value through the registered annotator (or default).
+3. Return the resulting `CaMeLValue` to the interpreter.
+
+```python
+registry = ToolRegistry()
+registry.register("read_email", real_read_email_fn,
+                  capability_annotation=annotate_read_email)
+registry.register("send_email", real_send_email_fn)   # default annotation
+
+interp = CaMeLInterpreter(tools=registry.as_interpreter_tools())
+```
+
+If a tool already returns a `CaMeLValue`, the annotation step is skipped and
+the pre-annotated value is used as-is.
+
+### 12.5 `register_built_in_tools` Convenience Helper
+
+```python
+from camel.capabilities.annotations import register_built_in_tools
+
+register_built_in_tools(
+    registry,
+    read_email_fn=real_read_email,
+    read_document_fn=real_read_document,
+    get_file_fn=real_get_file,
+)
+```
+
+Registers any subset of the three built-in tools with their correct annotators
+in a single call.  Pass `None` to omit a tool.
+
+---
+
+## 13. Reference Policy Library
+
+**Module:** `camel/policy/reference_policies.py`
+
+Six baseline security policies ship with CaMeL.  Together they enforce
+**G2** (prevent data-flow manipulation) and **G3** (prevent private data
+exfiltration) for the tool categories most commonly found in AgentDojo and
+real-world LLM agent deployments.
+
+### 13.1 Policy Inventory
+
+| Policy function | Tool | Primary checks | Attack mitigated |
+|---|---|---|---|
+| `send_email_policy` | `send_email` | Recipient trust; content-readers superset | Injected recipient / data exfiltration via email |
+| `send_money_policy` | `send_money` | Recipient and amount fully trusted | Financial fraud via data-flow manipulation |
+| `create_calendar_event_policy` | `create_calendar_event` | Participant trust; content-readers per participant | Injected attendees / private-content exposure |
+| `make_write_file_policy(owner)` | `write_file` | Path trust; content readers include `owner` | Path injection / unauthorised content write |
+| `post_message_policy` | `post_message` | Channel trust; untrusted message must have `Public` readers | Channel injection / private-content exfiltration |
+| `fetch_external_url_policy` | `fetch_external_url` | URL, params, and body all trusted | SSRF / data exfiltration via URL parameters or body |
+
+### 13.2 Policy Logic Detail
+
+#### `send_email_policy`
+
+1. **Recipient trust:** If `to` is trusted (sources ⊆ `{"User literal", "CaMeL"}`),
+   allow immediately.
+2. **Content-readers:** If `to` is untrusted, every recipient must be an
+   authorised reader (`can_readers_read_value`) of both `body` and `subject`.
+   The first failing combination is denied.
+
+#### `send_money_policy`
+
+Both `recipient` and `amount` must be fully trusted (`is_trusted`).  Any
+untrusted taint — even one hop removed — blocks the transfer.  `memo` and
+`currency` are not checked.
+
+#### `create_calendar_event_policy`
+
+If `participants` is trusted, allow unconditionally.  If untrusted, every
+participant must be an authorised reader of every content field (`title`,
+`description`, `location`).  `start_time` and `end_time` are not checked.
+
+#### `make_write_file_policy(owner: str)`
+
+Factory returning a policy closure parameterised by the file system owning
+user identity:
+
+1. **Path provenance:** `path` must be trusted.
+2. **Content readers:** `content.readers` must include `owner`.
+
+#### `post_message_policy`
+
+1. **Channel provenance:** `channel` must be trusted.
+2. **Message content:** If `message` is untrusted and `readers` is not `Public`,
+   the post is denied.
+
+#### `fetch_external_url_policy`
+
+`url`, `params`, and `body` must each be trusted.  The `method` field is not
+checked.
+
+### 13.3 Quick Setup
+
+```python
+from camel.policy import PolicyRegistry
+from camel.policy.reference_policies import configure_reference_policies
+
+registry = PolicyRegistry()
+configure_reference_policies(registry, file_owner="alice@example.com")
+# All six reference policies are now active.
+```
+
+`register_all` is an alias of `configure_reference_policies`.
+
+### 13.4 Extending or Restricting the Library
+
+- **Exclude a policy:** Register individual policies manually instead of
+  calling `configure_reference_policies`.
+- **Add a policy:** Call `registry.register(tool_name, extra_policy_fn)` after
+  `configure_reference_policies`.  All registered policies for a tool must
+  return `Allowed` (AND composition).
+- **Deploy-time configuration:** Use `CAMEL_POLICY_MODULE` (see §11.5) to load
+  a custom policy module that calls `configure_reference_policies` plus any
+  deployment-specific additions.
+
+---
+
+## 14. Enforcement Integration & Consent Flow
+
+**Module:** `camel/interpreter.py` | **ADR:** [010](adr/010-enforcement-hook-consent-audit-harness.md)
+
+Milestone 3 wires the policy engine into the interpreter's tool-call
+pre-execution hook and introduces two enforcement modes.
+
+### 14.1 `EnforcementMode`
+
+```python
+class EnforcementMode(Enum):
+    EVALUATION  # default
+    PRODUCTION
+```
+
+| Mode | Behaviour on policy denial |
+|---|---|
+| `EVALUATION` | Raises `PolicyViolationError` immediately; no user interaction.  Used for automated AgentDojo benchmarking and unit tests (NFR-2). |
+| `PRODUCTION` | Invokes `ConsentCallback`; proceeds on approval; raises `PolicyViolationError(consent_decision="UserRejected")` on rejection. |
+
+### 14.2 `ConsentCallback` Protocol
+
+```python
+class ConsentCallback(Protocol):
+    def __call__(
+        self,
+        tool_name: str,
+        arg_summary: str,
+        denial_reason: str,
+    ) -> bool:
+        """Return True to approve, False to reject."""
+        ...
+```
+
+The interpreter supplies:
+
+- `tool_name` — registered name of the blocked tool.
+- `arg_summary` — human-readable summary of argument values (raw, not
+  `CaMeLValue` internals).
+- `denial_reason` — the `Denied.reason` string from the failing policy.
+
+### 14.3 Pre-Execution Enforcement Hook
+
+Before every tool call the interpreter executes:
+
+```
+1. policy_engine.evaluate(tool_name, kwargs_mapping)
+   → Allowed()    : append AuditLogEntry(outcome="Allowed"), proceed to tool call.
+   → Denied(reason):
+       EVALUATION: append AuditLogEntry(outcome="Denied"), raise PolicyViolationError.
+       PRODUCTION: invoke consent_callback(tool_name, arg_summary, reason)
+           approved  → append AuditLogEntry(consent_decision="UserApproved"), proceed.
+           rejected  → append AuditLogEntry(consent_decision="UserRejected"),
+                       raise PolicyViolationError(consent_decision="UserRejected").
+2. Call tool with raw values (CaMeLValue.raw for each argument).
+3. Pass return value through capability annotator → CaMeLValue.
+4. Store result in variable store.
+```
+
+Blocked calls **never proceed** to tool execution without explicit resolution.
+
+### 14.4 `AuditLogEntry` Data Model
+
+```python
+@dataclass(frozen=True)
+class AuditLogEntry:
+    tool_name:        str
+    outcome:          Literal["Allowed", "Denied"]
+    reason:           str | None               # Denied.reason, or None when Allowed
+    consent_decision: Literal[
+                          "UserApproved",
+                          "UserRejected",
+                          None
+                      ]                        # PRODUCTION mode only; None otherwise
+```
+
+One entry is appended for every `policy_engine.evaluate()` call regardless of
+outcome — both `Allowed` and `Denied` events are recorded (NFR-6).
+
+### 14.5 Security Audit Log
+
+```python
+# Read audit entries after execution
+entries: list[AuditLogEntry] = interp.audit_log
+```
+
+`CaMeLInterpreter.audit_log` returns a snapshot in chronological order.  The
+log is in-memory; callers are responsible for persisting it to durable storage.
+
+### 14.6 Interpreter Construction
+
+```python
+# Evaluation / test mode (default)
+interp = CaMeLInterpreter(
+    tools=registry.as_interpreter_tools(),
+    policy_engine=policy_registry,
+    enforcement_mode=EnforcementMode.EVALUATION,
+)
+
+# Production mode — consent callback required
+interp = CaMeLInterpreter(
+    tools=registry.as_interpreter_tools(),
+    policy_engine=policy_registry,
+    enforcement_mode=EnforcementMode.PRODUCTION,
+    consent_callback=my_consent_fn,  # ValueError raised at construction if omitted
+)
+```
+
+### 14.7 NFR Compliance
+
+| NFR | Requirement | Verification |
+|---|---|---|
+| NFR-2 | No LLM in policy evaluation path | `test_e2e_enforcement.py` asserts zero LLM calls during `evaluate()` |
+| NFR-4 | ≤100ms interpreter overhead per tool call (including policy evaluation) | `scripts/benchmark_interpreter.py` |
+| NFR-6 | All policy outcomes and consent decisions written to audit log | `test_e2e_enforcement.py` log-completeness assertions |
+| NFR-9 | Policy engine, capability system, enforcement hook independently unit-testable | `tests/harness/policy_harness.py`, `tests/test_policy.py` |
+
+---
+
+## 15. Module Map
 
 ```
 camel/
@@ -746,7 +1081,8 @@ camel/
 │                            get_dependency_graph, CaMeLOrchestrator, …
 ├── value.py                 CaMeLValue, Public, wrap, propagate_* functions
 ├── interpreter.py           CaMeLInterpreter, UnsupportedSyntaxError,
-│                            PolicyViolationError, ExecutionMode
+│                            PolicyViolationError, ExecutionMode,
+│                            EnforcementMode, ConsentCallback, AuditLogEntry
 ├── dependency_graph.py      DependencyGraph, TrackingMode, get_dependency_graph
 ├── execution_loop.py        CaMeLOrchestrator, ExceptionRedactor,
 │                            RetryPromptBuilder, TraceRecorder,
@@ -756,11 +1092,22 @@ camel/
 ├── exceptions.py            Shared exception base types
 ├── qllm_schema.py           Schema augmentation utilities (have_enough_information)
 ├── qllm_wrapper.py          QLLMWrapper (legacy path, re-exported)
+├── capabilities/
+│   ├── __init__.py          CapabilityAnnotationFn, default_capability_annotation,
+│   │                        annotate_read_email, annotate_read_document,
+│   │                        annotate_get_file, register_built_in_tools
+│   ├── types.py             CapabilityAnnotationFn protocol, type definitions
+│   └── annotations.py       Tool-specific capability annotators
 ├── policy/
 │   ├── __init__.py          SecurityPolicyResult, Allowed, Denied, PolicyFn,
 │   │                        PolicyRegistry, is_trusted, can_readers_read_value,
 │   │                        get_all_sources
-│   └── interfaces.py        Full type definitions, stubs, and TRUSTED_SOURCE_LABELS
+│   ├── interfaces.py        Full type definitions, stubs, and TRUSTED_SOURCE_LABELS
+│   └── reference_policies.py  Six reference security policies +
+│                               configure_reference_policies()
+├── tools/
+│   ├── __init__.py
+│   └── registry.py          ToolRegistry with capability_annotation support
 └── llm/
     ├── __init__.py          PLLMWrapper, QLLMWrapper, ToolSignature, …
     ├── backend.py           LLMBackend Protocol, Message
@@ -779,19 +1126,27 @@ camel/
 tests/
 ├── harness/
 │   ├── isolation_assertions.py  Invariant 1/2/3 assertion helpers
+│   ├── policy_harness.py        Policy testing harness (AgentDojo scenarios)
 │   ├── recording_backend.py     Intercepts LLMBackend.complete() calls
 │   ├── results_reporter.py      Sign-off report generator
 │   └── scenarios.py             E2E scenario definitions
-├── test_isolation_harness.py    Invariant verification (50 runs)
+├── policies/
+│   ├── test_reference_policies.py  Reference policy unit tests
+│   └── test_agentdojo_mapping.py   AgentDojo adversarial scenario mapping
+├── test_capability_assignment.py   Capability annotation engine unit tests
+├── test_policy.py                  Policy engine & registry unit tests
+├── test_policy_harness.py          Policy testing harness validation
+├── test_e2e_enforcement.py         End-to-end enforcement integration tests
+├── test_isolation_harness.py       Invariant verification (50 runs)
 ├── test_redaction_completeness.py  10 adversarial redaction cases
-├── test_e2e_scenarios.py        10 representative task scenarios
-├── test_multi_backend_swap.py   Claude ↔ Gemini swap test
-└── …                            Unit tests per module
+├── test_e2e_scenarios.py           10 representative task scenarios
+├── test_multi_backend_swap.py      Claude ↔ Gemini swap test
+└── …                               Unit tests per module
 ```
 
 ---
 
-## 13. Related Documents
+## 16. Related Documents
 
 | Document | Location |
 |---|---|
@@ -799,6 +1154,7 @@ tests/
 | Product Requirements Document (PRD) | `docs/` (embedded in `CLAUDE.md`) |
 | Developer Guide | [docs/developer_guide.md](developer_guide.md) |
 | Operator Guide | [docs/manuals/operator-guide.md](manuals/operator-guide.md) |
+| Reference Policy Specification | [docs/policies/reference-policy-spec.md](policies/reference-policy-spec.md) |
 | M2 Exit Criteria Report | [docs/milestone-2-exit-criteria-report.md](milestone-2-exit-criteria-report.md) |
 | ADR 001 — Q-LLM Isolation | [docs/adr/001-q-llm-isolation-contract.md](adr/001-q-llm-isolation-contract.md) |
 | ADR 002 — CaMeLValue | [docs/adr/002-camelvalue-capability-system.md](adr/002-camelvalue-capability-system.md) |
@@ -809,4 +1165,5 @@ tests/
 | ADR 007 — Execution Loop | [docs/adr/007-execution-loop-orchestrator.md](adr/007-execution-loop-orchestrator.md) |
 | ADR 008 — Isolation Test Harness | [docs/adr/008-isolation-test-harness-architecture.md](adr/008-isolation-test-harness-architecture.md) |
 | ADR 009 — Policy Engine | [docs/adr/009-policy-engine-architecture.md](adr/009-policy-engine-architecture.md) |
+| ADR 010 — Enforcement Hook & Audit | [docs/adr/010-enforcement-hook-consent-audit-harness.md](adr/010-enforcement-hook-consent-audit-harness.md) |
 | E2E Scenario Specification | [docs/e2e-scenario-specification.md](e2e-scenario-specification.md) |

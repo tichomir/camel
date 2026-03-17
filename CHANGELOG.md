@@ -170,7 +170,92 @@ verified by an automated test harness.
 
 ---
 
-## [Unreleased]
+## [0.3.0] — 2026-03-17
 
-_Milestone 3 — Capabilities & Policies (security policy engine, capability
-annotation framework, AgentDojo integration)._
+### Milestone 3 — Capabilities & Policies
+
+This release delivers the complete Milestone 3 security layer: the capability
+assignment engine, the policy engine and registry, six reference security
+policies, the enforcement hook with dual-mode consent flow, the security audit
+log, and the policy testing harness with AgentDojo scenario replay.
+
+#### Added
+
+**Capability Assignment Engine** (`camel/capabilities/`)
+
+- `CapabilityAnnotationFn` — protocol for tool-specific capability annotation
+  functions: `(return_value, tool_kwargs) -> CaMeLValue`.
+- `default_capability_annotation` — applied automatically to unannotated tools;
+  sets `sources={tool_id}`, `readers=Public`.
+- `annotate_read_email` — annotates email tool returns: `inner_source` per
+  field (`sender`, `subject`, `body`); `readers` from email recipient metadata.
+- `annotate_read_document` / `annotate_get_file` — cloud storage annotators;
+  `readers` populated from document sharing permissions (`Set[str]` or `Public`).
+- `register_built_in_tools` — registers all built-in annotators with a
+  `ToolRegistry` instance in one call.
+
+**Policy Engine & Registry** (`camel/policy/`)
+
+- `SecurityPolicyResult` — sealed base type; exactly two concrete subclasses
+  permitted: `Allowed()` and `Denied(reason: str)`.
+- `PolicyFn` — type alias `Callable[[str, Mapping[str, CaMeLValue]],
+  SecurityPolicyResult]`.
+- `PolicyRegistry` — `register(tool_name, policy_fn)` and
+  `evaluate(tool_name, kwargs)` interfaces; all-must-allow multi-policy
+  composition with first-`Denied` short-circuit; `load_from_env()` for
+  configuration-driven deployment-specific policy loading
+  (`CAMEL_POLICY_MODULE`).
+- Helper functions: `is_trusted`, `can_readers_read_value`, `get_all_sources`.
+- NFR-2 verified: policy evaluation path contains no LLM calls.
+
+**Reference Policy Library** (`camel/policy/reference_policies.py`)
+
+- `send_email` — recipient trust + readers superset check; mitigates email
+  exfiltration and injected-recipient attacks.
+- `send_money` — recipient and amount must have `User` as sole source;
+  mitigates financial fraud and amount manipulation.
+- `create_calendar_event` — untrusted participant list checked against content
+  readers; mitigates calendar injection.
+- `write_file` (factory: `make_write_file_policy(owner)`) — path trust check +
+  content readers check; mitigates path injection and storage exfiltration.
+- `post_message` — channel trust check + restricted-readers content check;
+  mitigates Slack channel injection and message exfiltration.
+- `fetch_external_url` — URL, params, and body must be trusted; mitigates SSRF
+  and URL-parameter exfiltration.
+- `configure_reference_policies(registry, file_owner)` — convenience function
+  to register all six reference policies.
+
+**Enforcement Hook, Consent Flow & Audit Log** (`camel/interpreter.py`)
+
+- `EnforcementMode` enum — `EVALUATION` (raises `PolicyViolationError`
+  immediately) and `PRODUCTION` (invokes consent callback before raising).
+- `ConsentCallback` Protocol — synchronous `(tool_name, argument_summary,
+  denial_reason) -> bool` interface; surface denial context to user.
+- `CaMeLInterpreter` updated: new constructor parameters `enforcement_mode`
+  and `consent_callback`; `ValueError` raised if `PRODUCTION` mode is selected
+  without a callback.
+- `AuditLogEntry` extended with `consent_decision` field
+  (`"UserApproved"` | `"UserRejected"` | `None`) per NFR-6.
+- `PolicyViolationError` extended with `consent_decision` field; allows
+  execution loop to distinguish terminal user rejections from automatic denials.
+- NFR-4 verified: policy evaluation overhead ≤100ms per tool call.
+- NFR-6 verified: all tool calls, policy evaluations, and consent decisions
+  written to `CaMeLInterpreter.audit_log`.
+- NFR-9 verified: policy engine, capability system, and enforcement hook each
+  independently unit-testable without requiring the other components.
+
+**Policy Testing Harness** (`tests/harness/policy_harness.py`)
+
+- `make_trusted_value` / `make_untrusted_value` / `make_mixed_value` — value
+  factory helpers for constructing test `CaMeLValue` fixtures.
+- `assert_allowed` / `assert_denied` — policy assertion helpers with optional
+  `reason_contains` sub-string check.
+- `AgentDojoScenario` dataclass + `replay_agentdojo_scenario` — structured
+  adversarial scenario replay against a `PolicyRegistry`.
+- `AGENTDOJO_SCENARIOS` — pre-defined catalogue covering all six reference
+  policy attack classes.
+
+#### Architecture Decision Records
+
+- `docs/adr/009-policy-engine-architecture.md`
+- `docs/adr/010-enforcement-hook-consent-audit-harness.md`
