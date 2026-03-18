@@ -65,7 +65,7 @@ pip install camel
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/camel.git
+git clone https://github.com/tichomir/camel.git
 cd camel
 
 # 2. Create and activate a virtual environment (strongly recommended)
