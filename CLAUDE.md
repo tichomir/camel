@@ -1760,3 +1760,26 @@ Review both DEMO.md and docs docs/demo-guide.md it is confusing having both.
 - ✅ Fix: Missing third-party LLM packages (anthropic, google-generativeai, openai) not detected in environment — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Fixes — Missing yaml Dependency | 2026-03-18 | ✅ done | 4 SP
+**Goal:** When trying to run the smoke test, the following error is thrown: 
+
+python3.12 -c "import camel_security; print('CaMeL', camel_security.__version__)"
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/tichomir/camel/camel_security/__init__.py", line 174, in <module>
+    from camel.consent import (
+  File "/home/tichomir/camel/camel/__init__.py", line 43, in <module>
+    from camel.interpreter import (
+  File "/home/tichomir/camel/camel/interpreter.py", line 109, in <module>
+    from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
+  File "/home/tichomir/camel/camel/config/__init__.py", line 7, in <module>
+    from camel.config.loader import (
+  File "/home/tichomir/camel/camel/config/loader.py", line 34, in <module>
+    import yaml
+ModuleNotFoundError: No module named 'yaml'
+
+**Delivered:**
+- ✅ Add PyYAML as a runtime dependency in pyproject.toml — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Verify smoke test passes in CI and add it as a required check — Devops Engineer (⚡ Quick, 2 SP)
+
+---
