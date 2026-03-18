@@ -261,6 +261,8 @@ class AuditLogEntry:
     reason: str | None
     timestamp: str
     consent_decision: Literal["UserApproved", "UserRejected"] | None = None
+    authoritative_tier: str | None = None
+    non_overridable_denial: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -715,7 +717,14 @@ class CaMeLInterpreter:
             evaluate(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> PolicyResult
 
         where ``PolicyResult`` is either ``Allowed()`` or ``Denied(reason)``.
-        If ``None``, all tool calls are permitted.
+        If ``None``, all tool calls are permitted.  Mutually exclusive with
+        ``conflict_resolver``; a :exc:`ValueError` is raised if both are set.
+    conflict_resolver:
+        Optional three-tier :class:`~camel.policy.governance.PolicyConflictResolver`
+        (ADR-011).  When provided, it is used instead of ``policy_engine`` for
+        all tool-call pre-execution evaluations.  A ``non_overridable`` Platform
+        denial bypasses the consent callback.  Mutually exclusive with
+        ``policy_engine``; a :exc:`ValueError` is raised if both are set.
     enforcement_mode:
         Controls how policy denials are handled.  Defaults to
         ``EnforcementMode.EVALUATION`` (raises ``PolicyViolationError``
@@ -761,6 +770,7 @@ class CaMeLInterpreter:
         builtins: Mapping[str, Callable[..., Any]] | None = None,
         mode: ExecutionMode = ExecutionMode.STRICT,
         policy_engine: Any | None = None,
+        conflict_resolver: Any | None = None,
         enforcement_mode: EnforcementMode = EnforcementMode.EVALUATION,
         consent_callback: ConsentCallback | None = None,
         elevated_consent_callback: ElevatedConsentCallback | None = None,
@@ -775,9 +785,11 @@ class CaMeLInterpreter:
           (``_ALLOWLIST_BUILTINS``) and is then updated with the caller-supplied
           ``builtins`` argument.  The allowlist is the authoritative base;
           extra callables injected via ``builtins`` extend it.
-        - ``_mode``, ``_policy_engine``, ``_enforcement_mode``,
-          ``_consent_callback``, and ``_elevated_consent_callback`` are stored
-          as given.
+        - ``_mode``, ``_policy_engine``, ``_conflict_resolver``,
+          ``_enforcement_mode``, ``_consent_callback``, and
+          ``_elevated_consent_callback`` are stored as given.
+        - ``ValueError`` is raised if both ``policy_engine`` and
+          ``conflict_resolver`` are supplied simultaneously.
         - ``ValueError`` is raised if ``enforcement_mode=PRODUCTION`` and
           ``consent_callback`` is ``None`` (security defect prevention).
         - ``_last_qllm_result_cv`` is a one-shot signal field set by
@@ -792,6 +804,11 @@ class CaMeLInterpreter:
           tracking which STRICT mode rule pushed each context level
           (``"if_condition"``, ``"for_iterable"``, ``"post_qllm"``).
         """
+        if policy_engine is not None and conflict_resolver is not None:
+            raise ValueError(
+                "policy_engine and conflict_resolver are mutually exclusive; "
+                "supply at most one."
+            )
         if enforcement_mode is EnforcementMode.PRODUCTION and consent_callback is None:
             raise ValueError(
                 "consent_callback must be provided when "
@@ -807,6 +824,7 @@ class CaMeLInterpreter:
         self._builtins = merged_builtins
         self._mode = mode
         self._policy_engine = policy_engine
+        self._conflict_resolver = conflict_resolver
         self._enforcement_mode = enforcement_mode
         self._consent_callback = consent_callback
         self._elevated_consent_callback = elevated_consent_callback
@@ -1779,8 +1797,8 @@ class CaMeLInterpreter:
             if name in self._tools:
                 tool_fn = self._tools[name]
 
-                # Policy check (if engine is set).
-                if self._policy_engine is not None:
+                # Policy check (if engine or resolver is set).
+                if self._policy_engine is not None or self._conflict_resolver is not None:
                     kwargs_mapping: dict[str, CaMeLValue] = {}
                     try:
                         sig = inspect.signature(tool_fn)
@@ -1792,16 +1810,23 @@ class CaMeLInterpreter:
                         for i, arg_cv in enumerate(pos_arg_cvs):
                             kwargs_mapping[f"arg{i}"] = arg_cv
                     kwargs_mapping.update(kw_arg_cvs)
-                    policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
-                    if not policy_result.is_allowed():
-                        denial_reason = str(policy_result.reason)
-                        if self._enforcement_mode is EnforcementMode.PRODUCTION:
-                            # Invoke the consent callback.
-                            arg_summary = _summarise_args(name, kwargs_mapping)
-                            approved = self._consent_callback(  # type: ignore[misc]
-                                name, arg_summary, denial_reason
-                            )
-                            if approved:
+
+                    if self._conflict_resolver is not None:
+                        # --- Three-tier conflict resolver path (ADR-011) ---
+                        merged = self._conflict_resolver.evaluate(
+                            name, kwargs_mapping
+                        )
+                        policy_result = merged.outcome
+                        _auth_tier: str | None = (
+                            merged.authoritative_tier.value
+                            if merged.authoritative_tier is not None
+                            else None
+                        )
+                        _non_ovr: bool = merged.non_overridable_denial
+                        if not policy_result.is_allowed():
+                            denial_reason = str(policy_result.reason)
+                            # non_overridable → bypass consent callback
+                            if _non_ovr:
                                 self._audit_log.append(
                                     AuditLogEntry(
                                         tool_name=name,
@@ -1810,10 +1835,55 @@ class CaMeLInterpreter:
                                         timestamp=datetime.now(
                                             timezone.utc
                                         ).isoformat(),
-                                        consent_decision="UserApproved",
+                                        consent_decision=None,
+                                        authoritative_tier=_auth_tier,
+                                        non_overridable_denial=True,
                                     )
                                 )
-                                # Proceed to tool call below (fall through).
+                                raise PolicyViolationError(
+                                    tool_name=name, reason=denial_reason
+                                )
+                            # overridable denial: same consent flow as
+                            # flat registry
+                            if self._enforcement_mode is EnforcementMode.PRODUCTION:
+                                arg_summary = _summarise_args(name, kwargs_mapping)
+                                approved = self._consent_callback(  # type: ignore[misc]
+                                    name, arg_summary, denial_reason
+                                )
+                                if approved:
+                                    self._audit_log.append(
+                                        AuditLogEntry(
+                                            tool_name=name,
+                                            outcome="Denied",
+                                            reason=denial_reason,
+                                            timestamp=datetime.now(
+                                                timezone.utc
+                                            ).isoformat(),
+                                            consent_decision="UserApproved",
+                                            authoritative_tier=_auth_tier,
+                                            non_overridable_denial=False,
+                                        )
+                                    )
+                                    # Proceed to tool call below (fall through).
+                                else:
+                                    self._audit_log.append(
+                                        AuditLogEntry(
+                                            tool_name=name,
+                                            outcome="Denied",
+                                            reason=denial_reason,
+                                            timestamp=datetime.now(
+                                                timezone.utc
+                                            ).isoformat(),
+                                            consent_decision="UserRejected",
+                                            authoritative_tier=_auth_tier,
+                                            non_overridable_denial=False,
+                                        )
+                                    )
+                                    raise PolicyViolationError(
+                                        tool_name=name,
+                                        reason=denial_reason,
+                                        consent_decision="UserRejected",
+                                    )
                             else:
                                 self._audit_log.append(
                                     AuditLogEntry(
@@ -1823,38 +1893,99 @@ class CaMeLInterpreter:
                                         timestamp=datetime.now(
                                             timezone.utc
                                         ).isoformat(),
-                                        consent_decision="UserRejected",
+                                        consent_decision=None,
+                                        authoritative_tier=_auth_tier,
+                                        non_overridable_denial=False,
                                     )
                                 )
                                 raise PolicyViolationError(
-                                    tool_name=name,
-                                    reason=denial_reason,
-                                    consent_decision="UserRejected",
+                                    tool_name=name, reason=denial_reason
                                 )
                         else:
-                            # EVALUATION mode — raise immediately, no UI.
                             self._audit_log.append(
                                 AuditLogEntry(
                                     tool_name=name,
-                                    outcome="Denied",
-                                    reason=denial_reason,
-                                    timestamp=datetime.now(timezone.utc).isoformat(),
+                                    outcome="Allowed",
+                                    reason=None,
+                                    timestamp=datetime.now(
+                                        timezone.utc
+                                    ).isoformat(),
+                                    consent_decision=None,
+                                    authoritative_tier=_auth_tier,
+                                    non_overridable_denial=False,
+                                )
+                            )
+                    else:
+                        # --- Flat registry path (ADR-009) ---
+                        policy_result = self._policy_engine.evaluate(
+                            name, kwargs_mapping
+                        )
+                        if not policy_result.is_allowed():
+                            denial_reason = str(policy_result.reason)
+                            if self._enforcement_mode is EnforcementMode.PRODUCTION:
+                                # Invoke the consent callback.
+                                arg_summary = _summarise_args(name, kwargs_mapping)
+                                approved = self._consent_callback(  # type: ignore[misc]
+                                    name, arg_summary, denial_reason
+                                )
+                                if approved:
+                                    self._audit_log.append(
+                                        AuditLogEntry(
+                                            tool_name=name,
+                                            outcome="Denied",
+                                            reason=denial_reason,
+                                            timestamp=datetime.now(
+                                                timezone.utc
+                                            ).isoformat(),
+                                            consent_decision="UserApproved",
+                                        )
+                                    )
+                                    # Proceed to tool call below (fall through).
+                                else:
+                                    self._audit_log.append(
+                                        AuditLogEntry(
+                                            tool_name=name,
+                                            outcome="Denied",
+                                            reason=denial_reason,
+                                            timestamp=datetime.now(
+                                                timezone.utc
+                                            ).isoformat(),
+                                            consent_decision="UserRejected",
+                                        )
+                                    )
+                                    raise PolicyViolationError(
+                                        tool_name=name,
+                                        reason=denial_reason,
+                                        consent_decision="UserRejected",
+                                    )
+                            else:
+                                # EVALUATION mode — raise immediately, no UI.
+                                self._audit_log.append(
+                                    AuditLogEntry(
+                                        tool_name=name,
+                                        outcome="Denied",
+                                        reason=denial_reason,
+                                        timestamp=datetime.now(
+                                            timezone.utc
+                                        ).isoformat(),
+                                        consent_decision=None,
+                                    )
+                                )
+                                raise PolicyViolationError(
+                                    tool_name=name, reason=denial_reason
+                                )
+                        else:
+                            self._audit_log.append(
+                                AuditLogEntry(
+                                    tool_name=name,
+                                    outcome="Allowed",
+                                    reason=None,
+                                    timestamp=datetime.now(
+                                        timezone.utc
+                                    ).isoformat(),
                                     consent_decision=None,
                                 )
                             )
-                            raise PolicyViolationError(
-                                tool_name=name, reason=denial_reason
-                            )
-                    else:
-                        self._audit_log.append(
-                            AuditLogEntry(
-                                tool_name=name,
-                                outcome="Allowed",
-                                reason=None,
-                                timestamp=datetime.now(timezone.utc).isoformat(),
-                                consent_decision=None,
-                            )
-                        )
 
                 # Call the tool with raw values.
                 # M4-F7: attach the AST call-site line number to any exception

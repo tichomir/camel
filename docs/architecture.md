@@ -18,7 +18,7 @@
 8. [Retry Loop Mechanics](#8-retry-loop-mechanics)
 9. [Execution Trace Recorder](#9-execution-trace-recorder)
 10. [Security Model](#10-security-model)
-11. [Policy Engine](#11-policy-engine)
+11. [Policy Engine](#11-policy-engine) _(includes §11.7 Three-Tier Policy Governance — ADR-011)_
 12. [Capability Assignment Engine](#12-capability-assignment-engine)
 13. [Reference Policy Library](#13-reference-policy-library)
 14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow)
@@ -821,7 +821,7 @@ _Updated for Milestone 4 completion (Version 1.4, 2026-03-17)._
 |---|---|---|---|---|
 | L1 | Data-requires-action failure: P-LLM cannot plan actions that depend on reading untrusted data | Medium | Documented design constraint; no change in M4 | Future: nested P-LLM tool (FW-4) |
 | L3 | **Exception-based side channel (residual):** Primary vectors — loop-body taint (M4-F1), exception message redaction (M4-F6), NEIE stripping (M4-F7), loop annotation propagation (M4-F9) — are all implemented and validated at 100% (17/17 tests pass). | Low | ✅ Primary vectors closed by M4-F6, M4-F7, M4-F9, M4-F17. Side-channel test class 2 passes at 100%. | **Residual:** Deeply nested tool call exception chains — where an exception propagates through multiple tool call frames before reaching the interpreter's exception handler — remain a documented residual risk not covered by the M4 mitigations. See `docs/design/milestone4-exception-hardening.md §9.2`. |
-| L4 | User fatigue from policy / escalation denials | Medium | Elevated consent provides clear escalation reason and distinguishes data-to-control vs policy denials | Granular policies reduce denial rate; policy tuning guidance available |
+| L4 | User fatigue from policy / escalation denials | **Low–Medium** (mitigated) | ✅ **Three-tier governance (ADR-011, Milestone 5) formally mitigates L4** by distributing policy authority across Platform, Tool-Provider, and User tiers with explicit precedence rules and a `non_overridable` flag. User-tier policies allow end-users to pre-approve common actions, reducing consent-prompt frequency. Platform policies with `non_overridable=False` still surface consent prompts, but `non_overridable=True` rules bypass the consent path entirely — preventing fatigue-driven bypasses of critical controls. Elevated consent (M4-F16) provides clear escalation reason for data-to-control violations. | Granular tier assignment and the `non_overridable` selection criteria in `docs/policy_authorship_guide.md` provide deployment guidance to minimise denial rates on well-annotated tools. |
 | L5 | Token cost overhead (~2.82× input tokens vs native tool-calling) | Low-Medium | No change in M4 | Expected to decrease as models follow subset spec more closely |
 | L6 | **ROP-analogue action chaining:** An adversary may chain individually-approved tool calls to produce a collectively malicious outcome. | Medium-High | ✅ **Single-step escalation blocked** by M4-F15 (detection) and M4-F16 (elevated consent gate). | **Residual:** The ROP-analogue scenario — where each individual tool call is to a statically-named (trusted) tool but the *sequence* of calls collectively exfiltrates data — is **not** eliminated by M4-F15/F16. STRICT mode (M4-F1/F2) propagates untrusted branch conditions to all inner-block assignments, but an adversary constructing a sequence of fully-legitimate, individually policy-approved calls can still produce a collectively malicious trace. Future work: FW-6 (action-sequence anomaly detection via dependency graph analysis). |
 | NG4 | **Partial timing mitigation (explicit non-goal):** CaMeL does not guarantee side-channel immunity in all configurations. | Low | ✅ **Direct timing primitive vector closed** by M4-F12 (timing names excluded from namespace). Side-channel test class 3 (timing primitive exclusion) passes at 100% (62/62 tests). | **Residual / explicit caveat:** Indirect timing channels — iteration-count channels (wall-clock observable without any timing call), CPython instruction-dispatch variance, tool-implementation timing leakage, OS-level process-time observation — remain out of scope per PRD §3.2 NG4. Full timing immunity is not a CaMeL guarantee. See `docs/security_hardening_allowlist.md §9` for the complete residual risk register. |
@@ -864,6 +864,7 @@ _Updated for Milestone 4 completion (Version 1.4, 2026-03-17)._
 |---|---|---|
 | FW-1 | **Alternative execution language** | Python's exception model creates residual side-channel risks (L3) that the M4 exception hardening features reduce but cannot fully eliminate. Adversarial exception triggering via deeply nested tool call chains remains a documented residual risk. The Python exception model's implicit control-flow semantics make it structurally harder to achieve exception-side-channel immunity compared to languages with explicit error handling (e.g., Haskell's `Either`/`Result` types or Rust's `Result<T, E>`). **Milestone 4 strengthens the case for evaluating a Haskell or Rust DSL for the P-LLM code plan** as an alternative execution target that would eliminate the exception side-channel class entirely at the language level, rather than requiring layered mitigation. Evaluate feasibility as part of Milestone 5 planning. |
 | FW-2 | **Formal verification** | The CaMeL interpreter has grown substantially in Milestone 4 — STRICT mode propagation rules (M4-F1–F4), exception redaction engine (M4-F6–F9, M4-F17), allowlist enforcement (M4-F10–F14), and escalation detection (M4-F15–F16, M4-F18) all add non-trivial enforcement logic. **Milestone 4 increases the value of formal verification:** the more complex the enforcement logic, the greater the risk that an edge case in the implementation diverges from the intended security property. A machine-verified proof of interpreter correctness (e.g., using Coq or Lean) would close this gap and provide provable guarantees that complement the test suite. Recommended as a medium-priority research investment for Milestone 5. |
+| FW-5 | **Multi-party policy governance** | ✅ **Resolved in Milestone 5 (ADR-011).** The three-tier `TieredPolicyRegistry` + `PolicyConflictResolver` design is implemented in `camel/policy/governance.py`. It introduces explicit `PolicyTier` authorship (PLATFORM → TOOL_PROVIDER → USER), deterministic conflict resolution with per-tier short-circuiting, the `non_overridable` flag on Platform policies, and `MergedPolicyResult` with a full `TierEvaluationRecord` audit trail. The `non_overridable` flag closes the consent-fatigue attack vector on critical controls while preserving user agency on soft guardrails. Full guidance: `docs/policy_authorship_guide.md`. |
 | FW-6 | **ROP-analogue attack detection** | M4-F15/F16 close the single-step data-to-control escalation vector. The remaining challenge (L6 residual) is detecting whether a sequence of individually-approved tool calls constitutes a collectively malicious trace. Dependency graph analysis — tracking whether the combined data flow graph of a completed trace contains paths from untrusted sources to sensitive sinks — is a candidate technique. Recommend scoping a detection algorithm and prototype as part of Milestone 5. |
 
 ---
@@ -981,6 +982,154 @@ def email_recipient_policy(
         )
     return Allowed()
 ```
+
+### 11.7 Three-Tier Policy Governance (ADR-011, Milestone 5)
+
+**Module:** `camel/policy/governance.py` | **ADR:** [011](adr/011-three-tier-policy-governance.md)
+**Authorship guide:** [docs/policy_authorship_guide.md](policy_authorship_guide.md)
+
+The three-tier governance model extends the flat `PolicyRegistry` with explicit
+authorship tiers, a `non_overridable` flag, and a deterministic
+`PolicyConflictResolver` that produces a merged result with a full audit trail.
+It directly addresses PRD Risk L4 (user fatigue from over-strict policies) and
+resolves PRD Open Question FW-5 (multi-party policy governance).
+
+#### PolicyTier — authorship enum
+
+```python
+class PolicyTier(Enum):
+    PLATFORM      = "Platform"       # Highest authority — deployment operator
+    TOOL_PROVIDER = "ToolProvider"   # Middle — tool author constraints
+    USER          = "User"           # Lowest — end-user personalisation
+```
+
+Only `PLATFORM`-tier entries may carry `non_overridable=True`.  Setting
+`non_overridable=True` on any other tier raises `ValueError` at registration time.
+
+#### TieredPolicyRegistry — storage layer
+
+```python
+class TieredPolicyRegistry:
+    def register(
+        self,
+        tool_name: str,
+        policy_fn: PolicyFn,
+        tier: PolicyTier,
+        *,
+        non_overridable: bool = False,   # Only valid for PLATFORM tier
+        name: str = "",
+    ) -> PolicyFn: ...
+
+    # Convenience wrappers
+    def register_platform(
+        self, tool_name: str, policy_fn: PolicyFn, *, non_overridable: bool = False,
+        name: str = "",
+    ) -> PolicyFn: ...
+
+    def register_tool_provider(
+        self, tool_name: str, policy_fn: PolicyFn, *, name: str = "",
+    ) -> PolicyFn: ...
+
+    def register_user(
+        self, tool_name: str, policy_fn: PolicyFn, *, name: str = "",
+    ) -> PolicyFn: ...
+
+    def get_entries(self, tool_name: str, tier: PolicyTier) -> list[TieredPolicyEntry]: ...
+    def registered_tools(self, tier: PolicyTier | None = None) -> frozenset[str]: ...
+
+    @classmethod
+    def load_from_env(cls) -> TieredPolicyRegistry: ...   # CAMEL_TIERED_POLICY_MODULE
+```
+
+All `register*` methods return `policy_fn` unchanged, enabling decorator syntax:
+
+```python
+registry = TieredPolicyRegistry()
+
+@registry.register_platform("send_email", non_overridable=True)
+def no_external_recipients(tool_name, kwargs):
+    ...
+```
+
+#### PolicyConflictResolver — merge algorithm
+
+Evaluation order: **Platform → Tool-Provider → User**.  Within each tier:
+registration order.  First `Denied` in any tier short-circuits all lower tiers.
+
+| Phase | Tier evaluated | `authoritative_tier` on `Denied` | `non_overridable_denial` on `Denied` |
+|---|---|---|---|
+| 1 | `PLATFORM` | `PLATFORM` | `entry.non_overridable` |
+| 2 | `TOOL_PROVIDER` | `TOOL_PROVIDER` | `False` |
+| 3 | `USER` | `USER` | `False` |
+| 4 (all `Allowed`) | — | `None` | `False` |
+
+```python
+resolver = PolicyConflictResolver(registry)
+
+merged: MergedPolicyResult = resolver.evaluate("send_email", kwargs)
+
+# Use MergedPolicyResult to drive enforcement decision:
+if merged.is_allowed:
+    call_tool()
+elif merged.can_be_consented:     # False when non_overridable_denial=True
+    if consent_callback(...):
+        call_tool()
+else:
+    raise PolicyViolationError(...)     # Absolute denial — no consent path
+
+# Backward-compatible flat result (drop-in for PolicyRegistry.evaluate):
+result: SecurityPolicyResult = resolver.evaluate_flat("send_email", kwargs)
+```
+
+#### MergedPolicyResult — output type
+
+```python
+@dataclass(frozen=True)
+class MergedPolicyResult:
+    outcome:                SecurityPolicyResult      # Allowed() or Denied(reason)
+    authoritative_tier:     PolicyTier | None         # None if all tiers Allowed
+    non_overridable_denial: bool                      # True → consent must NOT be invoked
+    audit_trail:            tuple[TierEvaluationRecord, ...]
+
+    @property
+    def is_allowed(self) -> bool: ...        # outcome.is_allowed()
+    @property
+    def can_be_consented(self) -> bool: ...  # not non_overridable_denial
+```
+
+#### TierEvaluationRecord — audit trail entry
+
+```python
+@dataclass(frozen=True)
+class TierEvaluationRecord:
+    tier:             PolicyTier
+    policy_name:      str
+    result:           SecurityPolicyResult
+    non_overridable:  bool              # Always False for non-Platform tiers
+    authoritative:    bool              # True if this record determined the outcome
+```
+
+Policies in tiers skipped due to a higher-tier short-circuit are **not** included
+in the audit trail.
+
+#### Environment-based loading
+
+```python
+# Set CAMEL_TIERED_POLICY_MODULE=myapp.tiered_policies in environment.
+# Module must export: configure_tiered_policies(registry: TieredPolicyRegistry) -> None
+
+resolver = PolicyConflictResolver.load_from_env()
+```
+
+#### `non_overridable` semantics — summary
+
+| Scenario | `can_be_consented` | Consent callback invoked? |
+|---|---|---|
+| All tiers `Allowed` | `True` (irrelevant) | No (not needed) |
+| Platform `Denied`, `non_overridable=False` | `True` | Yes (PRODUCTION mode) |
+| Platform `Denied`, `non_overridable=True` | **`False`** | **Never** |
+| Tool-Provider `Denied` | `True` | Yes (PRODUCTION mode) |
+| User `Denied` | `True` | Yes (PRODUCTION mode) |
 
 ---
 
@@ -1513,8 +1662,11 @@ camel/
 ├── policy/
 │   ├── __init__.py          SecurityPolicyResult, Allowed, Denied, PolicyFn,
 │   │                        PolicyRegistry, is_trusted, can_readers_read_value,
-│   │                        get_all_sources
+│   │                        get_all_sources; also re-exports three-tier API
 │   ├── interfaces.py        Full type definitions, stubs, and TRUSTED_SOURCE_LABELS
+│   ├── governance.py        Three-tier API (ADR-011): PolicyTier, TieredPolicyEntry,
+│   │                        TierEvaluationRecord, MergedPolicyResult,
+│   │                        TieredPolicyRegistry, PolicyConflictResolver
 │   └── reference_policies.py  Six reference security policies +
 │                               configure_reference_policies()
 ├── tools/
@@ -1592,4 +1744,7 @@ tests/
 | ADR 008 — Isolation Test Harness | [docs/adr/008-isolation-test-harness-architecture.md](adr/008-isolation-test-harness-architecture.md) |
 | ADR 009 — Policy Engine | [docs/adr/009-policy-engine-architecture.md](adr/009-policy-engine-architecture.md) |
 | ADR 010 — Enforcement Hook & Audit | [docs/adr/010-enforcement-hook-consent-audit-harness.md](adr/010-enforcement-hook-consent-audit-harness.md) |
+| **ADR 011 — Three-Tier Policy Governance** | [docs/adr/011-three-tier-policy-governance.md](adr/011-three-tier-policy-governance.md) |
+| **Policy Authorship Guide** | [docs/policy_authorship_guide.md](policy_authorship_guide.md) |
+| Three-Tier Policy Authorship Guide (detailed) | [docs/policies/three-tier-policy-authorship-guide.md](policies/three-tier-policy-authorship-guide.md) |
 | E2E Scenario Specification | [docs/e2e-scenario-specification.md](e2e-scenario-specification.md) |

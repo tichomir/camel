@@ -1184,3 +1184,22 @@ Deliverables:
 - ✅ Fix: publish-test-pypi stage uses both OIDC permission and password secrets inconsistently — Devops Engineer (◈ Standard, 3 SP)
 
 ---
+### Sprint: Multi-Party Policy Governance | 2026-03-18 | ✅ done | 17 SP
+**Goal:** [Phase: Multi-Party Policy Governance]
+Implement a three-tier policy authorship model (Platform, Tool-Provider, User) with deterministic conflict resolution, `non-overridable` flag support, and a `PolicyConflictResolver` that produces a merged evaluation result with a full audit trail. Addresses PRD open question FW-5 and milestone requirements M5-F8 through M5-F11, and risk L4 (user fatigue from over-strict policies).
+
+Deliverables:
+- Three-tier `PolicyRegistry` supporting Platform, Tool-Provider, and User policy tiers with documented precedence rules
+- `non-overridable` flag on Platform policies that prevents lower tiers from weakening them
+- `PolicyConflictResolver` class that merges three tiers for a given tool and returns a single `SecurityPolicyResult` with an authoritative-tier audit trail
+- Unit test suite covering all conflict resolution scenarios (override, non-override, all-allow, all-deny, mixed)
+- Policy authorship guide explaining tier hierarchy, override semantics, and recommended patterns for enterprise deployments
+- Updated PRD Section 6.5 and Section 7 documenting the three-tier model and conflict resolution algorithm
+
+**Delivered:**
+- ✅ Design three-tier PolicyRegistry architecture and conflict resolution algorithm — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement PolicyRegistry, non-overridable flag, and PolicyConflictResolver — Backend Developer (◉ Deep, 8 SP)
+- ✅ Write unit test suite for all PolicyConflictResolver conflict scenarios — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Write policy authorship guide and update PRD Sections 6.5 and 7 — Software Architect (◈ Standard, 3 SP)
+
+---

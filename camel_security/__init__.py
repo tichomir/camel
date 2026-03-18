@@ -74,10 +74,28 @@ Re-exported interpreter types (for advanced users)
     ``STRICT`` (default) or ``NORMAL`` — passed to :class:`CaMeLAgent`.
 
 :class:`~camel.policy.PolicyRegistry`
-    Register security policies; pass the instance to :class:`CaMeLAgent`.
+    Register security policies (flat model); pass the instance to
+    :class:`CaMeLAgent`.
 
 :class:`~camel.policy.Allowed` / :class:`~camel.policy.Denied`
     Return types for policy functions.
+
+Three-tier governance (ADR-011)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:class:`~camel.policy.governance.PolicyTier`
+    Authorship tier enum (``PLATFORM``, ``TOOL_PROVIDER``, ``USER``).
+
+:class:`~camel.policy.governance.TieredPolicyRegistry`
+    Storage layer for three-tier policy entries.
+
+:class:`~camel.policy.governance.PolicyConflictResolver`
+    Merges three tiers into a single authoritative result.
+
+:class:`~camel.policy.governance.MergedPolicyResult`
+    Merged outcome returned by :meth:`~PolicyConflictResolver.evaluate`.
+
+:class:`~camel.policy.governance.TierEvaluationRecord`
+    One record in the :attr:`~MergedPolicyResult.audit_trail`.
 
 :class:`~camel.value.CaMeLValue`
     Capability-tagged runtime value.  Appears in
@@ -111,6 +129,13 @@ Summary:
 
 from camel.interpreter import ExecutionMode
 from camel.llm.backend import get_backend
+from camel.policy.governance import (
+    MergedPolicyResult,
+    PolicyConflictResolver,
+    PolicyTier,
+    TieredPolicyRegistry,
+    TierEvaluationRecord,
+)
 from camel.policy.interfaces import Allowed, Denied, PolicyRegistry
 from camel.value import CaMeLValue, Public
 from camel_security.agent import AgentResult, CaMeLAgent, PolicyDenialRecord
@@ -129,10 +154,16 @@ __all__ = [
     "Tool",
     # Interpreter / execution mode
     "ExecutionMode",
-    # Policy engine
+    # Flat policy engine (ADR-009)
     "PolicyRegistry",
     "Allowed",
     "Denied",
+    # Three-tier governance (ADR-011)
+    "PolicyTier",
+    "TieredPolicyRegistry",
+    "PolicyConflictResolver",
+    "MergedPolicyResult",
+    "TierEvaluationRecord",
     # Capability system
     "CaMeLValue",
     "Public",
