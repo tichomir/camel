@@ -1165,14 +1165,25 @@ def write_csv_token_overhead(results: list[DomainResult], out_dir: Path) -> None
 def write_csv_retry_rates(results: list[DomainResult], out_dir: Path) -> None:
     """Write retry rate CSV."""
     path = out_dir / "retry_rates.csv"
-    rows = [{
-        "backend": r.backend,
-        "domain": r.domain,
-        "utility_total": r.utility_total,
-        "total_retries": r.total_retries,
-        "median_retries_per_task": f"{r.median_retries_per_task:.1f}",
-        "meets_target": str(r.retry_meets_target).lower(),
-    } for r in results]
+    rows = []
+    for r in results:
+        # In mock mode the stub P-LLM always returns perfect plans on the first
+        # attempt, so the retry count is trivially 0.  This is NOT a real
+        # measurement of live LLM retry behaviour; the criterion cannot be
+        # reported as passing or failing based on mock data.
+        is_mock = r.backend == MOCK_BACKEND
+        rows.append({
+            "backend": r.backend,
+            "domain": r.domain,
+            "utility_total": r.utility_total,
+            "total_retries": r.total_retries,
+            "median_retries_per_task": f"{r.median_retries_per_task:.1f}",
+            "meets_target": (
+                "N/A (mock mode -- stub P-LLM never retries)"
+                if is_mock
+                else str(r.retry_meets_target).lower()
+            ),
+        })
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
@@ -1187,6 +1198,11 @@ def write_csv_consent_rates(results: list[DomainResult], out_dir: Path) -> None:
     for r in results:
         spec = DOMAIN_TASK_REGISTRY[r.domain]
         well = spec["well_annotated"]
+        # In EVALUATION mode (used for benchmarking) consent prompts are
+        # suppressed entirely, producing a trivially 0% rate.  This does NOT
+        # reflect production behaviour; the criterion cannot be reported as
+        # passing based on eval-mode data.
+        is_mock = r.backend == MOCK_BACKEND
         rows.append({
             "backend": r.backend,
             "domain": r.domain,
@@ -1195,7 +1211,11 @@ def write_csv_consent_rates(results: list[DomainResult], out_dir: Path) -> None:
             "consent_prompt_rate_pct": f"{r.consent_prompt_rate_pct:.1f}",
             "well_annotated": str(well).lower(),
             "target_pct": "20.0" if well else "N/A",
-            "meets_target": str(r.consent_meets_target).lower() if well else "N/A",
+            "meets_target": (
+                "N/A (eval mode -- consent suppressed for benchmarking)"
+                if is_mock and well
+                else ("N/A" if not well else str(r.consent_meets_target).lower())
+            ),
             "note": "EVALUATION mode -- consent prompts suppressed for benchmarking",
         })
     with open(path, "w", newline="") as f:
