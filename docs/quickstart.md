@@ -168,11 +168,13 @@ print(result.audit_log_ref)   # e.g. "camel-audit:a1b2c3d4"
 To write audit events to a file, configure the structured JSON audit sink:
 
 ```python
-from camel.observability.audit_sink import FileAuditSink
+from camel.observability.audit_sink import AuditSink, AuditSinkConfig, SinkMode
 
-sink = FileAuditSink(path="/var/log/camel-audit.jsonl")
-# Pass sink to CaMeLInterpreter when constructing directly, or set via env:
-# CAMEL_AUDIT_SINK=file:///var/log/camel-audit.jsonl
+config = AuditSinkConfig(mode=SinkMode.FILE, file_path="/var/log/camel-audit.jsonl")
+sink = AuditSink(config=config)
+# Or configure via environment variables:
+# CAMEL_AUDIT_SINK=file
+# CAMEL_AUDIT_SINK_PATH=/var/log/camel-audit.jsonl
 ```
 
 Each line in the output is a JSON object:
