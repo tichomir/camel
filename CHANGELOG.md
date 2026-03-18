@@ -7,6 +7,99 @@ CaMeL uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.6.0] — 2026-03-18
+
+### Milestone 5 — Multi-Backend LLM Support & Observability
+
+This release validates and ships `LLMBackend` adapters for Claude (Anthropic),
+Gemini 2.5 Pro/Flash (Google), and GPT-4.1/o3/o4-mini (OpenAI), confirming that
+CaMeL security guarantees hold equivalently across all three provider backends.
+Delivers Prometheus/OpenTelemetry-compatible operational metrics and structured JSON
+audit log with configurable sink.
+
+**PRD references:** M5-F23 through M5-F28, NFR-3, NFR-6, NFR-8
+
+#### Added
+
+**`camel.llm.adapters.openai` — OpenAI GPT-4.1/o3/o4-mini adapter**
+
+- **M5-F23** — `OpenAIBackend`: full `LLMBackend` adapter for OpenAI models.
+  Supports `gpt-4.1` (native `response_format` JSON schema), `o3`, and `o4-mini`
+  (prompt-based JSON extraction fallback, `supports_structured_output()=False`).
+  Installed via `pip install camel-security[openai]`.
+
+**Multi-backend validation** (`tests/integration/test_multi_backend_adapters.py`)
+
+- **M5-F23** — Adapter protocol conformance tests: all three backends satisfy the
+  `LLMBackend` structural protocol (`isinstance` check).
+- **M5-F23** — `get_backend_id()` credential-safety tests: verified no API keys
+  appear in `"<provider>:<model>"` identifier strings.
+- **M5-F23** — `supports_structured_output()` model-class tests: correct `True`/`False`
+  per model variant for all three adapters.
+- **M5-F23** — `generate()` / `generate_structured()` contract tests with mock SDK
+  clients (no live API calls); error wrapping as `LLMBackendError` confirmed.
+- **M5-F26** — Independent P-LLM and Q-LLM backend assignment confirmed: same-provider
+  splits, cross-provider splits (Claude+OpenAI, Gemini+Claude), and P-LLM generate()
+  isolation invariant verified.
+- **M5-F27** — Security equivalence: 0 / 15 injection successes across all three
+  providers (5 AgentDojo-style adversarial fixtures × 3 backends).
+
+**`camel.observability` — Prometheus/OpenTelemetry metrics** (`camel/observability/metrics.py`)
+
+- **M5-F24** — `CamelMetricsCollector`: five operational metrics exposed, all scoped
+  by `session_id`, `tool_name`, and `policy_name` labels:
+  - `camel_policy_denial_rate` (Counter)
+  - `camel_qlm_error_rate` (Counter)
+  - `camel_pllm_retry_count_histogram` (Histogram, buckets: 0–10)
+  - `camel_task_success_rate` (Gauge)
+  - `camel_consent_prompt_rate` (Counter)
+- **M5-F24** — `get_global_collector()` — module-level singleton collector.
+- **M5-F25** — `start_metrics_server(port)` — lightweight HTTP server serving
+  Prometheus text format on `GET /metrics`.
+- **M5-F25** — Optional `prometheus_client` integration: when the package is installed,
+  metrics are also registered with the global Prometheus registry.
+- **M5-F25** — OpenTelemetry OTLP push: when `CAMEL_OTEL_ENDPOINT` env var is set,
+  metric snapshots are pushed via OTLP/HTTP every 15 seconds.
+- Thread-safe: all counter/histogram/gauge operations use a `threading.Lock`.
+
+**`camel.observability` — Structured JSON audit log sink** (`camel/observability/audit_sink.py`)
+
+- **M5-F28** — `AuditSink`: configurable structured JSON audit log sink.
+  Three modes via `SinkMode` enum:
+  - `SinkMode.FILE`: writes newline-delimited JSON to a file path from
+    `CAMEL_AUDIT_SINK_PATH`.
+  - `SinkMode.STDOUT`: writes to `sys.stdout`.
+  - `SinkMode.EXTERNAL`: invokes a caller-supplied callback with `AuditLogRecord`.
+- **M5-F28** — `AuditLogRecord`: typed dataclass for all audit log entries;
+  fields: `session_id`, `event_type`, `tool_name`, `policy_name`, `decision`,
+  `capability_summary`, `backend_id`, `timestamp` (ISO-8601 UTC).
+- **M5-F28** — `AuditSinkConfig`: configures sink mode from environment variables
+  (`CAMEL_AUDIT_SINK`, `CAMEL_AUDIT_SINK_PATH`).
+- **M5-F28** — `_config_from_env()` / `_reset_default_sink()` — module-level helpers
+  for env-driven configuration and test teardown.
+
+**Test coverage**
+
+- `tests/integration/test_multi_backend_adapters.py` — 8 test classes, 28 test
+  functions covering all 7 adapter contract areas.
+- `tests/test_observability.py` — metrics and audit log sink validation covering all
+  five metrics, three sink modes, and NFR-6 event class coverage.
+
+**Documentation**
+
+- `docs/reports/milestone5_multi_backend_test_report.md` — test execution report
+  documenting 0 ASR across all three backends, P/Q configurability evidence, metrics
+  validation, and audit log validation.  Confirms NFR-3, NFR-6, NFR-8 validated.
+- `docs/backend-adapter-developer-guide.md` — added concrete adapter instantiation
+  examples for `ClaudeBackend`, `GeminiBackend`, and `OpenAIBackend`; cross-provider
+  P-LLM/Q-LLM pairing examples; `AnthropicBackend` alias note.
+- `CLAUDE.md` PRD §6 — `LLMBackend` named as core component (§6.6) with interface
+  summary.  PRD §9 NFR table: NFR-3, NFR-6, NFR-8 marked as validated (M5/v0.6.0).
+  PRD §11 Success Metrics: backend adapter security equivalence metric added
+  (target: 0 injection successes across all backends; result: 0/15 — MET).
+
+---
+
 ## [0.5.0] — 2026-03-18
 
 ### Milestone 5 — SDK Packaging & Public API + Policy Testing Harness & User Consent UX

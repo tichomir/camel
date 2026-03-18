@@ -1,0 +1,45 @@
+# CODEOWNERS — CaMeL repository
+#
+# Listed owners are automatically requested for review when their paths are
+# changed in a pull request.  Add GitHub team or user handles below.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# NOTE: GitHub CODEOWNERS silently ignores entries that reference non-existent
+# teams or users, which would defeat the mandatory security review gate.
+#
+# This repository is hosted at github.com/tichomir/camel (personal account).
+# Personal accounts do not support GitHub teams; @org/team-slug entries only
+# work in organisation-owned repositories.  All entries below therefore use
+# the @tichomir individual handle, which is confirmed to have repository access.
+#
+# If this repository is transferred to a GitHub Organisation in the future,
+# replace @tichomir below with the appropriate @org/team-slug entries and
+# ensure each team has at least Read access to the repository.
+
+# ── Global catch-all ─────────────────────────────────────────────────────────
+# Any file not matched by a more specific rule falls through to the repo owner.
+* @tichomir
+
+# ── LLM backend adapters ──────────────────────────────────────────────────────
+# Changes to provider adapters require adapter + security review.
+# These files gate the 0-ASR injection test suite and the multi-backend
+# isolation contract; security sign-off is mandatory before merge.
+/camel/llm/adapters/    @tichomir
+/camel/llm/backend.py   @tichomir
+/camel/llm/protocols.py @tichomir
+
+# ── Observability (metrics + audit log) ───────────────────────────────────────
+/camel/observability/   @tichomir
+
+# ── Interpreter & dependency graph (security-critical) ────────────────────────
+/camel/interpreter.py      @tichomir
+/camel/dependency_graph.py @tichomir
+
+# ── Policy engine ─────────────────────────────────────────────────────────────
+/camel/policy/             @tichomir
+
+# ── CI / CD pipeline configuration ───────────────────────────────────────────
+/.github/                  @tichomir
+
+# ── Integration tests for multi-backend adapters ─────────────────────────────
+/tests/integration/        @tichomir

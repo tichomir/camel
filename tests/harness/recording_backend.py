@@ -120,6 +120,14 @@ class StubBackend:
             "use a dedicated QStubBackend for Q-LLM calls."
         )
 
+    def get_backend_id(self) -> str:
+        """Return a stable stub identifier for protocol conformance."""
+        return "stub:test"
+
+    def supports_structured_output(self) -> bool:
+        """Return True for protocol conformance."""
+        return True
+
     def reset(self) -> None:
         """Reset the response index to zero."""
         self._index = 0
@@ -197,6 +205,16 @@ class RecordingBackend:
             RecordedCall(method="generate_structured", messages=list(messages))
         )
         return await self._delegate.generate_structured(messages, schema)
+
+    def get_backend_id(self) -> str:
+        """Return a stable recording-backend identifier for protocol conformance."""
+        return "recording:delegate"
+
+    def supports_structured_output(self) -> bool:
+        """Delegate supports_structured_output to the underlying backend."""
+        if hasattr(self._delegate, "supports_structured_output"):
+            return bool(self._delegate.supports_structured_output())
+        return True
 
     def reset(self) -> None:
         """Clear all recorded calls."""

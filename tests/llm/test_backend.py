@@ -479,9 +479,9 @@ class TestGetBackend(unittest.TestCase):
     def test_get_backend_unknown_raises_value_error(self) -> None:
         """get_backend raises ValueError for unrecognised provider strings."""
         with self.assertRaises(ValueError) as ctx:
-            get_backend("openai", api_key="x")
+            get_backend("unknown_provider", api_key="x")
 
-        self.assertIn("openai", str(ctx.exception))
+        self.assertIn("unknown_provider", str(ctx.exception))
 
     def test_get_backend_claude_forwards_model_kwarg(self) -> None:
         """get_backend forwards kwargs to the ClaudeBackend constructor."""
@@ -519,8 +519,7 @@ class TestLLMBackendProtocol(unittest.TestCase):
     """Tests for the LLMBackend Protocol runtime_checkable behaviour."""
 
     def test_duck_typed_object_satisfies_protocol(self) -> None:
-        """Any object exposing generate() and generate_structured() satisfies
-        the LLMBackend Protocol for isinstance checks."""
+        """Any object exposing all four required methods satisfies LLMBackend."""
 
         class _FakeBackend:
             """Minimal duck-typed backend for protocol check."""
@@ -537,6 +536,14 @@ class TestLLMBackendProtocol(unittest.TestCase):
                 """Stub generate_structured."""
                 return schema()
 
+            def get_backend_id(self) -> str:
+                """Stub backend id."""
+                return "stub:model"
+
+            def supports_structured_output(self) -> bool:
+                """Stub structured output support."""
+                return True
+
         self.assertIsInstance(_FakeBackend(), LLMBackend)
 
     def test_object_missing_generate_does_not_satisfy_protocol(self) -> None:
@@ -550,6 +557,14 @@ class TestLLMBackendProtocol(unittest.TestCase):
             ) -> Any:
                 """Only structured."""
                 return schema()
+
+            def get_backend_id(self) -> str:
+                """Stub backend id."""
+                return "stub:model"
+
+            def supports_structured_output(self) -> bool:
+                """Stub."""
+                return True
 
         self.assertNotIsInstance(_Incomplete(), LLMBackend)
 
@@ -581,6 +596,260 @@ class TestLLMBackendError(unittest.TestCase):
     def test_is_exception_subclass(self) -> None:
         """LLMBackendError is an Exception subclass for broad except blocks."""
         self.assertTrue(issubclass(LLMBackendError, Exception))
+
+
+# ---------------------------------------------------------------------------
+# OpenAI mock helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_openai_mock() -> tuple[MagicMock, MagicMock]:
+    """Return (mock_openai_module, mock_async_client)."""
+    mock_openai = MagicMock()
+    mock_client = MagicMock()
+    mock_openai.AsyncOpenAI.return_value = mock_client
+    return mock_openai, mock_client
+
+
+def _make_openai_chat_response(content: str) -> MagicMock:
+    """Return a mock OpenAI chat completion response with the given content."""
+    response = MagicMock()
+    message = MagicMock()
+    message.content = content
+    choice = MagicMock()
+    choice.message = message
+    response.choices = [choice]
+    return response
+
+
+# ---------------------------------------------------------------------------
+# OpenAI backend — generate()
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIBackendGenerate(unittest.IsolatedAsyncioTestCase):
+    """Tests for OpenAIBackend.generate()."""
+
+    async def test_generate_returns_text_from_api(self) -> None:
+        """generate() returns the message content from the API response."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        mock_response = _make_openai_chat_response("Hello from GPT-4.1")
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key", model="gpt-4.1")
+
+        result = await backend.generate([{"role": "user", "content": "Say hello."}])
+
+        self.assertEqual(result, "Hello from GPT-4.1")
+        mock_client.chat.completions.create.assert_awaited_once()
+
+    async def test_generate_wraps_sdk_error_as_llm_backend_error(self) -> None:
+        """generate() converts a native SDK exception into LLMBackendError."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=RuntimeError("rate limit exceeded")
+        )
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key")
+
+        with self.assertRaises(LLMBackendError) as ctx:
+            await backend.generate([{"role": "user", "content": "hi"}])
+
+        self.assertIn("rate limit exceeded", str(ctx.exception))
+        self.assertIsInstance(ctx.exception.cause, RuntimeError)
+
+    async def test_generate_uses_max_completion_tokens_for_reasoning_models(
+        self,
+    ) -> None:
+        """generate() uses max_completion_tokens for o3/o4-mini models."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        mock_response = _make_openai_chat_response("response")
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key", model="o4-mini")
+
+        await backend.generate([{"role": "user", "content": "test"}])
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertIn("max_completion_tokens", kwargs)
+        self.assertNotIn("max_tokens", kwargs)
+
+    async def test_generate_uses_max_tokens_for_gpt_models(self) -> None:
+        """generate() uses max_tokens (not max_completion_tokens) for GPT models."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        mock_response = _make_openai_chat_response("response")
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key", model="gpt-4.1")
+
+        await backend.generate([{"role": "user", "content": "test"}])
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertIn("max_tokens", kwargs)
+        self.assertNotIn("max_completion_tokens", kwargs)
+
+
+# ---------------------------------------------------------------------------
+# OpenAI backend — generate_structured()
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIBackendGenerateStructured(unittest.IsolatedAsyncioTestCase):
+    """Tests for OpenAIBackend.generate_structured()."""
+
+    async def test_generate_structured_native_json_schema(self) -> None:
+        """generate_structured() uses response_format for GPT-4.1 models."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        payload = json.dumps({"title": "AI Safety", "word_count": 42})
+        mock_response = _make_openai_chat_response(payload)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key", model="gpt-4.1")
+
+        result = await backend.generate_structured(
+            [{"role": "user", "content": "Summarise."}],
+            _SummarySchema,
+        )
+
+        self.assertIsInstance(result, _SummarySchema)
+        self.assertEqual(result.title, "AI Safety")
+        self.assertEqual(result.word_count, 42)
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertIn("response_format", kwargs)
+        self.assertEqual(kwargs["response_format"]["type"], "json_schema")
+
+    async def test_generate_structured_prompt_fallback_for_reasoning_models(
+        self,
+    ) -> None:
+        """generate_structured() falls back to prompt-based JSON for o3/o4-mini."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        payload = json.dumps({"title": "Reasoning", "word_count": 7})
+        mock_response = _make_openai_chat_response(payload)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key", model="o3")
+
+        result = await backend.generate_structured(
+            [{"role": "user", "content": "Summarise."}],
+            _SummarySchema,
+        )
+
+        self.assertIsInstance(result, _SummarySchema)
+        self.assertEqual(result.title, "Reasoning")
+
+        kwargs = mock_client.chat.completions.create.call_args.kwargs
+        self.assertNotIn("response_format", kwargs)
+
+    async def test_generate_structured_wraps_sdk_error(self) -> None:
+        """generate_structured() converts SDK exceptions into LLMBackendError."""
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        mock_openai, mock_client = _make_openai_mock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=ConnectionError("API unavailable")
+        )
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = OpenAIBackend(api_key="test-key")
+
+        with self.assertRaises(LLMBackendError) as ctx:
+            await backend.generate_structured(
+                [{"role": "user", "content": "test"}],
+                _SummarySchema,
+            )
+
+        self.assertIn("API unavailable", str(ctx.exception))
+        self.assertIsInstance(ctx.exception.cause, ConnectionError)
+
+
+# ---------------------------------------------------------------------------
+# get_backend factory — OpenAI + identity
+# ---------------------------------------------------------------------------
+
+
+class TestGetBackendOpenAI(unittest.TestCase):
+    """Tests for get_backend() with the OpenAI provider."""
+
+    def test_get_backend_openai_returns_openai_backend(self) -> None:
+        """get_backend('openai') returns an OpenAIBackend instance."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key")
+
+        from camel.llm.adapters.openai import OpenAIBackend
+
+        self.assertIsInstance(backend, OpenAIBackend)
+
+    def test_get_backend_openai_satisfies_llm_backend_protocol(self) -> None:
+        """get_backend('openai') returns an object satisfying LLMBackend."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key")
+
+        self.assertIsInstance(backend, LLMBackend)
+
+    def test_get_backend_openai_forwards_model_kwarg(self) -> None:
+        """get_backend forwards model kwarg to OpenAIBackend constructor."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key", model="o4-mini")
+
+        self.assertEqual(backend._model, "o4-mini")
+
+    def test_openai_backend_id_format(self) -> None:
+        """OpenAIBackend.get_backend_id() returns 'openai:<model>'."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key", model="gpt-4.1")
+
+        self.assertEqual(backend.get_backend_id(), "openai:gpt-4.1")
+
+    def test_openai_backend_supports_structured_output_gpt41(self) -> None:
+        """OpenAIBackend.supports_structured_output() is True for gpt-4.1."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key", model="gpt-4.1")
+
+        self.assertTrue(backend.supports_structured_output())
+
+    def test_openai_backend_supports_structured_output_false_for_o3(self) -> None:
+        """OpenAIBackend.supports_structured_output() is False for o3."""
+        mock_openai = MagicMock()
+        mock_openai.AsyncOpenAI.return_value = MagicMock()
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            backend = get_backend("openai", api_key="test-key", model="o3")
+
+        self.assertFalse(backend.supports_structured_output())
 
 
 if __name__ == "__main__":

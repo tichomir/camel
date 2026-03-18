@@ -174,6 +174,35 @@ class ClaudeBackend:
         )
 
     # ------------------------------------------------------------------
+    # Identity & capability methods
+    # ------------------------------------------------------------------
+
+    def get_backend_id(self) -> str:
+        """Return a stable identifier for this backend instance.
+
+        Returns
+        -------
+        str
+            A string of the form ``"claude:<model>"``,
+            e.g. ``"claude:claude-opus-4-6"``.
+        """
+        return f"claude:{self._model}"
+
+    def supports_structured_output(self) -> bool:
+        """Return ``True`` — Claude supports native structured output.
+
+        The synthetic extraction tool pattern (``tool_choice`` forced to a
+        single pseudo-tool) guarantees schema conformance without relying on
+        prompt engineering alone.
+
+        Returns
+        -------
+        bool
+            Always ``True`` for :class:`ClaudeBackend`.
+        """
+        return True
+
+    # ------------------------------------------------------------------
     # Unified LLMBackend protocol (generate / generate_structured)
     # ------------------------------------------------------------------
 

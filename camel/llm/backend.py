@@ -80,10 +80,12 @@ class LLMBackendError(Exception):
 class LLMBackend(Protocol):
     """Structural interface for LLM backends used by the P-LLM wrapper.
 
-    Implementations must provide two methods:
+    Implementations must provide the following methods:
 
     - :meth:`generate` for free-form text completion (P-LLM planning path).
     - :meth:`generate_structured` for Pydantic-schema-constrained output.
+    - :meth:`get_backend_id` for a stable provider identifier string.
+    - :meth:`supports_structured_output` for capability advertisement.
 
     The protocol is ``runtime_checkable`` so that test doubles and mock
     objects can be verified with ``isinstance`` in integration tests.
@@ -93,6 +95,16 @@ class LLMBackend(Protocol):
     Callers MUST NOT pass tool return values (``CaMeLValue`` instances from
     the interpreter) into the *messages* list.  The P-LLM wrapper enforces
     this via a runtime guard (see ``PLLMWrapper._build_messages``).
+
+    Multi-backend scope
+    -------------------
+    Validated backends (NFR-8):
+
+    - **Claude** (Anthropic) — ``ClaudeBackend`` — ``claude-opus-4-6``,
+      ``claude-sonnet-4-6``, ``claude-haiku-4-5``
+    - **Gemini** (Google) — ``GeminiBackend`` — ``gemini-2.5-pro``,
+      ``gemini-2.5-flash``
+    - **OpenAI** — ``OpenAIBackend`` — ``gpt-4.1``, ``o3``, ``o4-mini``
     """
 
     async def generate(
@@ -134,8 +146,9 @@ class LLMBackend(Protocol):
 
         Implementations must request structured / JSON output from the
         underlying provider (e.g. via ``tool_choice`` for Anthropic or
-        ``response_mime_type`` for Gemini).  They MUST NOT pass tool
-        definitions to the API call for this path.
+        ``response_mime_type`` for Gemini, or ``response_format`` for
+        OpenAI).  They MUST NOT pass tool definitions to the API call for
+        this path.
 
         Parameters
         ----------
@@ -159,6 +172,39 @@ class LLMBackend(Protocol):
         """
         ...
 
+    def get_backend_id(self) -> str:
+        """Return a stable identifier string for this backend.
+
+        The identifier is used in audit log entries, metrics labels, and
+        test assertions to distinguish which provider handled a given
+        request.  It MUST be stable across process restarts and MUST NOT
+        contain API keys or other credentials.
+
+        Returns
+        -------
+        str
+            A provider-scoped identifier, e.g. ``"claude:claude-opus-4-6"``,
+            ``"gemini:gemini-2.5-pro"``, or ``"openai:gpt-4.1"``.
+        """
+        ...
+
+    def supports_structured_output(self) -> bool:
+        """Return ``True`` if this backend natively supports structured output.
+
+        Backends that return ``True`` guarantee that
+        :meth:`generate_structured` uses a provider-native mechanism
+        (e.g. Anthropic ``tool_choice``, Gemini ``response_mime_type``,
+        OpenAI ``response_format``) rather than prompt-engineering alone,
+        providing schema-conformance guarantees for Q-LLM use.
+
+        Returns
+        -------
+        bool
+            ``True`` if native structured output is supported; ``False``
+            if the backend falls back to prompt-based JSON extraction.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Factory
@@ -177,8 +223,12 @@ def get_backend(provider: str, **kwargs: Any) -> LLMBackend:
     provider:
         The provider identifier string.  Supported values:
 
-        - ``"claude"`` — Anthropic Claude via :class:`~camel.llm.adapters.ClaudeBackend`.
-        - ``"gemini"`` — Google Gemini via :class:`~camel.llm.adapters.GeminiBackend`.
+        - ``"claude"`` — Anthropic Claude via
+          :class:`~camel.llm.adapters.ClaudeBackend`.
+        - ``"gemini"`` — Google Gemini via
+          :class:`~camel.llm.adapters.GeminiBackend`.
+        - ``"openai"`` — OpenAI GPT-4.1/o3/o4-mini via
+          :class:`~camel.llm.adapters.OpenAIBackend`.
     **kwargs:
         Constructor arguments forwarded to the concrete adapter.  Typical
         keys: ``api_key``, ``model``, ``max_tokens``.
@@ -201,7 +251,8 @@ def get_backend(provider: str, **kwargs: Any) -> LLMBackend:
     .. code-block:: python
 
         backend = get_backend("claude", api_key="sk-...", model="claude-opus-4-6")
-        backend = get_backend("gemini", api_key="AI...", model="gemini-2.0-flash")
+        backend = get_backend("gemini", api_key="AI...", model="gemini-2.5-flash")
+        backend = get_backend("openai", api_key="sk-...", model="gpt-4.1")
     """
     if provider == "claude":
         from camel.llm.adapters.claude import ClaudeBackend  # noqa: PLC0415
@@ -211,7 +262,11 @@ def get_backend(provider: str, **kwargs: Any) -> LLMBackend:
         from camel.llm.adapters.gemini import GeminiBackend  # noqa: PLC0415
 
         return GeminiBackend(**kwargs)
+    if provider == "openai":
+        from camel.llm.adapters.openai import OpenAIBackend  # noqa: PLC0415
+
+        return OpenAIBackend(**kwargs)
     raise ValueError(
         f"Unknown LLM provider: {provider!r}. "
-        "Supported providers: 'claude', 'gemini'."
+        "Supported providers: 'claude', 'gemini', 'openai'."
     )

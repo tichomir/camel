@@ -89,6 +89,14 @@ class _MockClaudeBackend:
         """Not used in P-LLM path — raises to catch accidental calls."""
         raise NotImplementedError("generate_structured should not be called in P-LLM path")
 
+    def get_backend_id(self) -> str:
+        """Return stable mock identifier."""
+        return "mock-claude:test-model"
+
+    def supports_structured_output(self) -> bool:
+        """Return True for mock."""
+        return True
+
 
 class _MockGeminiBackend:
     """Minimal LLMBackend mock resembling a Gemini adapter.
@@ -113,6 +121,47 @@ class _MockGeminiBackend:
     ) -> BaseModel:
         """Not used in P-LLM path — raises to catch accidental calls."""
         raise NotImplementedError("generate_structured should not be called in P-LLM path")
+
+    def get_backend_id(self) -> str:
+        """Return stable mock identifier."""
+        return "mock-gemini:test-model"
+
+    def supports_structured_output(self) -> bool:
+        """Return True for mock."""
+        return True
+
+
+class _MockOpenAIBackend:
+    """Minimal LLMBackend mock resembling an OpenAI adapter.
+
+    Behaviourally identical to :class:`_MockClaudeBackend`; exists as a
+    separate class so ``isinstance`` checks and type annotations can
+    distinguish the two.
+    """
+
+    def __init__(self, plan_source: str) -> None:
+        """Initialise with the plan returned on every generate call."""
+        self._plan_source = plan_source
+
+    async def generate(self, messages: list[Message], **kwargs: Any) -> str:
+        """Return a Markdown-fenced python block wrapping *plan_source*."""
+        return f"```python\n{self._plan_source}\n```"
+
+    async def generate_structured(
+        self,
+        messages: list[Message],
+        schema: type[BaseModel],
+    ) -> BaseModel:
+        """Not used in P-LLM path — raises to catch accidental calls."""
+        raise NotImplementedError("generate_structured should not be called in P-LLM path")
+
+    def get_backend_id(self) -> str:
+        """Return stable mock identifier."""
+        return "mock-openai:test-model"
+
+    def supports_structured_output(self) -> bool:
+        """Return True for mock."""
+        return True
 
 
 def get_test_backend(config: dict[str, Any]) -> Any:
@@ -144,18 +193,19 @@ def get_test_backend(config: dict[str, Any]) -> Any:
         When *provider* is not a recognised mock provider string.
     """
     env_provider = os.environ.get("CAMEL_TEST_BACKEND")
-    provider = env_provider if env_provider in ("mock_claude", "mock_gemini") else config[
-        "provider"
-    ]
+    valid_providers = ("mock_claude", "mock_gemini", "mock_openai")
+    provider = env_provider if env_provider in valid_providers else config["provider"]
     plan_source: str = config["plan_source"]
 
     if provider == "mock_claude":
         return _MockClaudeBackend(plan_source=plan_source)
     if provider == "mock_gemini":
         return _MockGeminiBackend(plan_source=plan_source)
+    if provider == "mock_openai":
+        return _MockOpenAIBackend(plan_source=plan_source)
     raise ValueError(
         f"Unknown test backend provider: {provider!r}. "
-        "Use 'mock_claude' or 'mock_gemini'."
+        "Use 'mock_claude', 'mock_gemini', or 'mock_openai'."
     )
 
 
@@ -238,6 +288,16 @@ class TestBackendProtocolConformance:
         backend = get_test_backend({"provider": "mock_gemini", "plan_source": "x = 1"})
         assert isinstance(backend, LLMBackend)
 
+    def test_mock_openai_is_llm_backend(self) -> None:
+        """_MockOpenAIBackend satisfies LLMBackend via isinstance check."""
+        backend = _MockOpenAIBackend(plan_source="x = 1")
+        assert isinstance(backend, LLMBackend)
+
+    def test_get_test_backend_openai_returns_llm_backend(self) -> None:
+        """get_test_backend('mock_openai') returns an LLMBackend."""
+        backend = get_test_backend({"provider": "mock_openai", "plan_source": "x = 1"})
+        assert isinstance(backend, LLMBackend)
+
     def test_unknown_provider_raises_value_error(self) -> None:
         """get_test_backend raises ValueError for unknown providers."""
         with pytest.raises(ValueError, match="Unknown test backend provider"):
@@ -302,16 +362,26 @@ class TestS02BackendSwap:
                 f"claude={c_rec.args}, gemini={g_rec.args}"
             )
 
+    def test_openai_trace_shape(self) -> None:
+        """OpenAI-mock produces a single send_email trace record."""
+        trace = self._trace_for_provider("mock_openai")
+        assert len(trace) == 1
+        assert trace[0].tool_name == "send_email"
+
     def test_swap_requires_only_config_change(self) -> None:
         """Changing only the provider config key produces the alternate backend."""
         config_claude = {"provider": "mock_claude", "plan_source": _S02_PLAN}
         config_gemini = {"provider": "mock_gemini", "plan_source": _S02_PLAN}
+        config_openai = {"provider": "mock_openai", "plan_source": _S02_PLAN}
         backend_claude = get_test_backend(config_claude)
         backend_gemini = get_test_backend(config_gemini)
-        # Different types — but both conform to LLMBackend.
+        backend_openai = get_test_backend(config_openai)
+        # All three are different types — but all conform to LLMBackend.
         assert type(backend_claude) is not type(backend_gemini)
+        assert type(backend_claude) is not type(backend_openai)
         assert isinstance(backend_claude, LLMBackend)
         assert isinstance(backend_gemini, LLMBackend)
+        assert isinstance(backend_openai, LLMBackend)
 
 
 # ---------------------------------------------------------------------------
@@ -377,16 +447,29 @@ class TestS04BackendSwap:
         gemini_trace = self._trace_for_provider("mock_gemini")
         assert [r.tool_name for r in claude_trace] == [r.tool_name for r in gemini_trace]
 
+    def test_openai_trace_length(self) -> None:
+        """OpenAI-mock produces a two-record trace."""
+        trace = self._trace_for_provider("mock_openai")
+        assert len(trace) == 2
+
+    def test_openai_trace_order(self) -> None:
+        """OpenAI-mock trace: get_email then send_email."""
+        trace = self._trace_for_provider("mock_openai")
+        assert trace[0].tool_name == "get_email"
+        assert trace[1].tool_name == "send_email"
+
     def test_traces_args_identical(self) -> None:
-        """Argument values are identical for both backends."""
+        """Argument values are identical for all three backends."""
         claude_trace = self._trace_for_provider("mock_claude")
         gemini_trace = self._trace_for_provider("mock_gemini")
-        for c_rec, g_rec in zip(claude_trace, gemini_trace):
+        openai_trace = self._trace_for_provider("mock_openai")
+        for c_rec, g_rec, o_rec in zip(claude_trace, gemini_trace, openai_trace):
             assert c_rec.args == g_rec.args
+            assert c_rec.args == o_rec.args
 
 
 # ---------------------------------------------------------------------------
-# Parametrised swap test across both scenarios and both providers
+# Parametrised swap test across both scenarios and all three providers
 # ---------------------------------------------------------------------------
 
 
@@ -410,7 +493,7 @@ class TestS04BackendSwap:
     ],
     ids=["S02", "S04"],
 )
-@pytest.mark.parametrize("provider", ["mock_claude", "mock_gemini"])
+@pytest.mark.parametrize("provider", ["mock_claude", "mock_gemini", "mock_openai"])
 def test_backend_swap_trace_shape(
     plan: str,
     tools: dict[str, Any],

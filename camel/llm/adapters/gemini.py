@@ -118,8 +118,33 @@ class GeminiBackend:
         return schema.model_validate(raw)
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Identity & capability methods
     # ------------------------------------------------------------------
+
+    def get_backend_id(self) -> str:
+        """Return a stable identifier for this backend instance.
+
+        Returns
+        -------
+        str
+            A string of the form ``"gemini:<model>"``,
+            e.g. ``"gemini:gemini-2.5-pro"``.
+        """
+        return f"gemini:{self._model_name}"
+
+    def supports_structured_output(self) -> bool:
+        """Return ``True`` — Gemini supports native structured output.
+
+        Uses ``response_mime_type="application/json"`` and
+        ``response_schema`` to constrain output at the API level, providing
+        schema-conformance guarantees without prompt engineering alone.
+
+        Returns
+        -------
+        bool
+            Always ``True`` for :class:`GeminiBackend`.
+        """
+        return True
 
     # ------------------------------------------------------------------
     # Unified LLMBackend protocol (generate / generate_structured)

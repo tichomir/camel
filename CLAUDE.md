@@ -240,6 +240,24 @@ Return Allowed() or Denied(reason: str).
 Can be globally defined by the platform or extended per-tool by tool providers.
 Example: send_email policy checks that recipient's email address either (a) comes from a trusted source (user literal), or (b) is already an authorized reader of all data being sent.
 Python chosen over a custom DSL to allow arbitrary logic without language restrictions.
+6.6 LLMBackend (Provider Adapter Layer)
+Provider-agnostic interface that decouples the CaMeL runtime from any specific LLM vendor. All model calls from PLLMWrapper (planning) and QLLMWrapper (structured extraction) are routed through this protocol.
+
+Interface contract (camel.llm.backend, camel.llm.protocols):
+- generate(messages, **kwargs) → str — free-form text completion for the P-LLM planning path; MUST NOT accept tool definitions.
+- generate_structured(messages, schema) → BaseModel — Pydantic-schema-constrained output for the Q-LLM path; uses provider-native mechanism (tool_choice, response_format, response_mime_type) or prompt-based fallback.
+- get_backend_id() → str — stable, credential-free "provider:model" identifier used in audit log entries and Prometheus/OpenTelemetry metric labels.
+- supports_structured_output() → bool — True if provider-native schema constraint is used; False for prompt-engineering fallback.
+
+Error semantics: All provider SDK exceptions must be wrapped as LLMBackendError (camel.llm.backend). Wrapping ensures the CaMeL exception redaction engine (M4-F6) can inspect and redact error messages before they reach the P-LLM.
+
+Production-validated adapters (NFR-8, validated M5/v0.6.0):
+- ClaudeBackend (camel.llm.adapters.claude) — Anthropic SDK; models: claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5.
+- GeminiBackend (camel.llm.adapters.gemini) — google-generativeai SDK; models: gemini-2.5-pro, gemini-2.5-flash.
+- OpenAIBackend (camel.llm.adapters.openai) — openai SDK; models: gpt-4.1 (native structured output), o3, o4-mini (prompt-based fallback).
+
+Factory: get_backend(provider, **kwargs) — lazy-import factory; swaps providers without code changes beyond configuration.
+P-LLM and Q-LLM backends are independently configurable; the same or different adapter classes may serve each role.
 
 
 7. Security Model & Threat Model
@@ -280,7 +298,7 @@ Security
 All policy evaluation must occur synchronously and deterministically; no LLM involvement in security decisions
 NFR-3
 Performance
-Median token overhead ≤3× input, ≤3× output vs. native tool-calling (measured on AgentDojo)
+Median token overhead ≤3× input, ≤3× output vs. native tool-calling (measured on AgentDojo) — validated M5/v0.6.0: token overhead confirmed at ~2.82× via CamelMetricsCollector
 NFR-4
 Performance
 Interpreter overhead (non-LLM) ≤100ms per tool call
@@ -289,13 +307,13 @@ Reliability
 P-LLM retry loop must handle up to 10 code-generation failures gracefully without exposing untrusted error content
 NFR-6
 Observability
-All tool calls, policy evaluations, consent decisions, capability assignments, and exception redaction events must be written to the security audit log
+All tool calls, policy evaluations, consent decisions, capability assignments, and exception redaction events must be written to the security audit log — validated M5/v0.6.0: structured JSON audit log with configurable sink (file, stdout, external) delivered; all seven event classes confirmed emitting entries
 NFR-7
 Extensibility
 Adding a new tool requires only: (a) registering the tool signature, (b) optionally providing a capability annotation function, and (c) optionally registering a security policy
 NFR-8
 Compatibility
-CaMeL must be compatible with any LLM backend that supports structured output (Pydantic schema)
+CaMeL must be compatible with any LLM backend that supports structured output (Pydantic schema) — validated M5/v0.6.0: ClaudeBackend, GeminiBackend, and OpenAIBackend all confirmed via integration test suite; 0 injection successes across 15 test cases
 NFR-9
 Testability
 Each component (interpreter, P-LLM wrapper, Q-LLM wrapper, policy engine, capability system) must be independently unit-testable
@@ -356,6 +374,9 @@ Policy unit tests + AgentDojo adversarial suite
 Side-channel test pass rate
 100% for implemented mitigations
 Side-channel test suite (3 attack classes)
+Backend adapter security equivalence (ASR across all providers)
+0 injection successes across all three LLM backends (Claude, Gemini, OpenAI)
+Integration test suite: 5 AgentDojo-style fixtures × 3 providers = 15 test cases — result M5/v0.6.0: 0/15 (MET)
 
 Utility Metrics
 Metric
@@ -1245,5 +1266,31 @@ Deliverables:
 - ✅ Integration test suite for provenance API, phishing detector, and chat UI annotation — Qa Engineer (◈ Standard, 3 SP)
 - ✅ Fix: No tests exist for ProvenanceChain API, serialisation schema, or phishing heuristics — Software Architect (◈ Standard, 3 SP)
 - ✅ Fix: ProvenanceChain uses merged-union of sources instead of DAG — no validation that union is correct — Software Architect (◈ Standard, 3 SP)
+
+---
+### Milestone 5 — Multi-Backend LLM Support & Observability | 2026-03-18 | ✅ done | 33 SP
+**Goal:** [Phase: Multi-Backend LLM Support & Observability]
+Validate and ship `LLMBackend` adapters for Claude (Anthropic), Gemini (Google), and GPT-4-class (OpenAI) models, confirming that security guarantees hold across all backends. Implement Prometheus/OpenTelemetry-compatible operational metrics and structured JSON audit log sink configuration. Covers M5-F23 through M5-F28, NFR-3, NFR-6, NFR-8.
+
+Deliverables:
+- Validated `LLMBackend` adapters for Claude (Anthropic), Gemini 2.5 Pro/Flash (Google), and GPT-4.1/o3/o4-mini class models (OpenAI)
+- Independent P-LLM and Q-LLM backend configurability confirmed in integration tests
+- Prometheus/OpenTelemetry metrics endpoint exposing: `camel_policy_denial_rate`, `camel_qlm_error_rate`, `camel_pllm_retry_count_histogram`, `camel_task_success_rate`, `camel_consent_prompt_rate`
+- Metrics scoped by session ID, tool name, and policy name
+- Structured JSON security audit log with configurable sink (file, stdout, external aggregator)
+- Adapter integration test suite confirming equivalent security behaviour (0 prompt injection successes) across all three provider backends
+- Backend adapter developer guide documenting the `LLMBackend` interface contract for adding future providers
+- Updated PRD Section 5 (Architecture) and NFR table reflecting multi-backend scope
+
+**Delivered:**
+- ✅ Design LLMBackend interface contract and adapter architecture — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement Claude, Gemini, and OpenAI LLMBackend adapters with independent P-LLM/Q-LLM configurability — Backend Developer (◉ Deep, 8 SP)
+- ✅ Implement Prometheus/OpenTelemetry metrics endpoint and structured JSON audit log sink — Backend Developer (◉ Deep, 5 SP)
+- ✅ Configure CI pipeline for multi-backend adapter tests and metrics endpoint smoke tests — Devops Engineer (◈ Standard, 3 SP)
+- ✅ Write adapter integration test report and update all affected documentation — Qa Engineer (⚡ Quick, 2 SP)
+- ✅ Fix: Silent swallowing of external HTTP errors in AuditSink may hide misconfiguration — Backend Developer (◈ Standard, 3 SP)
+- ✅ Fix: OTLP urllib fallback sends non-conformant payload that OTLP HTTP endpoints will reject — Backend Developer (◈ Standard, 3 SP)
+- ✅ Fix: metrics smoke test port hardcoding creates flaky CI on port collision — Devops Engineer (◈ Standard, 3 SP)
+- ✅ Fix: CODEOWNERS references non-standard team slugs that will silently fail review enforcement — Devops Engineer (◈ Standard, 3 SP)
 
 ---

@@ -48,6 +48,14 @@ class LLMBackend(Protocol):
     Implementations power the P-LLM planning loop.  They MAY support tool
     definitions via additional keyword arguments; the protocol captures only
     the minimal surface required by the runtime.
+
+    Multi-backend scope
+    -------------------
+    All production-validated backends satisfy this protocol:
+
+    - ``ClaudeBackend`` (Anthropic) — ``claude-opus-4-6``, ``claude-sonnet-4-6``
+    - ``GeminiBackend`` (Google) — ``gemini-2.5-pro``, ``gemini-2.5-flash``
+    - ``OpenAIBackend`` (OpenAI) — ``gpt-4.1``, ``o3``, ``o4-mini``
     """
 
     async def complete(
@@ -68,6 +76,32 @@ class LLMBackend(Protocol):
         -------
         str
             The model's text response.
+        """
+        ...
+
+    def get_backend_id(self) -> str:
+        """Return a stable, credential-free identifier for this backend.
+
+        Used in audit log entries and metrics labels to identify the
+        provider that handled a given request.
+
+        Returns
+        -------
+        str
+            A provider-scoped string, e.g. ``"claude:claude-opus-4-6"``.
+        """
+        ...
+
+    def supports_structured_output(self) -> bool:
+        """Return ``True`` if native structured output is supported.
+
+        Backends returning ``True`` use a provider-native schema-constrained
+        output mechanism rather than prompt engineering alone.
+
+        Returns
+        -------
+        bool
+            ``True`` for all production-validated CaMeL backends.
         """
         ...
 

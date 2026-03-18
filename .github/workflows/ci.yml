@@ -60,3 +60,268 @@ jobs:
 
       - name: Performance baseline — interpreter overhead (NFR-4)
         run: python scripts/benchmark_interpreter.py --verbose
+
+  # ── Adapter Integration Tests ────────────────────────────────────────────
+  # Runs on every PR — uses unittest.mock patches (no live API calls required).
+  # Each backend (Anthropic/Claude, Google/Gemini, OpenAI) is tested against
+  # the shared LLMBackend contract.  The final step confirms 0 injection
+  # successes across all three providers (15 adversarial fixture cases total).
+  adapter-integration-tests:
+    name: Adapter Integration Tests (Claude / Gemini / OpenAI)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install all LLM backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,all-backends]"
+
+      - name: Run adapter integration tests (mock SDK — no live API calls)
+        run: |
+          pytest -m integration \
+            tests/integration/test_multi_backend_adapters.py \
+            --tb=short -v \
+            --junitxml=adapter-integration-results.xml
+
+      - name: Upload adapter test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adapter-integration-results
+          path: adapter-integration-results.xml
+          retention-days: 14
+
+      - name: Assert zero prompt injection successes
+        # The parametrised injection tests (15 cases × 3 providers) must all
+        # pass.  If ANY injection keyword leaks into a schema-validated output
+        # the previous pytest step already fails; this step makes the gate
+        # explicit for release pipeline consumers.
+        run: |
+          echo "Adapter injection tests passed — 0 injection successes confirmed."
+
+  # ── Prometheus Metrics Smoke Test ────────────────────────────────────────
+  # Starts the CaMeL /metrics HTTP server, records all five instruments, then
+  # scrapes the endpoint and asserts every metric name is present.
+  metrics-smoke-test:
+    name: Prometheus Metrics Smoke Test (/metrics endpoint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run /metrics endpoint unit tests
+        run: |
+          pytest tests/test_observability.py::TestMetricsServer \
+            --tb=short -v
+
+      - name: Inline smoke test — start server, scrape /metrics, verify all five metrics
+        run: |
+          python - <<'PYEOF'
+          import sys
+          import urllib.request
+          from camel.observability.metrics import CamelMetricsCollector, start_metrics_server
+
+          collector = CamelMetricsCollector()
+          # Populate all five instruments so each appears in the output.
+          collector.record_policy_denial("ci-smoke", "send_email_policy", "send_email")
+          collector.record_qlm_error("ci-smoke", "extract_info")
+          collector.record_pllm_retry("ci-smoke", 1)
+          collector.record_task_completion("ci-smoke", success=True)
+          collector.record_consent_prompt("ci-smoke", "write_file")
+
+          server = start_metrics_server(port=0, collector=collector)
+          port = server.server_address[1]
+          try:
+              with urllib.request.urlopen(f"http://localhost:{port}/metrics", timeout=5) as resp:
+                  if resp.status != 200:
+                      print(f"ERROR: /metrics returned HTTP {resp.status}", file=sys.stderr)
+                      sys.exit(1)
+                  body = resp.read().decode("utf-8")
+
+              EXPECTED_METRICS = [
+                  "camel_policy_denial_rate",
+                  "camel_qlm_error_rate",
+                  "camel_pllm_retry_count_histogram",
+                  "camel_task_success_rate",
+                  "camel_consent_prompt_rate",
+              ]
+              missing = [m for m in EXPECTED_METRICS if m not in body]
+              if missing:
+                  print(f"ERROR: Missing metrics in /metrics response: {missing}", file=sys.stderr)
+                  print("Full /metrics body:", file=sys.stderr)
+                  print(body, file=sys.stderr)
+                  sys.exit(1)
+
+              print("OK: All five metrics present in /metrics response.")
+              for m in EXPECTED_METRICS:
+                  print(f"  ✓ {m}")
+          finally:
+              server.shutdown()
+          PYEOF
+
+  # ── Audit Log Sink Validation ─────────────────────────────────────────────
+  # Runs a short task scenario and validates structured JSON output to both
+  # stdout and a temporary file, asserting all required fields are present.
+  audit-log-sink-validation:
+    name: Audit Log Sink Validation (stdout + file JSON)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run audit sink unit tests (stdout + file modes)
+        run: |
+          pytest \
+            tests/test_observability.py::TestAuditSinkStdout \
+            tests/test_observability.py::TestAuditSinkFile \
+            tests/test_observability.py::TestNFR6Compliance \
+            --tb=short -v
+
+      - name: Validate stdout JSON output (short task scenario)
+        run: |
+          python - <<'PYEOF'
+          import io
+          import json
+          import sys
+          from camel.observability.audit_sink import (
+              AuditLogRecord,
+              AuditSink,
+              AuditSinkConfig,
+              SinkMode,
+          )
+
+          REQUIRED_FIELDS = [
+              "timestamp", "session_id", "event_type", "tool_name",
+              "policy_name", "decision", "capability_summary", "backend_id",
+          ]
+
+          # --- stdout validation ---
+          original_stdout = sys.stdout
+          captured = io.StringIO()
+          sys.stdout = captured
+
+          sink = AuditSink(AuditSinkConfig(mode=SinkMode.STDOUT))
+          # Simulate a short task scenario: tool_call → policy_evaluation → task_completion
+          for event in [
+              dict(event_type="tool_call", decision="Allowed"),
+              dict(event_type="policy_evaluation", decision="Denied"),
+              dict(event_type="task_completion", decision="TaskSuccess"),
+          ]:
+              sink.write(AuditLogRecord(
+                  session_id="ci-audit-stdout",
+                  tool_name="send_email",
+                  policy_name="send_email_policy",
+                  capability_summary="sources={'User literal'}, readers=Public",
+                  backend_id="claude:claude-opus-4-6",
+                  **event,
+              ))
+
+          sys.stdout = original_stdout
+          lines = [ln for ln in captured.getvalue().strip().splitlines() if ln]
+
+          if len(lines) != 3:
+              print(f"ERROR: Expected 3 stdout JSON lines, got {len(lines)}", file=sys.stderr)
+              sys.exit(1)
+
+          for line in lines:
+              record = json.loads(line)
+              for field in REQUIRED_FIELDS:
+                  if field not in record:
+                      print(f"ERROR: Missing field '{field}' in stdout record", file=sys.stderr)
+                      sys.exit(1)
+
+          print("OK: stdout JSON audit log — 3 records, all required fields present.")
+          PYEOF
+
+      - name: Validate file JSON output (temp file in CI)
+        run: |
+          python - <<'PYEOF'
+          import json
+          import os
+          import sys
+          import tempfile
+          from camel.observability.audit_sink import (
+              AuditLogRecord,
+              AuditSink,
+              AuditSinkConfig,
+              SinkMode,
+          )
+
+          REQUIRED_FIELDS = [
+              "timestamp", "session_id", "event_type", "tool_name",
+              "policy_name", "decision", "capability_summary", "backend_id",
+          ]
+
+          with tempfile.NamedTemporaryFile(
+              mode="w", suffix=".log", delete=False, dir="/tmp"
+          ) as f:
+              log_path = f.name
+
+          try:
+              sink = AuditSink(AuditSinkConfig(mode=SinkMode.FILE, file_path=log_path))
+              for event in [
+                  dict(event_type="tool_call", decision="Allowed"),
+                  dict(event_type="policy_evaluation", decision="Denied"),
+              ]:
+                  sink.write(AuditLogRecord(
+                      session_id="ci-audit-file",
+                      tool_name="write_file",
+                      policy_name="write_file_policy",
+                      capability_summary="sources={'get_last_email'}, readers=Public",
+                      backend_id="gemini:gemini-2.5-pro",
+                      **event,
+                  ))
+
+              lines = [
+                  ln for ln in open(log_path, encoding="utf-8").read().strip().splitlines() if ln
+              ]
+
+              if len(lines) != 2:
+                  print(f"ERROR: Expected 2 file JSON lines, got {len(lines)}", file=sys.stderr)
+                  sys.exit(1)
+
+              for line in lines:
+                  record = json.loads(line)
+                  for field in REQUIRED_FIELDS:
+                      if field not in record:
+                          print(
+                              f"ERROR: Missing field '{field}' in file record", file=sys.stderr
+                          )
+                          sys.exit(1)
+
+              print(f"OK: file JSON audit log — 2 records, all required fields present.")
+              print(f"    Log path: {log_path}")
+          finally:
+              if os.path.exists(log_path):
+                  os.unlink(log_path)
+          PYEOF

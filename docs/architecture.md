@@ -218,7 +218,37 @@ Expressions: constants, Name, BinOp, UnaryOp, BoolOp, Compare,
 
 **Module:** `camel/llm/adapters/` | **ADR:** [005](adr/005-p-llm-wrapper-architecture.md)
 
-Provider-agnostic interface via the `LLMBackend` Protocol:
+Provider-agnostic interface via the `LLMBackend` Protocol.  The abstraction
+layer sits between the CaMeL runtime (P-LLM wrapper, orchestrator, Q-LLM
+wrapper) and provider-specific SDKs:
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                        CaMeL Runtime                           │
+│  PLLMWrapper          CaMeLOrchestrator          QLLMWrapper   │
+│     │ complete()             │                      │          │
+│     │                        │              structured_complete│
+│     ▼                        ▼                      ▼          │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │             LLMBackend Protocol Layer                   │   │
+│  │  generate()  generate_structured()  get_backend_id()   │   │
+│  │  supports_structured_output()                          │   │
+│  └──────┬──────────────┬────────────────────┬────────────┘   │
+└─────────┼──────────────┼────────────────────┼────────────────┘
+          │              │                    │
+          ▼              ▼                    ▼
+  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+  │ClaudeBackend │ │GeminiBackend │ │OpenAIBackend │
+  │  (Anthropic) │ │  (Google)    │ │  (OpenAI)    │
+  │ anthropic SDK│ │ google-gen-  │ │  openai SDK  │
+  │              │ │ erativeai SDK│ │              │
+  └──────────────┘ └──────────────┘ └──────────────┘
+          │              │                    │
+          ▼              ▼                    ▼
+  Anthropic API    Google AI API        OpenAI API
+```
+
+**Full `LLMBackend` Protocol interface:**
 
 ```python
 class LLMBackend(Protocol):
@@ -226,10 +256,26 @@ class LLMBackend(Protocol):
     async def generate_structured(
         self, messages: list[Message], schema: type[BaseModel]
     ) -> BaseModel: ...
+    def get_backend_id(self) -> str: ...
+    def supports_structured_output(self) -> bool: ...
 ```
 
-Concrete adapters: `ClaudeBackend` (Anthropic), `GeminiBackend` (Google).  Backends are
-interchangeable without code changes beyond configuration.
+**Validated backends (NFR-8):**
+
+| Class | Provider | SDK | Validated Models | Structured Output |
+|---|---|---|---|---|
+| `ClaudeBackend` | Anthropic | `anthropic>=0.25` | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5` | Native (`tool_choice` forced) |
+| `GeminiBackend` | Google | `google-generativeai>=0.7` | `gemini-2.5-pro`, `gemini-2.5-flash` | Native (`response_mime_type`) |
+| `OpenAIBackend` | OpenAI | `openai>=1.30` | `gpt-4.1`, `o3`, `o4-mini` | Native for GPT-4.1/4o; prompt fallback for o3/o4-mini |
+
+Backends are interchangeable without code changes beyond configuration.  The
+`get_backend` factory selects the concrete adapter by provider string.  P-LLM
+and Q-LLM backends may be configured independently (e.g. a large model for
+planning, a smaller model for structured extraction).
+
+See the [Backend Adapter Developer Guide](backend-adapter-developer-guide.md)
+for the full interface contract and a skeleton adapter example for adding
+future providers.
 
 ### 3.5 Execution Loop Orchestrator
 
@@ -1818,7 +1864,7 @@ interp = CaMeLInterpreter(
 | NFR-4 | ≤100ms interpreter overhead per tool call (including policy evaluation) | `scripts/benchmark_interpreter.py` |
 | NFR-6 | All policy evaluation outcomes (Allowed and Denied), consent decisions (UserApproved, UserApprovedForSession, UserRejected, CacheHit), exception redactions, and allowlist violations written as immutable `AuditLogEntry` records to the security audit log.  Each consent-related entry includes `tool_name`, `outcome`, `reason`, `timestamp`, `consent_decision`, and `argument_summary`. | `test_e2e_enforcement.py` log-completeness assertions; `ForbiddenImportEvent` / `ForbiddenNameEvent` emission tests; ADR-012 consent decision audit trail tests |
 | NFR-7 | Adding a new tool requires only: (a) constructing a `Tool(name, fn)` dataclass, (b) optionally providing a `capability_annotation`, and (c) optionally appending policy functions to `Tool.policies`.  No changes to core interpreter or policy engine code. | `camel_security/tool.py` — `Tool` dataclass design; `camel/tools/registry.py` — `ToolRegistry.register()` |
-| NFR-8 | `CaMeLAgent` is compatible with any LLM backend that satisfies the `LLMBackend` protocol (implements `generate` and `generate_structured`).  Provider switching requires only changing the backend object passed to `CaMeLAgent(p_llm=..., q_llm=...)`. | `tests/test_multi_backend_swap.py`; `tests/test_backend_swap.py` |
+| NFR-8 | `CaMeLAgent` is compatible with any LLM backend satisfying the `LLMBackend` protocol (`generate`, `generate_structured`, `get_backend_id`, `supports_structured_output`).  Provider switching requires only changing the backend object passed to `CaMeLAgent(p_llm=..., q_llm=...)`.  **Validated backends:** Claude (Anthropic) — `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`; Gemini (Google) — `gemini-2.5-pro`, `gemini-2.5-flash`; OpenAI — `gpt-4.1`, `o3`, `o4-mini`. | `tests/test_multi_backend_swap.py`; `tests/test_backend_swap.py`; `camel/llm/adapters/` |
 | NFR-9 | Policy engine, capability system, enforcement hook, `PolicyTestRunner`, `CaMeLValueBuilder`, and `PolicySimulator` are all independently unit-testable without a live interpreter, LLM, or network connection. | `tests/harness/policy_harness.py`, `tests/test_policy.py`, `camel/testing/` unit tests |
 
 ---

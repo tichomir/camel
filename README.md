@@ -88,7 +88,7 @@ mechanics, and the security model.
 | Dependency graph (NORMAL + STRICT modes) | `camel.dependency_graph` | ✅ Released |
 | P-LLM wrapper (plan generation, isolation contract) | `camel.llm.p_llm` | ✅ Released |
 | Q-LLM wrapper (schema-validated structured output) | `camel.llm.qllm` | ✅ Released |
-| LLM backend adapters (Claude, Gemini) | `camel.llm.adapters` | ✅ Released |
+| LLM backend adapters (Claude, Gemini, OpenAI) | `camel.llm.adapters` | ✅ Released |
 | Execution loop orchestrator (retry, redaction, trace) | `camel.execution_loop` | ✅ Released |
 | Isolation verification test harness | `tests/harness/` | ✅ Released |
 | Capability assignment engine (tool annotations) | `camel.capabilities` | ✅ Released |
@@ -193,7 +193,8 @@ for record in result.trace:
 | Document | Description |
 |---|---|
 | [API Reference](docs/api/index.md) | M2/M3 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop, Policy Engine, Capabilities |
-| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine |
+| [Backend Adapter Developer Guide](docs/backend-adapter-developer-guide.md) | Interface contract, error semantics, P-LLM vs Q-LLM role config, credential injection, skeleton adapter example for adding new providers |
+| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine, multi-backend adapter layer |
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
 | [Policy Authoring Tutorial](docs/policy-authoring-tutorial.md) | Step-by-step guide: `CaMeLValueBuilder`, `PolicyTestRunner`, `PolicySimulator`; worked examples for `send_email` and `write_file` |
 | [Consent Handler Integration Guide](docs/consent-handler-integration.md) | Customising the consent UX: web UI, mobile, asyncio, session cache, `argument_hash` computation |
