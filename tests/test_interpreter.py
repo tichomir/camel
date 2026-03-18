@@ -763,7 +763,7 @@ class TestToolCalls:
     def test_builtin_call_str(self):
         i = _interp()
         i.exec("n = 42")
-        i.exec('s = str(n)')
+        i.exec("s = str(n)")
         assert i.get("s").raw == "42"
 
     def test_builtin_caps_inherit_from_args(self):
@@ -832,9 +832,7 @@ class TestPolicyEngine:
         def my_tool():
             return wrap("ok")
 
-        i = CaMeLInterpreter(
-            tools={"my_tool": my_tool}, policy_engine=_PolicyDeny("blocked!")
-        )
+        i = CaMeLInterpreter(tools={"my_tool": my_tool}, policy_engine=_PolicyDeny("blocked!"))
         with pytest.raises(PolicyViolationError) as exc_info:
             i.exec("r = my_tool()")
         assert exc_info.value.tool_name == "my_tool"
@@ -924,9 +922,7 @@ class TestStrictMode:
         def secret():
             return wrap(True, sources=frozenset({"secret_src"}), readers=frozenset({"r"}))
 
-        i = CaMeLInterpreter(
-            tools={"secret": secret}, mode=ExecutionMode.STRICT
-        )
+        i = CaMeLInterpreter(tools={"secret": secret}, mode=ExecutionMode.STRICT)
         i.exec("cond = secret()")
         i.exec("""
 if cond:
@@ -941,9 +937,7 @@ else:
         def get_items():
             return wrap([1, 2, 3], sources=frozenset({"iter_src"}))
 
-        i = CaMeLInterpreter(
-            tools={"get_items": get_items}, mode=ExecutionMode.STRICT
-        )
+        i = CaMeLInterpreter(tools={"get_items": get_items}, mode=ExecutionMode.STRICT)
         i.exec("items = get_items()")
         i.exec("""
 result = 0
@@ -956,9 +950,7 @@ for n in items:
         def secret():
             return wrap(True, sources=frozenset({"secret_src"}))
 
-        i = CaMeLInterpreter(
-            tools={"secret": secret}, mode=ExecutionMode.NORMAL
-        )
+        i = CaMeLInterpreter(tools={"secret": secret}, mode=ExecutionMode.NORMAL)
         i.exec("cond = secret()")
         i.exec("""
 if cond:
@@ -980,8 +972,7 @@ class TestUnsupportedSyntax:
             i.exec(code)
         if expected_node_type:
             assert exc_info.value.node_type == expected_node_type, (
-                f"Expected node_type={expected_node_type!r}, "
-                f"got {exc_info.value.node_type!r}"
+                f"Expected node_type={expected_node_type!r}, got {exc_info.value.node_type!r}"
             )
 
     def test_while(self):

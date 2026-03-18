@@ -144,9 +144,7 @@ class TestClaudeBackendGenerate(unittest.IsolatedAsyncioTestCase):
         from camel.llm.adapters.claude import ClaudeBackend
 
         mock_anthropic, mock_client = _make_anthropic_mock()
-        mock_client.messages.create = AsyncMock(
-            side_effect=RuntimeError("network timeout")
-        )
+        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("network timeout"))
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             backend = ClaudeBackend(api_key="test-key")
@@ -195,9 +193,7 @@ class TestClaudeBackendGenerateStructured(unittest.IsolatedAsyncioTestCase):
         from camel.llm.adapters.claude import ClaudeBackend
 
         mock_anthropic, mock_client = _make_anthropic_mock()
-        block = _make_tool_use_block(
-            input_data={"title": "AI Safety", "word_count": 42}
-        )
+        block = _make_tool_use_block(input_data={"title": "AI Safety", "word_count": 42})
         mock_response = MagicMock()
         mock_response.content = [block]
         mock_client.messages.create = AsyncMock(return_value=mock_response)
@@ -217,9 +213,7 @@ class TestClaudeBackendGenerateStructured(unittest.IsolatedAsyncioTestCase):
         from camel.llm.adapters.claude import ClaudeBackend
 
         mock_anthropic, mock_client = _make_anthropic_mock()
-        block = _make_tool_use_block(
-            input_data={"title": "Test", "word_count": 1}
-        )
+        block = _make_tool_use_block(input_data={"title": "Test", "word_count": 1})
         mock_response = MagicMock()
         mock_response.content = [block]
         mock_client.messages.create = AsyncMock(return_value=mock_response)
@@ -243,9 +237,7 @@ class TestClaudeBackendGenerateStructured(unittest.IsolatedAsyncioTestCase):
         from camel.llm.adapters.claude import ClaudeBackend
 
         mock_anthropic, mock_client = _make_anthropic_mock()
-        block = _make_tool_use_block(
-            input_data={"title": "X", "word_count": 0}
-        )
+        block = _make_tool_use_block(input_data={"title": "X", "word_count": 0})
         mock_response = MagicMock()
         mock_response.content = [block]
         mock_client.messages.create = AsyncMock(return_value=mock_response)
@@ -270,9 +262,7 @@ class TestClaudeBackendGenerateStructured(unittest.IsolatedAsyncioTestCase):
         from camel.llm.adapters.claude import ClaudeBackend
 
         mock_anthropic, mock_client = _make_anthropic_mock()
-        mock_client.messages.create = AsyncMock(
-            side_effect=ConnectionError("API unavailable")
-        )
+        mock_client.messages.create = AsyncMock(side_effect=ConnectionError("API unavailable"))
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             backend = ClaudeBackend(api_key="test-key")
@@ -322,9 +312,7 @@ class TestGeminiBackendGenerate(unittest.IsolatedAsyncioTestCase):
 
         mock_google, mock_genai, _ = _make_genai_mocks()
         mock_model = MagicMock()
-        mock_model.generate_content_async = AsyncMock(
-            side_effect=OSError("quota exceeded")
-        )
+        mock_model.generate_content_async = AsyncMock(side_effect=OSError("quota exceeded"))
         mock_genai.GenerativeModel.return_value = mock_model
 
         modules = {
@@ -489,9 +477,7 @@ class TestGetBackend(unittest.TestCase):
         mock_anthropic.AsyncAnthropic.return_value = MagicMock()
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            backend = get_backend(
-                "claude", api_key="test-key", model="claude-haiku-4-5-20251001"
-            )
+            backend = get_backend("claude", api_key="test-key", model="claude-haiku-4-5-20251001")
 
         self.assertEqual(backend._model, "claude-haiku-4-5-20251001")
 
@@ -524,15 +510,11 @@ class TestLLMBackendProtocol(unittest.TestCase):
         class _FakeBackend:
             """Minimal duck-typed backend for protocol check."""
 
-            async def generate(
-                self, messages: list[Any], **kwargs: Any
-            ) -> str:
+            async def generate(self, messages: list[Any], **kwargs: Any) -> str:
                 """Stub generate."""
                 return ""
 
-            async def generate_structured(
-                self, messages: list[Any], schema: type[Any]
-            ) -> Any:
+            async def generate_structured(self, messages: list[Any], schema: type[Any]) -> Any:
                 """Stub generate_structured."""
                 return schema()
 
@@ -552,9 +534,7 @@ class TestLLMBackendProtocol(unittest.TestCase):
         class _Incomplete:
             """Missing generate() method."""
 
-            async def generate_structured(
-                self, messages: list[Any], schema: type[Any]
-            ) -> Any:
+            async def generate_structured(self, messages: list[Any], schema: type[Any]) -> Any:
                 """Only structured."""
                 return schema()
 

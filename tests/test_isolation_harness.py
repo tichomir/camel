@@ -182,9 +182,7 @@ async def test_isolation_harness(
             raise
 
     # Sanity check: execution result is present.
-    assert isinstance(result, ExecutionResult), (
-        f"Expected ExecutionResult; got {type(result)!r}"
-    )
+    assert isinstance(result, ExecutionResult), f"Expected ExecutionResult; got {type(result)!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +222,7 @@ async def test_retry_isolation_i3(
     # There must be at least 2 recorded generate() calls (initial + retry).
     generate_calls = [c for c in recording.recorded_calls if c.method == "generate"]
     assert len(generate_calls) >= 2, (
-        f"Expected at least 2 generate() calls (initial + retry); "
-        f"got {len(generate_calls)}"
+        f"Expected at least 2 generate() calls (initial + retry); got {len(generate_calls)}"
     )
 
     # I-3: retry prompt must not contain the tool return sentinel.

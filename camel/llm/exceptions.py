@@ -43,6 +43,5 @@ class NotEnoughInformationError(Exception):
         # drafts was removed to prevent callers from accidentally forwarding
         # untrusted content into the exception string (see ADR-006 §4).
         super().__init__(
-            f"Q-LLM reported insufficient information to populate "
-            f"{schema_type.__name__!r}"
+            f"Q-LLM reported insufficient information to populate {schema_type.__name__!r}"
         )

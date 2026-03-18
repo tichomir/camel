@@ -176,9 +176,7 @@ class CodeBlockNotFoundError(PLLMError):
 
     def __init__(self, response: str) -> None:
         self.response = response
-        super().__init__(
-            "No ```python … ``` fenced code block found in P-LLM response."
-        )
+        super().__init__("No ```python … ``` fenced code block found in P-LLM response.")
 
 
 class PLLMRetryExhaustedError(PLLMError):
@@ -587,9 +585,7 @@ class PLLMWrapper:
                 messages.append(
                     {
                         "role": "user",
-                        "content": _build_error_feedback(
-                            previous_error_type, previous_lineno
-                        ),
+                        "content": _build_error_feedback(previous_error_type, previous_lineno),
                     }
                 )
 

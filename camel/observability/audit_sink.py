@@ -312,8 +312,13 @@ class AuditSink:
             fields.  Extra keys are stored in ``extra``.
         """
         required = {
-            "session_id", "event_type", "tool_name", "policy_name",
-            "decision", "capability_summary", "backend_id",
+            "session_id",
+            "event_type",
+            "tool_name",
+            "policy_name",
+            "decision",
+            "capability_summary",
+            "backend_id",
         }
         base: dict[str, Any] = {}
         extra: dict[str, Any] = {}
@@ -416,10 +421,10 @@ def _config_from_env() -> AuditSinkConfig:
     if raw == "stdout" or not raw:
         return AuditSinkConfig(mode=SinkMode.STDOUT)
     if raw.startswith("file:"):
-        path = raw[len("file:"):]
+        path = raw[len("file:") :]
         return AuditSinkConfig(mode=SinkMode.FILE, file_path=path)
     if raw.startswith("external:"):
-        url = raw[len("external:"):]
+        url = raw[len("external:") :]
         return AuditSinkConfig(mode=SinkMode.EXTERNAL, external_url=url, auth_header=auth_header)
 
     # Default fallback — treat unknown values as stdout.

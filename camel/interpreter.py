@@ -171,10 +171,7 @@ class UnsupportedSyntaxError(Exception):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        return (
-            f"Unsupported AST node {self.node_type!r} at line {self.lineno}: "
-            f"{self.message}"
-        )
+        return f"Unsupported AST node {self.node_type!r} at line {self.lineno}: {self.message}"
 
 
 # ---------------------------------------------------------------------------
@@ -840,8 +837,7 @@ class CaMeLInterpreter:
         """
         if policy_engine is not None and conflict_resolver is not None:
             raise ValueError(
-                "policy_engine and conflict_resolver are mutually exclusive; "
-                "supply at most one."
+                "policy_engine and conflict_resolver are mutually exclusive; supply at most one."
             )
         if (
             enforcement_mode is EnforcementMode.PRODUCTION
@@ -979,9 +975,7 @@ class CaMeLInterpreter:
             If *value* is not a :class:`~camel.value.CaMeLValue` instance.
         """
         if not isinstance(value, CaMeLValue):
-            raise TypeError(
-                f"seed: expected CaMeLValue, got {type(value).__name__!r}"
-            )
+            raise TypeError(f"seed: expected CaMeLValue, got {type(value).__name__!r}")
         self._store[name] = value
 
     def set_mode(self, mode: ExecutionMode | str) -> None:
@@ -1186,10 +1180,7 @@ class CaMeLInterpreter:
             for stmt in stmts:
                 self._exec_statement(stmt, current_ctx)
                 # M4-F3/F4: in STRICT mode, check for Q-LLM call signal.
-                if (
-                    self._mode is ExecutionMode.STRICT
-                    and self._last_qllm_result_cv is not None
-                ):
+                if self._mode is ExecutionMode.STRICT and self._last_qllm_result_cv is not None:
                     qllm_cv = self._last_qllm_result_cv
                     self._last_qllm_result_cv = None  # consume the signal
                     # Update capability context for all subsequent statements.
@@ -1446,9 +1437,7 @@ class CaMeLInterpreter:
         # Capture inner dep-ctx before entering the loop so M4-F9 can attach
         # it to any exception that propagates out of the loop body.
         _loop_inner_dep_ctx: frozenset[str] = (
-            self._dep_ctx_stack[-1]
-            if self._mode == ExecutionMode.STRICT
-            else frozenset()
+            self._dep_ctx_stack[-1] if self._mode == ExecutionMode.STRICT else frozenset()
         )
         try:
             for idx, element_raw in enumerate(iter_cv.raw):
@@ -1463,10 +1452,7 @@ class CaMeLInterpreter:
                     # M4-F9: attach loop-iterable dependency metadata to the
                     # exception when the iterable has non-public provenance and
                     # the interpreter is in STRICT mode.
-                    if (
-                        self._mode is ExecutionMode.STRICT
-                        and self._is_non_public(iter_cv)
-                    ):
+                    if self._mode is ExecutionMode.STRICT and self._is_non_public(iter_cv):
                         _body_exc.__loop_iter_deps__ = _loop_inner_dep_ctx  # type: ignore[attr-defined]
                         _body_exc.__loop_iter_caps__ = inner_ctx2  # type: ignore[attr-defined]
                     raise
@@ -1877,9 +1863,7 @@ class CaMeLInterpreter:
 
                     if self._conflict_resolver is not None:
                         # --- Three-tier conflict resolver path (ADR-011) ---
-                        merged = self._conflict_resolver.evaluate(
-                            name, kwargs_mapping
-                        )
+                        merged = self._conflict_resolver.evaluate(name, kwargs_mapping)
                         policy_result = merged.outcome
                         _auth_tier: str | None = (
                             merged.authoritative_tier.value
@@ -1896,17 +1880,13 @@ class CaMeLInterpreter:
                                         tool_name=name,
                                         outcome="Denied",
                                         reason=denial_reason,
-                                        timestamp=datetime.now(
-                                            UTC
-                                        ).isoformat(),
+                                        timestamp=datetime.now(UTC).isoformat(),
                                         consent_decision=None,
                                         authoritative_tier=_auth_tier,
                                         non_overridable_denial=True,
                                     )
                                 )
-                                raise PolicyViolationError(
-                                    tool_name=name, reason=denial_reason
-                                )
+                                raise PolicyViolationError(tool_name=name, reason=denial_reason)
                             # overridable denial: same consent flow as
                             # flat registry
                             if self._enforcement_mode is EnforcementMode.PRODUCTION:
@@ -1930,9 +1910,7 @@ class CaMeLInterpreter:
                                             tool_name=name,
                                             outcome="Denied",
                                             reason=denial_reason,
-                                            timestamp=datetime.now(
-                                                UTC
-                                            ).isoformat(),
+                                            timestamp=datetime.now(UTC).isoformat(),
                                             consent_decision="UserApproved",
                                             authoritative_tier=_auth_tier,
                                             non_overridable_denial=False,
@@ -1945,9 +1923,7 @@ class CaMeLInterpreter:
                                             tool_name=name,
                                             outcome="Denied",
                                             reason=denial_reason,
-                                            timestamp=datetime.now(
-                                                UTC
-                                            ).isoformat(),
+                                            timestamp=datetime.now(UTC).isoformat(),
                                             consent_decision="UserRejected",
                                             authoritative_tier=_auth_tier,
                                             non_overridable_denial=False,
@@ -1964,26 +1940,20 @@ class CaMeLInterpreter:
                                         tool_name=name,
                                         outcome="Denied",
                                         reason=denial_reason,
-                                        timestamp=datetime.now(
-                                            UTC
-                                        ).isoformat(),
+                                        timestamp=datetime.now(UTC).isoformat(),
                                         consent_decision=None,
                                         authoritative_tier=_auth_tier,
                                         non_overridable_denial=False,
                                     )
                                 )
-                                raise PolicyViolationError(
-                                    tool_name=name, reason=denial_reason
-                                )
+                                raise PolicyViolationError(tool_name=name, reason=denial_reason)
                         else:
                             self._audit_log.append(
                                 AuditLogEntry(
                                     tool_name=name,
                                     outcome="Allowed",
                                     reason=None,
-                                    timestamp=datetime.now(
-                                        UTC
-                                    ).isoformat(),
+                                    timestamp=datetime.now(UTC).isoformat(),
                                     consent_decision=None,
                                     authoritative_tier=_auth_tier,
                                     non_overridable_denial=False,
@@ -1995,9 +1965,7 @@ class CaMeLInterpreter:
                             )
                     else:
                         # --- Flat registry path (ADR-009) ---
-                        policy_result = self._policy_engine.evaluate(
-                            name, kwargs_mapping
-                        )
+                        policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
                         if not policy_result.is_allowed():
                             denial_reason = str(policy_result.reason)
                             if self._enforcement_mode is EnforcementMode.PRODUCTION:
@@ -2022,9 +1990,7 @@ class CaMeLInterpreter:
                                             tool_name=name,
                                             outcome="Denied",
                                             reason=denial_reason,
-                                            timestamp=datetime.now(
-                                                UTC
-                                            ).isoformat(),
+                                            timestamp=datetime.now(UTC).isoformat(),
                                             consent_decision="UserApproved",
                                         )
                                     )
@@ -2035,9 +2001,7 @@ class CaMeLInterpreter:
                                             tool_name=name,
                                             outcome="Denied",
                                             reason=denial_reason,
-                                            timestamp=datetime.now(
-                                                UTC
-                                            ).isoformat(),
+                                            timestamp=datetime.now(UTC).isoformat(),
                                             consent_decision="UserRejected",
                                         )
                                     )
@@ -2053,24 +2017,18 @@ class CaMeLInterpreter:
                                         tool_name=name,
                                         outcome="Denied",
                                         reason=denial_reason,
-                                        timestamp=datetime.now(
-                                            UTC
-                                        ).isoformat(),
+                                        timestamp=datetime.now(UTC).isoformat(),
                                         consent_decision=None,
                                     )
                                 )
-                                raise PolicyViolationError(
-                                    tool_name=name, reason=denial_reason
-                                )
+                                raise PolicyViolationError(tool_name=name, reason=denial_reason)
                         else:
                             self._audit_log.append(
                                 AuditLogEntry(
                                     tool_name=name,
                                     outcome="Allowed",
                                     reason=None,
-                                    timestamp=datetime.now(
-                                        UTC
-                                    ).isoformat(),
+                                    timestamp=datetime.now(UTC).isoformat(),
                                     consent_decision=None,
                                     provenance_chains={
                                         k: build_provenance_chain(k, v).to_dict()
@@ -2094,8 +2052,7 @@ class CaMeLInterpreter:
                     raise
                 if not isinstance(result_cv, CaMeLValue):
                     raise TypeError(
-                        f"Tool {name!r} returned {type(result_cv).__name__!r}; "
-                        f"expected CaMeLValue"
+                        f"Tool {name!r} returned {type(result_cv).__name__!r}; expected CaMeLValue"
                     )
                 # M4-F3/F4: if this is a Q-LLM tool, set the signal so that
                 # _exec_statements can taint subsequent statements in STRICT
@@ -2126,9 +2083,7 @@ class CaMeLInterpreter:
                 }
                 if not _f15_untrusted:
                     # Also check dep graph for indirect escalation paths.
-                    _f15_untrusted = set(
-                        self._collect_untrusted_dep_sources(name)
-                    )
+                    _f15_untrusted = set(self._collect_untrusted_dep_sources(name))
                 if _f15_untrusted:
                     _f15_dep_chain = self._build_dep_chain(stored_cv, name)
                     _f15_warning = DataToControlFlowWarning(
@@ -2735,11 +2690,7 @@ class CaMeLInterpreter:
         func_node:
             The AST func expression node, used to extract the candidate name.
         """
-        tool_name_candidate: str | None = (
-            func_node.id
-            if isinstance(func_node, ast.Name)
-            else None
-        )
+        tool_name_candidate: str | None = func_node.id if isinstance(func_node, ast.Name) else None
         audit_event.elevated_consent_triggered = True
 
         if self._enforcement_mode is EnforcementMode.EVALUATION:
@@ -2802,9 +2753,7 @@ class CaMeLInterpreter:
             return
 
         # Determine context_source from the active source stack.
-        active_sources: set[str] = {
-            src for src in self._dep_ctx_source_stack if src
-        }
+        active_sources: set[str] = {src for src in self._dep_ctx_source_stack if src}
         if len(active_sources) == 0:
             return  # No STRICT context active — should not reach here.
         elif len(active_sources) == 1:

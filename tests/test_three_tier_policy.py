@@ -39,9 +39,7 @@ def _allow(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyRe
     return Allowed()
 
 
-def _deny(
-    tool_name: str, kwargs: Mapping[str, CaMeLValue]
-) -> SecurityPolicyResult:
+def _deny(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
     """Policy function that always denies."""
     return Denied("always denied")
 
@@ -51,9 +49,7 @@ def _deny_reason(
 ) -> object:
     """Factory returning a denial policy with a custom reason."""
 
-    def _policy(
-        tool_name: str, kwargs: Mapping[str, CaMeLValue]
-    ) -> SecurityPolicyResult:
+    def _policy(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
         return Denied(reason)
 
     _policy.__name__ = f"deny_{reason}"
@@ -106,9 +102,7 @@ class TestTieredPolicyRegistryValidation:
         """Tool-Provider tier must reject non_overridable=True."""
         reg = TieredPolicyRegistry()
         with pytest.raises(ValueError, match="non_overridable"):
-            reg.register(
-                "tool", _allow, PolicyTier.TOOL_PROVIDER, non_overridable=True
-            )
+            reg.register("tool", _allow, PolicyTier.TOOL_PROVIDER, non_overridable=True)
 
     def test_non_overridable_rejected_on_user(self) -> None:
         """User tier must reject non_overridable=True."""
@@ -214,21 +208,15 @@ class TestPolicyConflictResolverScenarios:
         if platform is not None:
             p = platform
 
-            def _p(
-                tool_name: str, kwargs: Mapping[str, CaMeLValue]
-            ) -> SecurityPolicyResult:
+            def _p(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
                 return p
 
             _p.__name__ = "platform_policy"
-            reg.register_platform(
-                "tool", _p, non_overridable=platform_non_overridable
-            )
+            reg.register_platform("tool", _p, non_overridable=platform_non_overridable)
         if tool_provider is not None:
             tp = tool_provider
 
-            def _tp(
-                tool_name: str, kwargs: Mapping[str, CaMeLValue]
-            ) -> SecurityPolicyResult:
+            def _tp(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
                 return tp
 
             _tp.__name__ = "tp_policy"
@@ -236,9 +224,7 @@ class TestPolicyConflictResolverScenarios:
         if user is not None:
             u = user
 
-            def _u(
-                tool_name: str, kwargs: Mapping[str, CaMeLValue]
-            ) -> SecurityPolicyResult:
+            def _u(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
                 return u
 
             _u.__name__ = "user_policy"
@@ -258,9 +244,7 @@ class TestPolicyConflictResolverScenarios:
     # Scenario 2 — Platform only, Denied (non-overridable)
     def test_platform_only_denied_non_overridable(self) -> None:
         """Platform-only Denied with non_overridable=True."""
-        resolver = self._resolver_with(
-            platform=Denied("noo_reason"), platform_non_overridable=True
-        )
+        resolver = self._resolver_with(platform=Denied("noo_reason"), platform_non_overridable=True)
         merged = resolver.evaluate("tool", {})
         assert not merged.is_allowed
         assert merged.authoritative_tier is PolicyTier.PLATFORM
@@ -311,9 +295,7 @@ class TestPolicyConflictResolverScenarios:
     # Scenario 7 — Mixed: Platform Allowed, TP Denied
     def test_mixed_platform_allowed_tp_denied(self) -> None:
         """Platform allows but Tool-Provider denies."""
-        resolver = self._resolver_with(
-            platform=Allowed(), tool_provider=Denied("tp_deny")
-        )
+        resolver = self._resolver_with(platform=Allowed(), tool_provider=Denied("tp_deny"))
         merged = resolver.evaluate("tool", {})
         assert not merged.is_allowed
         assert merged.authoritative_tier is PolicyTier.TOOL_PROVIDER
@@ -444,9 +426,7 @@ class TestEvaluateFlat:
 class TestInterpreterIntegration:
     """Interpreter uses conflict_resolver when provided."""
 
-    def _make_interpreter(
-        self, resolver: PolicyConflictResolver
-    ) -> CaMeLInterpreter:
+    def _make_interpreter(self, resolver: PolicyConflictResolver) -> CaMeLInterpreter:
         tool_name, tool_fn = _make_tool()
         return CaMeLInterpreter(
             tools={tool_name: tool_fn},
@@ -522,7 +502,8 @@ class TestInterpreterIntegration:
         reg = TieredPolicyRegistry()
         reg.register_platform("my_tool", _allow)
         reg.register_tool_provider(
-            "my_tool", _deny_reason("tp_reason")  # type: ignore[arg-type]
+            "my_tool",
+            _deny_reason("tp_reason"),  # type: ignore[arg-type]
         )
         resolver = PolicyConflictResolver(reg)
         interp = self._make_interpreter(resolver)

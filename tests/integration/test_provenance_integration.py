@@ -104,11 +104,7 @@ class TestThreeHopProvenanceChain:
         # qllm_cv.sources == {"get_last_email", "query_quarantined_llm"}
 
         # Stage 3: concat with user-supplied trusted prefix
-        prefix_cv = (
-            CaMeLValueBuilder("Extracted sender: ")
-            .with_sources("User literal")
-            .build()
-        )
+        prefix_cv = CaMeLValueBuilder("Extracted sender: ").with_sources("User literal").build()
         # propagate_binary_op unions sources: all three labels merge
         return propagate_binary_op(
             qllm_cv,
@@ -145,9 +141,7 @@ class TestThreeHopProvenanceChain:
         final_cv = self._build_three_hop_cv()
         chain = build_provenance_chain("extracted_sender", final_cv)
 
-        trusted_positions = [
-            i for i, h in enumerate(chain.hops) if h.tool_name == "User literal"
-        ]
+        trusted_positions = [i for i, h in enumerate(chain.hops) if h.tool_name == "User literal"]
         untrusted_positions = [
             i
             for i, h in enumerate(chain.hops)
@@ -585,9 +579,7 @@ class TestChatResponseAnnotatorInputContract:
         assert "email_body" in chains
         chain = chains["email_body"]
         assert chain.is_trusted is False
-        untrusted_tools = [
-            h.tool_name for h in chain.hops if h.tool_name == "get_last_email"
-        ]
+        untrusted_tools = [h.tool_name for h in chain.hops if h.tool_name == "get_last_email"]
         assert len(untrusted_tools) == 1
         assert untrusted_tools[0] == "get_last_email"
 
@@ -742,8 +734,7 @@ class TestCoveragePhishingAndSerialisation:
             )
             warnings = detect_phishing_content(var_name, cv)
             assert len(warnings) >= 1, (
-                f"Expected PhishingWarning for pattern input {text!r} "
-                f"(variable: {var_name!r})"
+                f"Expected PhishingWarning for pattern input {text!r} (variable: {var_name!r})"
             )
 
     def test_trusted_source_never_fires_for_any_pattern(self) -> None:

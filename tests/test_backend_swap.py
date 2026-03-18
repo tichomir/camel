@@ -65,9 +65,7 @@ def _make_mock_backend(plan: str) -> MagicMock:
         A mock with ``generate`` set to an ``AsyncMock``.
     """
     mock = MagicMock()
-    mock.generate = AsyncMock(
-        return_value=f"```python\n{plan}\n```"
-    )
+    mock.generate = AsyncMock(return_value=f"```python\n{plan}\n```")
     mock.generate_structured = AsyncMock()
     return mock
 
@@ -184,8 +182,7 @@ async def test_execution_trace_shape_identical_across_backends() -> None:
     claude_tools = [r.tool_name for r in claude_result.trace]
     gemini_tools = [r.tool_name for r in gemini_result.trace]
     assert claude_tools == gemini_tools, (
-        f"Trace tool names differ: claude={claude_tools!r}, "
-        f"gemini={gemini_tools!r}"
+        f"Trace tool names differ: claude={claude_tools!r}, gemini={gemini_tools!r}"
     )
 
 

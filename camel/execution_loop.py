@@ -412,9 +412,7 @@ class ExceptionRedactor:
     ) -> None:
         """Initialise with an optional custom trusted-source set and audit log."""
         self._trusted_sources: frozenset[str] = (
-            trusted_sources
-            if trusted_sources is not None
-            else self.DEFAULT_TRUSTED_SOURCES
+            trusted_sources if trusted_sources is not None else self.DEFAULT_TRUSTED_SOURCES
         )
         self._audit_log = audit_log
 
@@ -704,9 +702,7 @@ class RetryPromptBuilder:
             User-turn message string to append to the P-LLM conversation.
         """
         # Build the error section.
-        lineno_part = (
-            f"line {error.lineno}" if error.lineno is not None else "unknown location"
-        )
+        lineno_part = f"line {error.lineno}" if error.lineno is not None else "unknown location"
         if error.message is not None:
             error_detail = (
                 f"Error type: {error.error_type}\n"
@@ -722,15 +718,10 @@ class RetryPromptBuilder:
                 "query or passing additional context variables."
             )
             error_detail = (
-                f"Error type: {error.error_type}\n"
-                f"Location:   {lineno_part}\n"
-                f"Advisory:   {advisory}"
+                f"Error type: {error.error_type}\nLocation:   {lineno_part}\nAdvisory:   {advisory}"
             )
         else:
-            error_detail = (
-                f"Error type: {error.error_type}\n"
-                f"Location:   {lineno_part}"
-            )
+            error_detail = f"Error type: {error.error_type}\nLocation:   {lineno_part}"
 
         # Build the accepted-state section (names only, no values).
         if accepted_state.variable_names:
@@ -742,8 +733,7 @@ class RetryPromptBuilder:
             )
         else:
             state_section = (
-                "No variables have been defined yet "
-                "(the failure occurred on the first statement)."
+                "No variables have been defined yet (the failure occurred on the first statement)."
             )
 
         # Build remaining-code section.
@@ -760,8 +750,7 @@ the error.
                 Do NOT re-emit the already-executed statements.""")
         else:
             remaining_section = (
-                "The failure occurred after the plan completed — "
-                "regenerate the full plan."
+                "The failure occurred after the plan completed — regenerate the full plan."
             )
 
         return textwrap.dedent(f"""\
@@ -1071,9 +1060,7 @@ class CaMeLOrchestrator:
 
             store_snapshot_before: dict[str, CaMeLValue] = {}
             try:
-                executed_count, remaining_source = self._exec_plan_statements(
-                    plan_source
-                )
+                executed_count, remaining_source = self._exec_plan_statements(plan_source)
                 # Success path — all statements executed without exception.
                 return ExecutionResult(
                     trace=self._trace_recorder.trace,
@@ -1084,9 +1071,7 @@ class CaMeLOrchestrator:
             except Exception as exc:
                 # Snapshot the store at the point of failure for redaction.
                 store_snapshot_before = self._interpreter.store
-                last_error = self._redactor.classify(
-                    exc, store_snapshot_before, self._interpreter
-                )
+                last_error = self._redactor.classify(exc, store_snapshot_before, self._interpreter)
 
                 # Determine where execution failed and build accepted state.
                 executed_count_on_error: int = getattr(exc, "_camel_executed_count", 0)
@@ -1131,16 +1116,12 @@ class CaMeLOrchestrator:
                     )
                 # M4-F9: pre-seed the dep-ctx stack when the exception
                 # originated in a for-loop body with a non-public iterable.
-                elif (
-                    accepted.loop_iter_deps is not None
-                    and accepted.loop_iter_deps
-                ):
+                elif accepted.loop_iter_deps is not None and accepted.loop_iter_deps:
                     # Merge the loop iterable's dep context into the bottom
                     # stack frame so the regenerated plan's first statement
                     # already carries the iterable's taint.
                     self._interpreter._dep_ctx_stack[0] = (
-                        self._interpreter._dep_ctx_stack[0]
-                        | accepted.loop_iter_deps
+                        self._interpreter._dep_ctx_stack[0] | accepted.loop_iter_deps
                     )
 
         raise MaxRetriesExceededError(

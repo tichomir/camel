@@ -51,16 +51,19 @@ def _tool(raw_value, sources=None):
             raw_value,
             sources=frozenset(sources) if sources else frozenset({"tool"}),
         )
+
     return _fn
 
 
 def _tool1(raw_value, sources=None):
     """One-argument tool."""
+
     def _fn(arg):
         return wrap(
             raw_value,
             sources=frozenset(sources) if sources else frozenset({"tool"}),
         )
+
     return _fn
 
 
@@ -369,7 +372,7 @@ for item in items:
 """)
     direct = _deps(interp, "inner")
     assert "val" in direct
-    assert "flag" in direct   # from the if-test
+    assert "flag" in direct  # from the if-test
     assert "items" in direct  # from the for-iterable (STRICT ctx propagates)
 
 
@@ -587,8 +590,8 @@ if flag:
 """)
     direct = _deps(interp, "inner")
     assert "val" in direct
-    assert "flag" in direct    # from the outer if-test in STRICT mode
-    assert "items" in direct   # from the for-iterable in STRICT mode
+    assert "flag" in direct  # from the outer if-test in STRICT mode
+    assert "items" in direct  # from the for-iterable in STRICT mode
 
 
 # ---------------------------------------------------------------------------
@@ -636,7 +639,7 @@ def test_dict_construction_deps():
     interp = _interp()
     interp.exec("k = 1")
     interp.exec("v = 2")
-    interp.exec('d = {k: v}')
+    interp.exec("d = {k: v}")
 
     assert "k" in _deps(interp, "d")
     assert "v" in _deps(interp, "d")
@@ -666,9 +669,9 @@ if enabled:
     # - items (for-iterable ctx, STRICT)
     # - enabled (if-condition ctx, STRICT)
     direct = _deps(interp, "total")
-    assert "total" in direct    # self-dep from augassign
+    assert "total" in direct  # self-dep from augassign
     assert "item" in direct
-    assert "items" in direct    # STRICT for-iterable
+    assert "items" in direct  # STRICT for-iterable
     assert "enabled" in direct  # STRICT if-condition
 
 
@@ -696,7 +699,7 @@ else:
     # elif branch executes; x = b; but both flag and other are test deps
     direct = _deps(interp, "x")
     assert "flag" in direct or "other" in direct  # at least one test dep
-    assert "b" in direct or "c" in direct         # at least one branch RHS dep
+    assert "b" in direct or "c" in direct  # at least one branch RHS dep
 
 
 # ---------------------------------------------------------------------------
@@ -721,13 +724,16 @@ def test_get_dependency_graph_no_var_deps():
 # M4-F3/F4 Tests — post-Q-LLM-call STRICT mode tainting
 # ---------------------------------------------------------------------------
 
+
 def _qllm_tool(raw_value, sources=None):
     """Tool that registers as a query_quarantined_llm entry point."""
+
     def _fn(*args, **kwargs):
         return wrap(
             raw_value,
             sources=frozenset(sources) if sources else frozenset({"qllm"}),
         )
+
     return _fn
 
 

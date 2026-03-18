@@ -329,9 +329,7 @@ class PolicyTestRunner:
             # Wrap the policy in a temporary registry for evaluation.
             registry = PolicyRegistry()
             registry.register(case.tool_name, policy)
-            raw_result: SecurityPolicyResult = registry.evaluate(
-                case.tool_name, case.kwargs
-            )
+            raw_result: SecurityPolicyResult = registry.evaluate(case.tool_name, case.kwargs)
 
             # Determine actual outcome.
             if isinstance(raw_result, Allowed):
@@ -355,8 +353,10 @@ class PolicyTestRunner:
             elif (
                 actual_outcome == "Denied"
                 and case.expected_reason_contains is not None
-                and (actual_reason is None
-                     or case.expected_reason_contains.lower() not in actual_reason.lower())
+                and (
+                    actual_reason is None
+                    or case.expected_reason_contains.lower() not in actual_reason.lower()
+                )
             ):
                 failure_message = (
                     f"[{case_id}] Policy returned Denied but reason "

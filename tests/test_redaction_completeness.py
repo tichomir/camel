@@ -107,8 +107,7 @@ REDACTION_CASES: list[dict[str, Any]] = [
     {
         "case_id": "R02",
         "description": (
-            "LLM-variant NotEnoughInformationError: "
-            "lineno and message must both be None"
+            "LLM-variant NotEnoughInformationError: lineno and message must both be None"
         ),
         "exc": None,  # constructed inline (needs QResponse subclass)
         "store": _untrusted_store("neie_payload_r02"),
@@ -163,8 +162,7 @@ REDACTION_CASES: list[dict[str, Any]] = [
     {
         "case_id": "R06",
         "description": (
-            "Untrusted store + exception lineno=7: "
-            "lineno safe to expose; message must be None"
+            "Untrusted store + exception lineno=7: lineno safe to expose; message must be None"
         ),
         "exc": _exc_with_lineno(RuntimeError, "SECRET_PAYLOAD_R06", 7),
         "store": _untrusted_store("SECRET_PAYLOAD_R06"),
@@ -255,16 +253,14 @@ def test_redaction_unit(
             )
         else:
             assert redacted.lineno is None or isinstance(redacted.lineno, int), (
-                f"[{case['case_id']}] lineno should be None or int; "
-                f"got {redacted.lineno!r}"
+                f"[{case['case_id']}] lineno should be None or int; got {redacted.lineno!r}"
             )
 
         # If there is a fragment that must not appear, double-check.
         fragment = case.get("fragment_must_not_appear")
         if fragment:
             assert redacted.message is None or fragment not in redacted.message, (
-                f"[{case['case_id']}] Fragment {fragment!r} should not appear "
-                f"in redacted message"
+                f"[{case['case_id']}] Fragment {fragment!r} should not appear in redacted message"
             )
 
         harness_reporter.record("I3_redaction_completeness", True)
@@ -413,8 +409,7 @@ async def test_r08_qllm_neie_no_classified_data_leak(
         all_content = recording.all_message_content()
         for content in all_content:
             assert CLASSIFIED not in content, (
-                f"[R08] Classified fragment {CLASSIFIED!r} leaked into "
-                "a P-LLM message."
+                f"[R08] Classified fragment {CLASSIFIED!r} leaked into a P-LLM message."
             )
         harness_reporter.record("I3_redaction_completeness", True)
     except AssertionError:

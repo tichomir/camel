@@ -87,9 +87,7 @@ def _send_email_policy(
     """Deny send_email if the recipient argument carries untrusted sources."""
     to_val = kwargs.get("to")
     if to_val is not None and not is_trusted(to_val):
-        return Denied(
-            f"recipient address carries untrusted sources: {to_val.sources!r}"
-        )
+        return Denied(f"recipient address carries untrusted sources: {to_val.sources!r}")
     return Allowed()
 
 
@@ -188,8 +186,7 @@ class TestStrictModeE2E:
         # Feature: M4-F3, M4-F4
         # ----------------------------------------------------------------
         interp.exec(
-            "extraction = query_quarantined_llm(email, 'extract recipient')\n"
-            "note = 'sending email'"
+            "extraction = query_quarantined_llm(email, 'extract recipient')\nnote = 'sending email'"
         )
 
         # Assert step 2: extraction has email as direct dep and Q-LLM sources
@@ -302,9 +299,7 @@ if flag:
             "Audit log Denied entry must name 'send_email'"
         )
 
-    def test_e2e_qllm_taint_scoped_to_block(
-        self, interp_no_policy: CaMeLInterpreter
-    ) -> None:
+    def test_e2e_qllm_taint_scoped_to_block(self, interp_no_policy: CaMeLInterpreter) -> None:
         """Q-LLM taint is scoped to the block — does not leak to outer block.
 
         Features exercised: M4-F4 scope-exit cleanup.
@@ -329,13 +324,10 @@ outside = "outside_value"
 
         # Outside the if-block: 'outside' must NOT carry 'extraction' as dep
         assert "extraction" not in _deps(interp, "outside"), (
-            "Variable outside the Q-LLM block must NOT carry Q-LLM dep "
-            "(M4-F4 scope-exit cleanup)"
+            "Variable outside the Q-LLM block must NOT carry Q-LLM dep (M4-F4 scope-exit cleanup)"
         )
 
-    def test_e2e_combined_for_loop_and_qllm(
-        self, interp_no_policy: CaMeLInterpreter
-    ) -> None:
+    def test_e2e_combined_for_loop_and_qllm(self, interp_no_policy: CaMeLInterpreter) -> None:
         """Combined: for-loop over Q-LLM-extracted list carries compounded taint.
 
         Features exercised: M4-F1 (for-loop) + M4-F4 (Q-LLM dep graph).
@@ -349,8 +341,7 @@ outside = "outside_value"
         # that the post-Q-LLM dep ctx (M4-F4) applies to the 'items' assignment.
         # (Q-LLM taint is scoped to a single _exec_statements frame.)
         interp.exec(
-            "extraction = query_quarantined_llm('extract list', 'schema')\n"
-            "items = [1, 2, 3]"
+            "extraction = query_quarantined_llm('extract list', 'schema')\nitems = [1, 2, 3]"
         )
         # After Q-LLM call in same block, 'items' carries Q-LLM taint via M4-F4
         assert "extraction" in _deps(interp, "items"), (

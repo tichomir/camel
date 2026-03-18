@@ -372,29 +372,24 @@ class CaMeLAgent:
         for tool in tools:
             if tool.name in seen:
                 raise ValueError(
-                    f"Duplicate tool name {tool.name!r}: "
-                    "each tool must have a unique name"
+                    f"Duplicate tool name {tool.name!r}: each tool must have a unique name"
                 )
             seen.add(tool.name)
 
         # Validate backend protocol conformance.
         if not isinstance(p_llm, LLMBackend):
             raise TypeError(
-                f"p_llm must satisfy the LLMBackend protocol, "
-                f"got {type(p_llm).__name__!r}"
+                f"p_llm must satisfy the LLMBackend protocol, got {type(p_llm).__name__!r}"
             )
         if not isinstance(q_llm, LLMBackend):
             raise TypeError(
-                f"q_llm must satisfy the LLMBackend protocol, "
-                f"got {type(q_llm).__name__!r}"
+                f"q_llm must satisfy the LLMBackend protocol, got {type(q_llm).__name__!r}"
             )
 
         self._p_llm_backend: LLMBackend = p_llm
         self._q_llm_backend: LLMBackend = q_llm
         self._tools: tuple[Tool, ...] = tuple(tools)
-        self._base_policies: PolicyRegistry = (
-            policies if policies is not None else PolicyRegistry()
-        )
+        self._base_policies: PolicyRegistry = policies if policies is not None else PolicyRegistry()
         self._mode: ExecutionMode = mode
         self._max_retries: int = max_retries
 

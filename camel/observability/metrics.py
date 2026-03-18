@@ -172,17 +172,17 @@ class _Histogram:
             base_prefix = f"{{{base_labels}, " if base_labels else "{"
             for i, upper in enumerate(self.buckets):
                 le_val = "+Inf" if upper == float("inf") else str(int(upper))
-                labels_str = f"{base_prefix}le=\"{le_val}\"}}"
+                labels_str = f'{base_prefix}le="{le_val}"}}'
                 if not base_labels:
-                    labels_str = f"{{le=\"{le_val}\"}}"
+                    labels_str = f'{{le="{le_val}"}}'
                 else:
-                    labels_str = f"{{{base_labels}, le=\"{le_val}\"}}"
+                    labels_str = f'{{{base_labels}, le="{le_val}"}}'
                 lines.append(f"{self.name}_bucket{labels_str} {bucket_counts[i]}")
             label_str = f"{{{base_labels}}}" if base_labels else ""
             lines.append(f"{self.name}_sum{label_str} {total_sum:.1f}")
             lines.append(f"{self.name}_count{label_str} {total_count}")
         if not self.snapshot():
-            lines.append(f"{self.name}_bucket{{le=\"+Inf\"}} 0")
+            lines.append(f'{self.name}_bucket{{le="+Inf"}} 0')
             lines.append(f"{self.name}_sum 0.0")
             lines.append(f"{self.name}_count 0")
         return "\n".join(lines)
@@ -258,8 +258,7 @@ class CamelMetricsCollector:
         self._policy_denial_rate = _Counter(
             name="camel_policy_denial_rate",
             help_text=(
-                "Total number of security policy denials, "
-                "labelled by session, policy, and tool."
+                "Total number of security policy denials, labelled by session, policy, and tool."
             ),
             label_names=("session_id", "policy_name", "tool_name"),
         )
@@ -274,8 +273,7 @@ class CamelMetricsCollector:
         self._pllm_retry_count = _Histogram(
             name="camel_pllm_retry_count_histogram",
             help_text=(
-                "Distribution of P-LLM planning retry counts per task, "
-                "labelled by session."
+                "Distribution of P-LLM planning retry counts per task, labelled by session."
             ),
             label_names=("session_id",),
             buckets=(0.0, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, float("inf")),
@@ -283,17 +281,13 @@ class CamelMetricsCollector:
         self._task_success_rate = _Gauge(
             name="camel_task_success_rate",
             help_text=(
-                "Rolling task success rate (0.0–1.0) for completed tasks, "
-                "labelled by session."
+                "Rolling task success rate (0.0–1.0) for completed tasks, labelled by session."
             ),
             label_names=("session_id",),
         )
         self._consent_prompt_rate = _Counter(
             name="camel_consent_prompt_rate",
-            help_text=(
-                "Total number of user consent prompts fired, "
-                "labelled by session and tool."
-            ),
+            help_text=("Total number of user consent prompts fired, labelled by session and tool."),
             label_names=("session_id", "tool_name"),
         )
 
@@ -358,9 +352,7 @@ class CamelMetricsCollector:
         retry_count:
             Number of retries consumed (0 = first plan succeeded).
         """
-        self._pllm_retry_count.observe(
-            float(retry_count), {"session_id": session_id}
-        )
+        self._pllm_retry_count.observe(float(retry_count), {"session_id": session_id})
 
     def record_task_completion(self, session_id: str, success: bool) -> None:
         """Update ``camel_task_success_rate`` gauge for *session_id*.
@@ -522,9 +514,7 @@ class CamelMetricsCollector:
         # Replay current counter values into OTel instruments.
         policy_counter = meter.create_counter("camel_policy_denial_rate")
         for key, value in self._policy_denial_rate.snapshot().items():
-            labels_dict = dict(
-                zip(self._policy_denial_rate.label_names, key)
-            )
+            labels_dict = dict(zip(self._policy_denial_rate.label_names, key))
             policy_counter.add(int(value), labels_dict)
 
         qlm_counter = meter.create_counter("camel_qlm_error_rate")
@@ -587,10 +577,7 @@ class CamelMetricsCollector:
         _CUMULATIVE = 2
 
         def _make_attrs(attrs: dict[str, str]) -> list[dict[str, Any]]:
-            return [
-                {"key": k, "value": {"stringValue": v}}
-                for k, v in attrs.items()
-            ]
+            return [{"key": k, "value": {"stringValue": v}} for k, v in attrs.items()]
 
         def _make_gauge_dp(value: float, attrs: dict[str, str]) -> dict[str, Any]:
             return {
@@ -612,43 +599,51 @@ class CamelMetricsCollector:
 
         for key, val in self._policy_denial_rate.snapshot().items():
             attrs = dict(zip(self._policy_denial_rate.label_names, key))
-            metrics_list.append({
-                "name": "camel_policy_denial_rate",
-                "sum": {
-                    "dataPoints": [_make_sum_dp(val, attrs)],
-                    "aggregationTemporality": _CUMULATIVE,
-                    "isMonotonic": True,
-                },
-            })
+            metrics_list.append(
+                {
+                    "name": "camel_policy_denial_rate",
+                    "sum": {
+                        "dataPoints": [_make_sum_dp(val, attrs)],
+                        "aggregationTemporality": _CUMULATIVE,
+                        "isMonotonic": True,
+                    },
+                }
+            )
 
         for key, val in self._qlm_error_rate.snapshot().items():
             attrs = dict(zip(self._qlm_error_rate.label_names, key))
-            metrics_list.append({
-                "name": "camel_qlm_error_rate",
-                "sum": {
-                    "dataPoints": [_make_sum_dp(val, attrs)],
-                    "aggregationTemporality": _CUMULATIVE,
-                    "isMonotonic": True,
-                },
-            })
+            metrics_list.append(
+                {
+                    "name": "camel_qlm_error_rate",
+                    "sum": {
+                        "dataPoints": [_make_sum_dp(val, attrs)],
+                        "aggregationTemporality": _CUMULATIVE,
+                        "isMonotonic": True,
+                    },
+                }
+            )
 
         for key, val in self._task_success_rate.snapshot().items():
             attrs = dict(zip(self._task_success_rate.label_names, key))
-            metrics_list.append({
-                "name": "camel_task_success_rate",
-                "gauge": {"dataPoints": [_make_gauge_dp(val, attrs)]},
-            })
+            metrics_list.append(
+                {
+                    "name": "camel_task_success_rate",
+                    "gauge": {"dataPoints": [_make_gauge_dp(val, attrs)]},
+                }
+            )
 
         for key, val in self._consent_prompt_rate.snapshot().items():
             attrs = dict(zip(self._consent_prompt_rate.label_names, key))
-            metrics_list.append({
-                "name": "camel_consent_prompt_rate",
-                "sum": {
-                    "dataPoints": [_make_sum_dp(val, attrs)],
-                    "aggregationTemporality": _CUMULATIVE,
-                    "isMonotonic": True,
-                },
-            })
+            metrics_list.append(
+                {
+                    "name": "camel_consent_prompt_rate",
+                    "sum": {
+                        "dataPoints": [_make_sum_dp(val, attrs)],
+                        "aggregationTemporality": _CUMULATIVE,
+                        "isMonotonic": True,
+                    },
+                }
+            )
 
         # OTLP/HTTP JSON envelope — field names are camelCase per protobuf JSON
         # mapping.  This structure is accepted by the OpenTelemetry Collector

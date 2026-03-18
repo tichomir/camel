@@ -4,6 +4,7 @@ Verifies that malformed backend responses (e.g. raw dicts missing required
 fields) are caught by QLLMWrapper.extract via explicit schema.model_validate()
 and surfaced as pydantic.ValidationError rather than propagating silently.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,9 +41,7 @@ class _MissingFieldsBackend:
     validated Pydantic instance, mimicking the failure mode the fix addresses.
     """
 
-    async def structured_complete(
-        self, messages: list[Any], schema: type[Any]
-    ) -> dict[str, Any]:
+    async def structured_complete(self, messages: list[Any], schema: type[Any]) -> dict[str, Any]:
         # Only the base field present; 'name' and 'age' are missing.
         return {"have_enough_information": True}
 
@@ -50,9 +49,7 @@ class _MissingFieldsBackend:
 class _ValidBackend:
     """Returns a fully-populated, valid dict for the happy-path check."""
 
-    async def structured_complete(
-        self, messages: list[Any], schema: type[Any]
-    ) -> dict[str, Any]:
+    async def structured_complete(self, messages: list[Any], schema: type[Any]) -> dict[str, Any]:
         return {"have_enough_information": True, "name": "Alice", "age": 30}
 
 
@@ -87,9 +84,7 @@ def test_extract_succeeds_when_backend_returns_complete_dict() -> None:
     """
     wrapper = QLLMWrapper(_ValidBackend())  # type: ignore[arg-type]
 
-    result: _PersonSchema = asyncio.run(
-        wrapper.extract("Alice is 30 years old.", _PersonSchema)
-    )
+    result: _PersonSchema = asyncio.run(wrapper.extract("Alice is 30 years old.", _PersonSchema))
 
     assert isinstance(result, _PersonSchema)
     assert result.name == "Alice"

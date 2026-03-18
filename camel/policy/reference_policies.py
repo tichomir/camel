@@ -210,14 +210,12 @@ def send_money_policy(
 
     if recipient_cv is not None and not is_trusted(recipient_cv):
         return Denied(
-            "transfer recipient originates from untrusted source — "
-            "possible data-flow manipulation"
+            "transfer recipient originates from untrusted source — possible data-flow manipulation"
         )
 
     if amount_cv is not None and not is_trusted(amount_cv):
         return Denied(
-            "transfer amount originates from untrusted source — "
-            "possible data-flow manipulation"
+            "transfer amount originates from untrusted source — possible data-flow manipulation"
         )
 
     return Allowed()
@@ -379,10 +377,7 @@ def make_write_file_policy(owner: str) -> PolicyFn:
         content_cv = kwargs.get("content")
 
         if path_cv is not None and not is_trusted(path_cv):
-            return Denied(
-                "file path originates from untrusted source — "
-                "possible path injection"
-            )
+            return Denied("file path originates from untrusted source — possible path injection")
 
         if content_cv is not None:
             if not can_readers_read_value(content_cv, owner):
@@ -527,8 +522,7 @@ def fetch_external_url_policy(
 
     if url_cv is not None and not is_trusted(url_cv):
         return Denied(
-            "URL originates from untrusted source — "
-            "possible SSRF or data exfiltration via URL"
+            "URL originates from untrusted source — possible SSRF or data exfiltration via URL"
         )
 
     if params_cv is not None and not is_trusted(params_cv):

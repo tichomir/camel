@@ -153,9 +153,7 @@ class OpenAIBackend:
         response = await self._client.chat.completions.create(**create_kwargs)
         content = response.choices[0].message.content
         if content is None:  # pragma: no cover
-            raise ValueError(
-                f"OpenAI returned no message content. Full response: {response}"
-            )
+            raise ValueError(f"OpenAI returned no message content. Full response: {response}")
         return content
 
     # ------------------------------------------------------------------
@@ -222,9 +220,7 @@ class OpenAIBackend:
         response = await self._client.chat.completions.create(**create_kwargs)
         content = response.choices[0].message.content
         if content is None:  # pragma: no cover
-            raise ValueError(
-                f"OpenAI returned no message content. Full response: {response}"
-            )
+            raise ValueError(f"OpenAI returned no message content. Full response: {response}")
         raw: dict[str, Any] = json.loads(content)
         return schema.model_validate(raw)
 
@@ -260,9 +256,7 @@ class OpenAIBackend:
         response = await self._client.chat.completions.create(**create_kwargs)
         content = response.choices[0].message.content
         if content is None:  # pragma: no cover
-            raise ValueError(
-                f"OpenAI returned no message content. Full response: {response}"
-            )
+            raise ValueError(f"OpenAI returned no message content. Full response: {response}")
         # Strip markdown fencing if present.
         stripped = content.strip()
         if stripped.startswith("```"):
@@ -363,14 +357,11 @@ class OpenAIBackend:
                     "messages": messages,
                     "response_format": response_format,
                 }
-                response = await self._client.chat.completions.create(
-                    **create_kwargs
-                )
+                response = await self._client.chat.completions.create(**create_kwargs)
                 content = response.choices[0].message.content
                 if content is None:  # pragma: no cover
                     raise ValueError(
-                        "OpenAI returned no message content. "
-                        f"Full response: {response}"
+                        f"OpenAI returned no message content. Full response: {response}"
                     )
                 raw: dict[str, Any] = json.loads(content)
                 return schema.model_validate(raw)
@@ -392,14 +383,11 @@ class OpenAIBackend:
                     "max_completion_tokens": self._max_tokens,
                     "messages": augmented,
                 }
-                response = await self._client.chat.completions.create(
-                    **create_kwargs
-                )
+                response = await self._client.chat.completions.create(**create_kwargs)
                 content = response.choices[0].message.content
                 if content is None:  # pragma: no cover
                     raise ValueError(
-                        "OpenAI returned no message content. "
-                        f"Full response: {response}"
+                        f"OpenAI returned no message content. Full response: {response}"
                     )
                 stripped = content.strip()
                 if stripped.startswith("```"):

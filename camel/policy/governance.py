@@ -308,13 +308,10 @@ class TieredPolicyRegistry:
             If ``non_overridable=True`` is used with a non-Platform tier.
         """
         if not callable(policy_fn):
-            raise TypeError(
-                f"policy_fn must be callable, got {type(policy_fn).__name__!r}"
-            )
+            raise TypeError(f"policy_fn must be callable, got {type(policy_fn).__name__!r}")
         if non_overridable and tier is not PolicyTier.PLATFORM:
             raise ValueError(
-                f"non_overridable=True is only valid for PolicyTier.PLATFORM; "
-                f"got tier={tier!r}"
+                f"non_overridable=True is only valid for PolicyTier.PLATFORM; got tier={tier!r}"
             )
         entry_name = name if name else getattr(policy_fn, "__name__", repr(policy_fn))
         entry = TieredPolicyEntry(
@@ -393,9 +390,7 @@ class TieredPolicyRegistry:
         PolicyFn
             ``policy_fn`` unchanged (enables decorator usage).
         """
-        return self.register(
-            tool_name, policy_fn, PolicyTier.TOOL_PROVIDER, name=name
-        )
+        return self.register(tool_name, policy_fn, PolicyTier.TOOL_PROVIDER, name=name)
 
     def register_user(
         self,
@@ -465,9 +460,7 @@ class TieredPolicyRegistry:
         """
         if tier is None:
             return frozenset(tool for (_, tool) in self._entries.keys())
-        return frozenset(
-            tool for (t, tool) in self._entries.keys() if t is tier
-        )
+        return frozenset(tool for (t, tool) in self._entries.keys() if t is tier)
 
     @classmethod
     def load_from_env(cls) -> TieredPolicyRegistry:
@@ -500,9 +493,7 @@ class TieredPolicyRegistry:
         module = importlib.import_module(module_path)
         configure = getattr(module, "configure_tiered_policies")
         if not callable(configure):
-            raise AttributeError(
-                f"'{module_path}.configure_tiered_policies' is not callable"
-            )
+            raise AttributeError(f"'{module_path}.configure_tiered_policies' is not callable")
         configure(registry)
         return registry
 
@@ -604,9 +595,7 @@ class PolicyConflictResolver:
         audit_trail: list[TierEvaluationRecord] = []
 
         # --- Phase 1: Platform tier ---
-        platform_entries = self._registry.get_entries(
-            tool_name, PolicyTier.PLATFORM
-        )
+        platform_entries = self._registry.get_entries(tool_name, PolicyTier.PLATFORM)
         for entry in platform_entries:
             result = entry.policy_fn(tool_name, kwargs)
             if isinstance(result, Denied):
@@ -636,9 +625,7 @@ class PolicyConflictResolver:
             )
 
         # --- Phase 2: Tool-Provider tier ---
-        tp_entries = self._registry.get_entries(
-            tool_name, PolicyTier.TOOL_PROVIDER
-        )
+        tp_entries = self._registry.get_entries(tool_name, PolicyTier.TOOL_PROVIDER)
         for entry in tp_entries:
             result = entry.policy_fn(tool_name, kwargs)
             if isinstance(result, Denied):
@@ -761,4 +748,3 @@ __all__ = [
     "TieredPolicyRegistry",
     "PolicyConflictResolver",
 ]
-

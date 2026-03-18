@@ -105,7 +105,7 @@ def run_benchmark(verbose: bool = False) -> tuple[float, list[float]]:
         elapsed = _run_step(interp, i)
         times.append(elapsed)
         if verbose:
-            print(f"  step {i+1:>3}/{NUM_STEPS}  {elapsed:7.2f} ms")
+            print(f"  step {i + 1:>3}/{NUM_STEPS}  {elapsed:7.2f} ms")
 
     median = statistics.median(times)
     return median, times

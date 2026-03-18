@@ -47,9 +47,7 @@ from camel.value import CaMeLValue, wrap
 # ---------------------------------------------------------------------------
 
 #: S02 — simplest single-step plan (send_email with literal args)
-_S02_PLAN = (
-    'result = send_email(to="alice@example.com", subject="Hello", body="Hi Alice")'
-)
+_S02_PLAN = 'result = send_email(to="alice@example.com", subject="Hello", body="Hi Alice")'
 
 #: S04 — two-step plan (get_email → send_email)
 _S04_PLAN = (
@@ -311,9 +309,7 @@ _S02_TOOLS: dict[str, Any] = {
 }
 
 _S02_SIGS = [
-    ToolSignature(
-        "send_email", "to: str, subject: str, body: str", "dict", "Send an email."
-    ),
+    ToolSignature("send_email", "to: str, subject: str, body: str", "dict", "Send an email."),
 ]
 
 
@@ -356,8 +352,7 @@ class TestS02BackendSwap:
         gemini_trace = self._trace_for_provider("mock_gemini")
         for c_rec, g_rec in zip(claude_trace, gemini_trace):
             assert c_rec.args == g_rec.args, (
-                f"Arg mismatch for {c_rec.tool_name}: "
-                f"claude={c_rec.args}, gemini={g_rec.args}"
+                f"Arg mismatch for {c_rec.tool_name}: claude={c_rec.args}, gemini={g_rec.args}"
             )
 
     def test_openai_trace_shape(self) -> None:
@@ -396,9 +391,7 @@ _S04_TOOLS: dict[str, Any] = {
 
 _S04_SIGS = [
     ToolSignature("get_email", "", "dict", "Retrieve the latest email."),
-    ToolSignature(
-        "send_email", "to: str, subject: str, body: str", "dict", "Send an email."
-    ),
+    ToolSignature("send_email", "to: str, subject: str, body: str", "dict", "Send an email."),
 ]
 
 

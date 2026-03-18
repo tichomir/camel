@@ -176,9 +176,7 @@ class RecordingBackend:
         str
             The delegate's response string.
         """
-        self.recorded_calls.append(
-            RecordedCall(method="generate", messages=list(messages))
-        )
+        self.recorded_calls.append(RecordedCall(method="generate", messages=list(messages)))
         return await self._delegate.generate(messages, **kwargs)
 
     async def generate_structured(

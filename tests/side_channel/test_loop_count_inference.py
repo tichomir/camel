@@ -200,6 +200,7 @@ for item in private_list:
 
     def test_strict_nested_loop_inner_body_carries_outer_iterable(self) -> None:
         """STRICT: nested loop inner body carries outer iterable dep (M4-F1)."""
+
         def _get_inner_list() -> CaMeLValue:
             """Return a second untrusted list."""
             return wrap([10, 20], sources=frozenset({"inner_service"}))

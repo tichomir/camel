@@ -127,25 +127,17 @@ class TestPolicyRegistryRegister:
     """PolicyRegistry.register stores policies and supports decorator syntax."""
 
     def test_register_stores_policy(self, registry: PolicyRegistry) -> None:
-        def my_policy(
-            tool_name: str, kwargs: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def my_policy(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return Allowed()
 
         registry.register("my_tool", my_policy)
         assert registry.policy_count("my_tool") == 1
 
-    def test_register_multiple_policies_accumulate(
-        self, registry: PolicyRegistry
-    ) -> None:
-        def p1(
-            tool_name: str, kwargs: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+    def test_register_multiple_policies_accumulate(self, registry: PolicyRegistry) -> None:
+        def p1(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return Allowed()
 
-        def p2(
-            tool_name: str, kwargs: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def p2(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return Allowed()
 
         registry.register("tool", p1)
@@ -153,9 +145,7 @@ class TestPolicyRegistryRegister:
         assert registry.policy_count("tool") == 2
 
     def test_register_returns_policy_fn(self, registry: PolicyRegistry) -> None:
-        def my_policy(
-            tool_name: str, kwargs: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def my_policy(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return Allowed()
 
         result = registry.register("tool", my_policy)
@@ -164,18 +154,14 @@ class TestPolicyRegistryRegister:
     def test_register_returns_same_policy_fn(self, registry: PolicyRegistry) -> None:
         """register() returns the policy function unchanged (enables chaining)."""
 
-        def email_policy(
-            tool_name: str, kwargs: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def email_policy(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return Allowed()
 
         returned = registry.register("send_email", email_policy)
         assert returned is email_policy
         assert registry.policy_count("send_email") == 1
 
-    def test_register_non_callable_raises_type_error(
-        self, registry: PolicyRegistry
-    ) -> None:
+    def test_register_non_callable_raises_type_error(self, registry: PolicyRegistry) -> None:
         with pytest.raises(TypeError, match="callable"):
             registry.register("tool", "not_a_function")  # type: ignore[arg-type]
 
@@ -238,9 +224,7 @@ class TestPolicyRegistryEvaluate:
         # p2 must NOT have been called
         assert call_log == ["p1"]
 
-    def test_second_deny_stops_further_evaluation(
-        self, registry: PolicyRegistry
-    ) -> None:
+    def test_second_deny_stops_further_evaluation(self, registry: PolicyRegistry) -> None:
         call_log: list[str] = []
 
         def p1(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
@@ -300,9 +284,7 @@ class TestPolicyRegistryEvaluate:
         result = registry.evaluate("tool", {})
         assert isinstance(result, Denied)
 
-    def test_evaluate_different_tools_independent(
-        self, registry: PolicyRegistry
-    ) -> None:
+    def test_evaluate_different_tools_independent(self, registry: PolicyRegistry) -> None:
         registry.register("tool_a", lambda tn, kw: Denied("only a"))
         registry.register("tool_b", lambda tn, kw: Allowed())
 
@@ -455,9 +437,7 @@ class TestLoadFromEnv:
             del sys.modules[module_name]
 
     def test_load_from_env_raises_import_error_for_missing_module(self) -> None:
-        with patch.dict(
-            os.environ, {"CAMEL_POLICY_MODULE": "nonexistent._module_xyz"}
-        ):
+        with patch.dict(os.environ, {"CAMEL_POLICY_MODULE": "nonexistent._module_xyz"}):
             with pytest.raises(ImportError):
                 PolicyRegistry.load_from_env()
 
@@ -568,7 +548,8 @@ class TestInterpreterPolicyIntegration:
         registry.register("my_fn", spy_policy)
 
         interp = CaMeLInterpreter(
-            tools={"my_fn": my_fn}, policy_engine=registry  # type: ignore[arg-type]
+            tools={"my_fn": my_fn},
+            policy_engine=registry,  # type: ignore[arg-type]
         )
         interp.exec('r = my_fn("hi")')
         assert seen_names == ["my_fn"]
@@ -587,7 +568,8 @@ class TestInterpreterPolicyIntegration:
         registry.register("greet", spy_policy)
 
         interp = CaMeLInterpreter(
-            tools={"greet": greet}, policy_engine=registry  # type: ignore[arg-type]
+            tools={"greet": greet},
+            policy_engine=registry,  # type: ignore[arg-type]
         )
         interp.exec('r = greet("world")')
         assert len(received_kwargs) == 1
@@ -615,7 +597,8 @@ class TestInterpreterPolicyIntegration:
         registry.register("restricted_fn", lambda tn, kw: Denied("reason"))
 
         interp = CaMeLInterpreter(
-            tools={"restricted_fn": t}, policy_engine=registry  # type: ignore[arg-type]
+            tools={"restricted_fn": t},
+            policy_engine=registry,  # type: ignore[arg-type]
         )
         with pytest.raises(PolicyViolationError) as exc_info:
             interp.exec('r = restricted_fn("v")')
@@ -764,6 +747,7 @@ class TestNFR2Compliance:
 
     def test_policy_fn_type_alias_is_synchronous_callable(self) -> None:
         """PolicyFn type alias requires synchronous callable signature."""
+
         # Verify a sync callable satisfies the PolicyFn contract
         def _always_allowed(tn: str, kw: object) -> SecurityPolicyResult:
             return Allowed()

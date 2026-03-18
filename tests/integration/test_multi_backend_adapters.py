@@ -138,9 +138,7 @@ class TestAdapterProtocolConformance:
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             backend = get_backend("claude", api_key="test")
 
-        assert isinstance(backend, LLMBackend), (
-            "ClaudeBackend must satisfy LLMBackend protocol"
-        )
+        assert isinstance(backend, LLMBackend), "ClaudeBackend must satisfy LLMBackend protocol"
 
     def test_gemini_backend_satisfies_protocol(self) -> None:
         """GeminiBackend satisfies the LLMBackend protocol via isinstance."""
@@ -152,9 +150,7 @@ class TestAdapterProtocolConformance:
         ):
             backend = get_backend("gemini", api_key="test")
 
-        assert isinstance(backend, LLMBackend), (
-            "GeminiBackend must satisfy LLMBackend protocol"
-        )
+        assert isinstance(backend, LLMBackend), "GeminiBackend must satisfy LLMBackend protocol"
 
     def test_openai_backend_satisfies_protocol(self) -> None:
         """OpenAIBackend satisfies the LLMBackend protocol via isinstance."""
@@ -164,9 +160,7 @@ class TestAdapterProtocolConformance:
         with patch.dict(sys.modules, {"openai": mock_openai}):
             backend = get_backend("openai", api_key="test")
 
-        assert isinstance(backend, LLMBackend), (
-            "OpenAIBackend must satisfy LLMBackend protocol"
-        )
+        assert isinstance(backend, LLMBackend), "OpenAIBackend must satisfy LLMBackend protocol"
 
 
 # ---------------------------------------------------------------------------
@@ -326,9 +320,7 @@ class TestAdapterGenerate:
         mock_anthropic = MagicMock()
         mock_client = MagicMock()
         mock_anthropic.AsyncAnthropic.return_value = mock_client
-        mock_client.messages.create = AsyncMock(
-            side_effect=RuntimeError("connection error")
-        )
+        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("connection error"))
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             backend = get_backend("claude", api_key="test")
@@ -343,9 +335,7 @@ class TestAdapterGenerate:
         """GeminiBackend wraps SDK errors as LLMBackendError."""
         mock_google, mock_genai, _ = _make_gemini_mock()
         mock_model = MagicMock()
-        mock_model.generate_content_async = AsyncMock(
-            side_effect=ValueError("quota exceeded")
-        )
+        mock_model.generate_content_async = AsyncMock(side_effect=ValueError("quota exceeded"))
         mock_genai.GenerativeModel.return_value = mock_model
 
         with patch.dict(
@@ -365,9 +355,7 @@ class TestAdapterGenerate:
         mock_openai = MagicMock()
         mock_client = MagicMock()
         mock_openai.AsyncOpenAI.return_value = mock_client
-        mock_client.chat.completions.create = AsyncMock(
-            side_effect=OSError("network unavailable")
-        )
+        mock_client.chat.completions.create = AsyncMock(side_effect=OSError("network unavailable"))
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
             backend = get_backend("openai", api_key="test")
@@ -408,9 +396,7 @@ class TestAdapterGenerateStructured:
     async def test_gemini_generate_structured_returns_schema(self) -> None:
         """GeminiBackend.generate_structured() returns validated BaseModel."""
         payload = {"title": "Gemini Plan", "step_count": 3}
-        mock_google, mock_genai, mock_types = _make_gemini_mock(
-            text_response=json.dumps(payload)
-        )
+        mock_google, mock_genai, mock_types = _make_gemini_mock(text_response=json.dumps(payload))
         mock_types.GenerationConfig.return_value = MagicMock()
 
         with patch.dict(
@@ -469,15 +455,11 @@ class TestIndependentPQLLMBackendAssignment:
         class _PBackend:
             """Minimal P-LLM mock."""
 
-            async def generate(
-                self, messages: list[Any], **kwargs: Any
-            ) -> str:
+            async def generate(self, messages: list[Any], **kwargs: Any) -> str:
                 """Return fenced plan."""
                 return f"```python\n{plan_source}\n```"
 
-            async def generate_structured(
-                self, messages: list[Any], schema: type[Any]
-            ) -> Any:
+            async def generate_structured(self, messages: list[Any], schema: type[Any]) -> Any:
                 """Not used on P-LLM path."""
                 raise NotImplementedError
 
@@ -497,15 +479,11 @@ class TestIndependentPQLLMBackendAssignment:
         class _QBackend:
             """Minimal Q-LLM mock."""
 
-            async def generate(
-                self, messages: list[Any], **kwargs: Any
-            ) -> str:
+            async def generate(self, messages: list[Any], **kwargs: Any) -> str:
                 """Not used on Q-LLM path."""
                 raise NotImplementedError
 
-            async def generate_structured(
-                self, messages: list[Any], schema: type[Any]
-            ) -> Any:
+            async def generate_structured(self, messages: list[Any], schema: type[Any]) -> Any:
                 """Return validated schema from payload."""
                 return schema.model_validate(structured_payload)
 
@@ -564,9 +542,7 @@ class TestIndependentPQLLMBackendAssignment:
             p_backend = get_backend("gemini", api_key="test-p")
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            q_backend = get_backend(
-                "claude", api_key="test-q", model="claude-haiku-4-5-20251001"
-            )
+            q_backend = get_backend("claude", api_key="test-q", model="claude-haiku-4-5-20251001")
 
         assert isinstance(p_backend, LLMBackend)
         assert isinstance(q_backend, LLMBackend)
@@ -581,15 +557,11 @@ class TestIndependentPQLLMBackendAssignment:
         class _QBackendSpy:
             """Spy Q-LLM backend that records calls."""
 
-            async def generate(
-                self, messages: list[Any], **kwargs: Any
-            ) -> str:
+            async def generate(self, messages: list[Any], **kwargs: Any) -> str:
                 """Record and raise."""
                 raise AssertionError("Q-LLM generate() must not be called on P-LLM path")
 
-            async def generate_structured(
-                self, messages: list[Any], schema: type[Any]
-            ) -> Any:
+            async def generate_structured(self, messages: list[Any], schema: type[Any]) -> Any:
                 """Record call."""
                 q_generate_structured_called.append(True)
                 return schema.model_validate(
@@ -680,9 +652,7 @@ class TestAdapterPromptInjectionSecurity:
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             backend = get_backend("claude", api_key="test")
 
-        messages = [
-            {"role": "user", "content": f"Extract from: {injection}"}
-        ]
+        messages = [{"role": "user", "content": f"Extract from: {injection}"}]
         result = await backend.generate_structured(messages, _ExtractionSchema)
 
         # The result must be a validated schema — no free-form text.
@@ -691,8 +661,7 @@ class TestAdapterPromptInjectionSecurity:
         result_str = str(result.model_dump())
         for keyword in ["attacker", "evil.com", "rm -rf", "DAN", "INJECTION"]:
             assert keyword not in result_str, (
-                f"Injection keyword '{keyword}' leaked into schema output for "
-                f"provider=claude"
+                f"Injection keyword '{keyword}' leaked into schema output for provider=claude"
             )
 
     @pytest.mark.parametrize("injection", INJECTION_FIXTURES, ids=range(5))
@@ -726,8 +695,7 @@ class TestAdapterPromptInjectionSecurity:
         result_str = str(result.model_dump())
         for keyword in ["attacker", "evil.com", "rm -rf", "DAN", "INJECTION"]:
             assert keyword not in result_str, (
-                f"Injection keyword '{keyword}' leaked into schema output for "
-                f"provider=gemini"
+                f"Injection keyword '{keyword}' leaked into schema output for provider=gemini"
             )
 
     @pytest.mark.parametrize("injection", INJECTION_FIXTURES, ids=range(5))
@@ -752,8 +720,7 @@ class TestAdapterPromptInjectionSecurity:
         result_str = str(result.model_dump())
         for keyword in ["attacker", "evil.com", "rm -rf", "DAN", "INJECTION"]:
             assert keyword not in result_str, (
-                f"Injection keyword '{keyword}' leaked into schema output for "
-                f"provider=openai"
+                f"Injection keyword '{keyword}' leaked into schema output for provider=openai"
             )
 
     def test_injection_success_count_is_zero_across_all_providers(self) -> None:

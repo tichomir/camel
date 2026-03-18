@@ -176,9 +176,7 @@ def test_isolation_constructor_has_no_tool_parameters() -> None:
     sig = inspect.signature(QLLMWrapper.__init__)
     banned = {"tool_signatures", "tools", "functions", "tool_definitions"}
     present = set(sig.parameters) & banned
-    assert not present, (
-        f"QLLMWrapper.__init__ must not expose tool parameters; found: {present}"
-    )
+    assert not present, f"QLLMWrapper.__init__ must not expose tool parameters; found: {present}"
 
 
 def test_isolation_extract_has_no_tool_parameters() -> None:
@@ -187,9 +185,7 @@ def test_isolation_extract_has_no_tool_parameters() -> None:
     sig = inspect.signature(QLLMWrapper.extract)
     banned = {"tool_signatures", "tools", "functions", "tool_definitions"}
     present = set(sig.parameters) & banned
-    assert not present, (
-        f"QLLMWrapper.extract must not expose tool parameters; found: {present}"
-    )
+    assert not present, f"QLLMWrapper.extract must not expose tool parameters; found: {present}"
 
 
 def test_isolation_instance_has_no_tool_signatures_attribute() -> None:
@@ -217,9 +213,7 @@ async def test_prompt_contains_data_and_schema_no_tool_definitions() -> None:
     untrusted_data = "From: bob@example.com\nSubject: Budget review"
     captured: list[list[Message]] = []
 
-    async def capturing_backend(
-        messages: list[Message], schema: type[Any]
-    ) -> EmailExtraction:
+    async def capturing_backend(messages: list[Message], schema: type[Any]) -> EmailExtraction:
         captured.append(messages)
         return EmailExtraction(
             have_enough_information=True,
@@ -249,9 +243,7 @@ async def test_prompt_contains_data_and_schema_no_tool_definitions() -> None:
     tool_keys = {"tools", "tool_choice", "functions", "tool_definitions"}
     for msg in messages:
         present = tool_keys & set(msg.keys())
-        assert not present, (
-            f"Message dict must not contain tool keys; found {present} in {msg!r}"
-        )
+        assert not present, f"Message dict must not contain tool keys; found {present} in {msg!r}"
 
 
 # ---------------------------------------------------------------------------

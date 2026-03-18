@@ -398,9 +398,7 @@ class PolicyRegistry:
             If ``policy_fn`` is not callable.
         """
         if not callable(policy_fn):
-            raise TypeError(
-                f"policy_fn must be callable, got {type(policy_fn).__name__!r}"
-            )
+            raise TypeError(f"policy_fn must be callable, got {type(policy_fn).__name__!r}")
         if tool_name not in self._policies:
             self._policies[tool_name] = []
         self._policies[tool_name].append(policy_fn)
@@ -540,9 +538,7 @@ class PolicyRegistry:
         module = importlib.import_module(module_path)
         configure = getattr(module, "configure_policies")
         if not callable(configure):
-            raise AttributeError(
-                f"'{module_path}.configure_policies' is not callable"
-            )
+            raise AttributeError(f"'{module_path}.configure_policies' is not callable")
         configure(registry)
         return registry
 

@@ -257,16 +257,14 @@ def _make_cloud_storage_annotator(tool_id: str) -> CapabilityAnnotationFn:
     _annotate.__qualname__ = f"_make_cloud_storage_annotator.<locals>.annotate_{tool_id}"
     _annotate.__doc__ = (
         f"Capability annotator for the ``{tool_id}`` cloud storage tool.\n\n"
-        "Extracts ``readers`` from the ``\"permissions\"`` key of the return\n"
+        'Extracts ``readers`` from the ``"permissions"`` key of the return\n'
         "dict; falls back to :data:`~camel.value.Public` when absent."
     )
     return _annotate
 
 
 #: Pre-built annotator for ``read_document`` cloud storage tool.
-annotate_read_document: CapabilityAnnotationFn = _make_cloud_storage_annotator(
-    "read_document"
-)
+annotate_read_document: CapabilityAnnotationFn = _make_cloud_storage_annotator("read_document")
 
 #: Pre-built annotator for ``get_file`` cloud storage tool.
 annotate_get_file: CapabilityAnnotationFn = _make_cloud_storage_annotator("get_file")

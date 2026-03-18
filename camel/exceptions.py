@@ -40,9 +40,7 @@ class SchemaValidationError(Exception):
 
     def __init__(self, schema_name: str) -> None:
         self.schema_name = schema_name
-        super().__init__(
-            f"Q-LLM response failed schema validation for {schema_name!r}"
-        )
+        super().__init__(f"Q-LLM response failed schema validation for {schema_name!r}")
 
 
 @dataclass

@@ -110,9 +110,7 @@ class TestDataToControlFlowDetection:
         assert interp.get("result").raw == "untrusted_value"
         # No escalation events in security audit log.
         escalation_events = [
-            e
-            for e in interp.security_audit_log
-            if isinstance(e, DataToControlFlowAuditEvent)
+            e for e in interp.security_audit_log if isinstance(e, DataToControlFlowAuditEvent)
         ]
         assert len(escalation_events) == 0
 
@@ -154,9 +152,7 @@ class TestDataToControlFlowDetection:
         with pytest.raises(DataToControlFlowEscalationError):
             interp.exec("result = action()")
         events = [
-            e
-            for e in interp.security_audit_log
-            if isinstance(e, DataToControlFlowAuditEvent)
+            e for e in interp.security_audit_log if isinstance(e, DataToControlFlowAuditEvent)
         ]
         assert len(events) == 1
         ev = events[0]
@@ -256,9 +252,7 @@ class TestElevatedConsentGate:
                 tools={"get_action": _returning_callable_tool("get_action")},
                 enforcement_mode=EnforcementMode.PRODUCTION,
                 consent_callback=_consent,
-                elevated_consent_callback=(
-                    _elevated_consent if elevated_cb_provided else None
-                ),
+                elevated_consent_callback=(_elevated_consent if elevated_cb_provided else None),
             ),
             consent_calls,
         )
@@ -272,9 +266,7 @@ class TestElevatedConsentGate:
         assert len(calls) == 1
         assert calls[0]["approved"] is True
         events = [
-            e
-            for e in interp.security_audit_log
-            if isinstance(e, DataToControlFlowAuditEvent)
+            e for e in interp.security_audit_log if isinstance(e, DataToControlFlowAuditEvent)
         ]
         assert events[0].consent_outcome == "approved"
 
@@ -286,9 +278,7 @@ class TestElevatedConsentGate:
             interp.exec("result = action()")
         assert len(calls) == 1
         events = [
-            e
-            for e in interp.security_audit_log
-            if isinstance(e, DataToControlFlowAuditEvent)
+            e for e in interp.security_audit_log if isinstance(e, DataToControlFlowAuditEvent)
         ]
         assert events[0].consent_outcome == "rejected"
 
@@ -299,9 +289,7 @@ class TestElevatedConsentGate:
         with pytest.raises(DataToControlFlowEscalationError) as exc_info:
             interp.exec("result = action()")
         events = [
-            e
-            for e in interp.security_audit_log
-            if isinstance(e, DataToControlFlowAuditEvent)
+            e for e in interp.security_audit_log if isinstance(e, DataToControlFlowAuditEvent)
         ]
         assert events[0].consent_outcome == "rejected"
         assert exc_info.value.warning.offending_variable == "action"
@@ -323,9 +311,7 @@ class TestElevatedConsentGate:
         def _consent(tool_name: str, arg_summary: str, denial_reason: str) -> bool:
             return True
 
-        def _elevated(
-            warning: DataToControlFlowWarning, tool_name_candidate: str | None
-        ) -> bool:
+        def _elevated(warning: DataToControlFlowWarning, tool_name_candidate: str | None) -> bool:
             captured.append({"warning": warning, "tool": tool_name_candidate})
             return True  # approve
 
@@ -357,6 +343,7 @@ class TestStrictDepAuditLog:
             tools={"get_items": tool},
             mode=ExecutionMode.STRICT,
         )
+
         # Simulate get_items returning a list CaMeLValue.
         def _list_tool() -> CaMeLValue:
             return wrap(
@@ -374,9 +361,7 @@ class TestStrictDepAuditLog:
         interp.exec(code)
         log = interp.strict_dep_audit_log
         # At least one event for 'result' with context_source="for_iterable".
-        result_events = [
-            e for e in log if e.assigned_variable == "result"
-        ]
+        result_events = [e for e in log if e.assigned_variable == "result"]
         assert len(result_events) >= 1
         assert result_events[0].context_source == "for_iterable"
         assert result_events[0].event_type == "StrictDependencyAddition"
@@ -599,9 +584,7 @@ class TestEscalationIntegration:
 
         # Verify audit trail is complete.
         security_log = interp.security_audit_log
-        escalation_events = [
-            e for e in security_log if isinstance(e, DataToControlFlowAuditEvent)
-        ]
+        escalation_events = [e for e in security_log if isinstance(e, DataToControlFlowAuditEvent)]
         assert len(escalation_events) == 1
         audit = escalation_events[0]
         assert audit.event_type == "DataToControlFlowEscalation"

@@ -366,9 +366,7 @@ class TestNoLeakIntegration(unittest.IsolatedAsyncioTestCase):
         wrapper = QLLMWrapper(backend)
 
         with self.assertRaises(NotEnoughInformationError) as ctx:
-            await wrapper.query_quarantined_llm(
-                "Email body with adversarial content", EmailInfo
-            )
+            await wrapper.query_quarantined_llm("Email body with adversarial content", EmailInfo)
 
         err_msg = str(ctx.exception)
 
@@ -464,9 +462,7 @@ class TestFreeFormTextBlocked(unittest.IsolatedAsyncioTestCase):
 
         result_or_error: list[Any] = []
         try:
-            result_or_error.append(
-                await wrapper.query_quarantined_llm("content", EmailInfo)
-            )
+            result_or_error.append(await wrapper.query_quarantined_llm("content", EmailInfo))
         except SchemaValidationError:
             pass  # expected
         except Exception as exc:  # noqa: BLE001

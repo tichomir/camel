@@ -40,9 +40,7 @@ from camel.exceptions import ConfigurationSecurityError
 # Default allowlist path
 # ---------------------------------------------------------------------------
 
-_DEFAULT_ALLOWLIST_PATH = os.path.join(
-    os.path.dirname(__file__), "allowlist.yaml"
-)
+_DEFAULT_ALLOWLIST_PATH = os.path.join(os.path.dirname(__file__), "allowlist.yaml")
 
 # ---------------------------------------------------------------------------
 # Pydantic models for schema validation
@@ -146,9 +144,7 @@ def load_allowlist(path: str = _DEFAULT_ALLOWLIST_PATH) -> AllowlistConfig:
     try:
         config = AllowlistConfig.model_validate(raw)
     except Exception as exc:
-        raise ConfigurationSecurityError(
-            f"allowlist.yaml failed schema validation: {exc}"
-        ) from exc
+        raise ConfigurationSecurityError(f"allowlist.yaml failed schema validation: {exc}") from exc
 
     # M4-F13: enforce the review gate when review_required is True.
     gate = config.review_gate

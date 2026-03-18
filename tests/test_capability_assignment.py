@@ -316,9 +316,7 @@ class TestToolRegistryDefaultAnnotation:
 class TestToolRegistryCustomAnnotation:
     """Tests verifying custom capability annotators are called."""
 
-    def _make_annotator(
-        self, readers: Any
-    ) -> CapabilityAnnotationFn:
+    def _make_annotator(self, readers: Any) -> CapabilityAnnotationFn:
         """Return an annotator that sets specific readers."""
 
         def _ann(return_value: Any, tool_kwargs: Mapping[str, Any]) -> CaMeLValue:
@@ -481,6 +479,7 @@ class TestInterpreterIntegration:
 
     def test_tool_with_args(self) -> None:
         """Tool called with arguments inside interpreter code."""
+
         def add_tool(x: int, y: int) -> int:
             return x + y
 
@@ -776,9 +775,7 @@ class TestRegisterBuiltInTools:
     def test_read_document_registered_with_annotator(self) -> None:
         """read_document is registered and uses annotate_read_document."""
         reg = ToolRegistry()
-        register_built_in_tools(
-            reg, read_document_fn=self._make_doc_fn(["alice@x.com"])
-        )
+        register_built_in_tools(reg, read_document_fn=self._make_doc_fn(["alice@x.com"]))
         assert "read_document" in reg
         tools = reg.as_interpreter_tools()
         cv = tools["read_document"]("doc-1")
@@ -830,9 +827,7 @@ class TestRegisterBuiltInTools:
     def test_read_document_readers_in_interpreter(self) -> None:
         """Cloud storage readers are tracked correctly through the interpreter."""
         reg = ToolRegistry()
-        register_built_in_tools(
-            reg, read_document_fn=self._make_doc_fn(["alice@x.com"])
-        )
+        register_built_in_tools(reg, read_document_fn=self._make_doc_fn(["alice@x.com"]))
         interp = CaMeLInterpreter(tools=reg.as_interpreter_tools())
         interp.exec('doc = read_document("doc-1")')
         cv = interp.get("doc")

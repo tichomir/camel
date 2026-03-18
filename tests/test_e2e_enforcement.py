@@ -122,9 +122,9 @@ class TestE2EPipelineSendEmail:
 
         assert self.interp.get("result").raw == "ok"
         log = self.interp.audit_log
-        assert any(
-            e.tool_name == "send_email" and e.outcome == "Allowed" for e in log
-        ), f"No Allowed entry found. Log: {log!r}"
+        assert any(e.tool_name == "send_email" and e.outcome == "Allowed" for e in log), (
+            f"No Allowed entry found. Log: {log!r}"
+        )
 
     def test_happy_path_audit_entry_has_required_fields(self) -> None:
         """Allowed audit entry carries tool_name, outcome, reason=None, timestamp."""
@@ -132,7 +132,8 @@ class TestE2EPipelineSendEmail:
         self.interp.exec("r = send_email(to=_to)")
 
         entry = next(
-            e for e in self.interp.audit_log
+            e
+            for e in self.interp.audit_log
             if e.tool_name == "send_email" and e.outcome == "Allowed"
         )
         assert entry.tool_name == "send_email"
@@ -174,9 +175,7 @@ class TestE2EPipelineSendEmail:
         with pytest.raises(PolicyViolationError):
             self.interp.exec("r = send_email(to=_to, body=_body)")
 
-        denied = next(
-            (e for e in self.interp.audit_log if e.outcome == "Denied"), None
-        )
+        denied = next((e for e in self.interp.audit_log if e.outcome == "Denied"), None)
         assert denied is not None
         assert denied.tool_name == "send_email"
         assert denied.reason is not None
@@ -252,8 +251,7 @@ class TestE2EPipelineSendMoney:
             self.interp.exec("r = send_money(recipient=_recipient, amount=_amount)")
 
         assert any(
-            e.outcome == "Denied" and e.tool_name == "send_money"
-            for e in self.interp.audit_log
+            e.outcome == "Denied" and e.tool_name == "send_money" for e in self.interp.audit_log
         )
 
 
@@ -272,9 +270,7 @@ class TestE2EPipelineCreateCalendarEvent:
             _participants=make_trusted_value(["alice@example.com", "bob@example.com"]),
             _title=make_trusted_value("Quarterly Planning"),
         )
-        self.interp.exec(
-            "r = create_calendar_event(participants=_participants, title=_title)"
-        )
+        self.interp.exec("r = create_calendar_event(participants=_participants, title=_title)")
         assert self.interp.get("r").raw == "ok"
         assert any(
             e.tool_name == "create_calendar_event" and e.outcome == "Allowed"
@@ -285,9 +281,7 @@ class TestE2EPipelineCreateCalendarEvent:
         """Injected participants, private title: PolicyViolationError raised."""
         _seed(
             self.interp,
-            _participants=make_untrusted_value(
-                ["attacker@evil.com"], source="read_email"
-            ),
+            _participants=make_untrusted_value(["attacker@evil.com"], source="read_email"),
             _title=wrap(
                 "Confidential Q4 Strategy",
                 sources=frozenset({"User literal"}),
@@ -295,14 +289,10 @@ class TestE2EPipelineCreateCalendarEvent:
             ),
         )
         with pytest.raises(PolicyViolationError) as exc_info:
-            self.interp.exec(
-                "r = create_calendar_event(participants=_participants, title=_title)"
-            )
+            self.interp.exec("r = create_calendar_event(participants=_participants, title=_title)")
 
         assert exc_info.value.tool_name == "create_calendar_event"
-        assert any(
-            e.outcome == "Denied" for e in self.interp.audit_log
-        )
+        assert any(e.outcome == "Denied" for e in self.interp.audit_log)
 
 
 class TestE2EPipelineWriteFile:
@@ -327,8 +317,7 @@ class TestE2EPipelineWriteFile:
         self.interp.exec("r = write_file(path=_path, content=_content)")
         assert self.interp.get("r").raw == "ok"
         assert any(
-            e.tool_name == "write_file" and e.outcome == "Allowed"
-            for e in self.interp.audit_log
+            e.tool_name == "write_file" and e.outcome == "Allowed" for e in self.interp.audit_log
         )
 
     def test_happy_path_public_content(self) -> None:
@@ -353,8 +342,7 @@ class TestE2EPipelineWriteFile:
 
         assert exc_info.value.tool_name == "write_file"
         assert any(
-            e.tool_name == "write_file" and e.outcome == "Denied"
-            for e in self.interp.audit_log
+            e.tool_name == "write_file" and e.outcome == "Denied" for e in self.interp.audit_log
         )
 
     def test_attack_path_content_not_readable_by_owner(self) -> None:
@@ -392,8 +380,7 @@ class TestE2EPipelinePostMessage:
         self.interp.exec("r = post_message(channel=_channel, message=_message)")
         assert self.interp.get("r").raw == "ok"
         assert any(
-            e.tool_name == "post_message" and e.outcome == "Allowed"
-            for e in self.interp.audit_log
+            e.tool_name == "post_message" and e.outcome == "Allowed" for e in self.interp.audit_log
         )
 
     def test_attack_path_injected_channel(self) -> None:
@@ -468,9 +455,7 @@ class TestE2EPipelineFetchExternalUrl:
         _seed(
             self.interp,
             _url=make_trusted_value("https://api.example.com/q"),
-            _params=make_untrusted_value(
-                {"secret": "private_data"}, source="read_document"
-            ),
+            _params=make_untrusted_value({"secret": "private_data"}, source="read_document"),
         )
         with pytest.raises(PolicyViolationError):
             self.interp.exec("r = fetch_external_url(url=_url, params=_params)")
@@ -482,9 +467,7 @@ class TestE2EPipelineFetchExternalUrl:
         _seed(
             self.interp,
             _url=make_trusted_value("https://api.example.com/upload"),
-            _body=make_untrusted_value(
-                "confidential_payload", source="read_file"
-            ),
+            _body=make_untrusted_value("confidential_payload", source="read_file"),
         )
         with pytest.raises(PolicyViolationError):
             self.interp.exec("r = fetch_external_url(url=_url, body=_body)")
@@ -590,9 +573,7 @@ class TestAuditLogCompleteness:
                     interp.exec(code)
 
         for i, entry in enumerate(interp.audit_log):
-            assert isinstance(entry, AuditLogEntry), (
-                f"Entry {i} is not an AuditLogEntry: {entry!r}"
-            )
+            assert isinstance(entry, AuditLogEntry), f"Entry {i} is not an AuditLogEntry: {entry!r}"
             assert entry.tool_name and isinstance(entry.tool_name, str), (
                 f"Entry {i} has empty/missing tool_name"
             )
@@ -776,52 +757,68 @@ class TestNFR9Independence:
         configure_reference_policies(registry, file_owner=FILE_OWNER)
 
         # send_email
-        assert registry.evaluate(
-            "send_email", {"to": make_trusted_value("alice@example.com")}
-        ) == Allowed()
+        assert (
+            registry.evaluate("send_email", {"to": make_trusted_value("alice@example.com")})
+            == Allowed()
+        )
 
         # send_money
-        assert registry.evaluate(
-            "send_money",
-            {
-                "recipient": make_trusted_value("bob@example.com"),
-                "amount": make_trusted_value(10.0),
-            },
-        ) == Allowed()
+        assert (
+            registry.evaluate(
+                "send_money",
+                {
+                    "recipient": make_trusted_value("bob@example.com"),
+                    "amount": make_trusted_value(10.0),
+                },
+            )
+            == Allowed()
+        )
 
         # create_calendar_event
-        assert registry.evaluate(
-            "create_calendar_event",
-            {"participants": make_trusted_value(["alice@example.com"])},
-        ) == Allowed()
+        assert (
+            registry.evaluate(
+                "create_calendar_event",
+                {"participants": make_trusted_value(["alice@example.com"])},
+            )
+            == Allowed()
+        )
 
         # write_file
-        assert registry.evaluate(
-            "write_file",
-            {
-                "path": make_trusted_value("/tmp/x.txt"),
-                "content": wrap(
-                    "data",
-                    sources=frozenset({"User literal"}),
-                    readers=frozenset({FILE_OWNER}),
-                ),
-            },
-        ) == Allowed()
+        assert (
+            registry.evaluate(
+                "write_file",
+                {
+                    "path": make_trusted_value("/tmp/x.txt"),
+                    "content": wrap(
+                        "data",
+                        sources=frozenset({"User literal"}),
+                        readers=frozenset({FILE_OWNER}),
+                    ),
+                },
+            )
+            == Allowed()
+        )
 
         # post_message
-        assert registry.evaluate(
-            "post_message",
-            {
-                "channel": make_trusted_value("#general"),
-                "message": make_trusted_value("Hello"),
-            },
-        ) == Allowed()
+        assert (
+            registry.evaluate(
+                "post_message",
+                {
+                    "channel": make_trusted_value("#general"),
+                    "message": make_trusted_value("Hello"),
+                },
+            )
+            == Allowed()
+        )
 
         # fetch_external_url
-        assert registry.evaluate(
-            "fetch_external_url",
-            {"url": make_trusted_value("https://api.example.com")},
-        ) == Allowed()
+        assert (
+            registry.evaluate(
+                "fetch_external_url",
+                {"url": make_trusted_value("https://api.example.com")},
+            )
+            == Allowed()
+        )
 
     # --- Capability system in isolation ---
 
@@ -890,9 +887,7 @@ class TestNFR9Independence:
     def test_policy_function_itself_requires_no_other_components(self) -> None:
         """Individual policy functions run with no registry, interpreter, or LLM."""
         # send_email_policy standalone
-        result = send_email_policy(
-            "send_email", {"to": make_trusted_value("alice@example.com")}
-        )
+        result = send_email_policy("send_email", {"to": make_trusted_value("alice@example.com")})
         assert result == Allowed()
 
         result_denied = send_email_policy(
@@ -1101,12 +1096,8 @@ class TestProductionModeConsentFlow:
         interp.exec("r = send_email(to=_to, body=_body)")
 
         log = interp.audit_log
-        approved_entries = [
-            e for e in log if e.consent_decision == "UserApproved"
-        ]
-        assert approved_entries, (
-            f"Expected UserApproved entry in audit log, got: {log!r}"
-        )
+        approved_entries = [e for e in log if e.consent_decision == "UserApproved"]
+        assert approved_entries, f"Expected UserApproved entry in audit log, got: {log!r}"
         entry = approved_entries[0]
         assert entry.tool_name == "send_email"
         assert entry.outcome == "Denied"  # policy still denied; user overrode
@@ -1134,12 +1125,8 @@ class TestProductionModeConsentFlow:
             interp.exec("r = send_email(to=_to, body=_body)")
 
         log = interp.audit_log
-        rejected_entries = [
-            e for e in log if e.consent_decision == "UserRejected"
-        ]
-        assert rejected_entries, (
-            f"Expected UserRejected entry in audit log, got: {log!r}"
-        )
+        rejected_entries = [e for e in log if e.consent_decision == "UserRejected"]
+        assert rejected_entries, f"Expected UserRejected entry in audit log, got: {log!r}"
         assert rejected_entries[0].outcome == "Denied"
 
     def test_rejection_path_tool_is_not_called(self) -> None:

@@ -174,17 +174,13 @@ class TestDefaultCLIConsentHandler:
             ("s", ConsentDecision.APPROVE_FOR_SESSION),
         ],
     )
-    def test_valid_choices(
-        self, user_input: str, expected: ConsentDecision
-    ) -> None:
+    def test_valid_choices(self, user_input: str, expected: ConsentDecision) -> None:
         handler = DefaultCLIConsentHandler()
         with (
             patch("builtins.input", return_value=user_input),
             patch("builtins.print"),
         ):
-            result = handler.handle_consent(
-                "send_email", "to='x@y.com'", "untrusted recipient"
-            )
+            result = handler.handle_consent("send_email", "to='x@y.com'", "untrusted recipient")
         assert result is expected
 
     def test_invalid_then_valid(self) -> None:
@@ -498,9 +494,7 @@ class TestInterpreterConsentHandlerIntegration:
         tools, registry = _make_deny_tool()
         approved_calls: list[str] = []
 
-        def legacy_callback(
-            tool_name: str, arg_summary: str, denial_reason: str
-        ) -> bool:
+        def legacy_callback(tool_name: str, arg_summary: str, denial_reason: str) -> bool:
             approved_calls.append(tool_name)
             return True
 

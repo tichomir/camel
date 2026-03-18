@@ -343,9 +343,7 @@ for n in nums:
         "if_expr",
     ],
 )
-def test_ec4_unsupported_syntax_raises_correct_error(
-    code: str, expected_node_type: str
-) -> None:
+def test_ec4_unsupported_syntax_raises_correct_error(code: str, expected_node_type: str) -> None:
     """UnsupportedSyntaxError is raised with correct node_type and non-zero lineno."""
     interp = CaMeLInterpreter()
     with pytest.raises(UnsupportedSyntaxError) as exc_info:
@@ -454,9 +452,7 @@ for item in items:
     assert "items" in dg.direct_deps, (
         "STRICT regression: 'items' (iterable) must be in result's direct_deps"
     )
-    assert "items" in dg.all_upstream, (
-        "STRICT regression: 'items' must also appear in all_upstream"
-    )
+    assert "items" in dg.all_upstream, "STRICT regression: 'items' must also appear in all_upstream"
 
 
 def test_ec6_strict_loop_body_var_depends_on_iterable_with_accumulator():
@@ -494,9 +490,7 @@ for val in data:
     normal_direct = interp_normal.get_dependency_graph("output").direct_deps
     # NORMAL: output depends on val, but NOT directly on data
     assert "val" in normal_direct
-    assert "data" not in normal_direct, (
-        "NORMAL mode: 'data' should NOT be a direct dep of 'output'"
-    )
+    assert "data" not in normal_direct, "NORMAL mode: 'data' should NOT be a direct dep of 'output'"
 
     interp_strict = CaMeLInterpreter(mode=ExecutionMode.STRICT)
     interp_strict.exec("data = [5, 6, 7]")

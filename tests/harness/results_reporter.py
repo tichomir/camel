@@ -179,8 +179,5 @@ class HarnessResultsReporter:
         lines = ["Isolation Harness Results", "=" * 40]
         for result in self.invariants.values():
             status = "PASS" if result.failed == 0 else "FAIL"
-            lines.append(
-                f"  [{status}] {result.invariant}: "
-                f"{result.passed}/{result.total} passed"
-            )
+            lines.append(f"  [{status}] {result.invariant}: {result.passed}/{result.total} passed")
         return "\n".join(lines)

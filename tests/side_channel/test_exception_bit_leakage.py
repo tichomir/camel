@@ -148,12 +148,8 @@ class TestExceptionMessageRedactionUntrusted:
         redactor = _redactor()
         result = redactor.classify(exc, trusted_store)
 
-        assert result.message is not None, (
-            "M4-F6 negative: trusted exception must keep its message"
-        )
-        assert result.trust_level == "trusted", (
-            "M4-F6 negative: trust_level must be 'trusted'"
-        )
+        assert result.message is not None, "M4-F6 negative: trusted exception must keep its message"
+        assert result.trust_level == "trusted", "M4-F6 negative: trust_level must be 'trusted'"
         assert "int" in (result.message or ""), (
             "M4-F6 negative: message content must be preserved for trusted exceptions"
         )
@@ -228,8 +224,7 @@ class TestNEIEContentStripping:
         result = redactor.classify(exc, store)
 
         assert result.message is None, (
-            "M4-F7: NEIE message must be stripped — no missing-data content "
-            "must reach the P-LLM"
+            "M4-F7: NEIE message must be stripped — no missing-data content must reach the P-LLM"
         )
 
     def test_neie_trust_level_is_not_enough_information(self) -> None:
@@ -298,8 +293,7 @@ class TestLoopBodyExceptionTaint:
 
         # With untrusted data in the store, the message must be redacted.
         assert result.message is None, (
-            "M4-F6/M4-F9: exception from loop body with untrusted iterable "
-            "must be redacted"
+            "M4-F6/M4-F9: exception from loop body with untrusted iterable must be redacted"
         )
 
     def test_m4_f9_applied_flag_in_audit_event(self) -> None:
@@ -391,9 +385,7 @@ class TestStrictModeExceptionSideChannelClosure:
         assert result.trust_level == "trusted", (
             "Baseline: exception with empty store must be trusted (not over-redacted)"
         )
-        assert result.message is not None, (
-            "Baseline: trusted exception message must not be None"
-        )
+        assert result.message is not None, "Baseline: trusted exception message must not be None"
 
     def test_multiple_untrusted_variables_all_trigger_redaction(self) -> None:
         """M4-F6: any untrusted variable in the store triggers redaction.
@@ -437,9 +429,7 @@ class TestStrictModeExceptionSideChannelClosure:
         assert untrusted_result.trust_level == "untrusted"
 
         # Case 3: exception with trusted store — message preserved
-        trusted_store: dict[str, CaMeLValue] = {
-            "x": wrap(1, sources=_TRUSTED_SOURCES)
-        }
+        trusted_store: dict[str, CaMeLValue] = {"x": wrap(1, sources=_TRUSTED_SOURCES)}
         trusted_exc = TypeError("expected int")
         trusted_result = redactor.classify(trusted_exc, trusted_store)
         assert trusted_result.message is not None

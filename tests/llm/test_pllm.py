@@ -116,10 +116,7 @@ class TestCodeBlockParser(unittest.TestCase):
 
     def test_extracts_first_block_when_multiple_present(self) -> None:
         """extract() returns the first fenced block when several are present."""
-        response = (
-            "First block:\n```python\nx = 1\n```\n"
-            "Second block:\n```python\ny = 2\n```"
-        )
+        response = "First block:\n```python\nx = 1\n```\nSecond block:\n```python\ny = 2\n```"
         code = CodeBlockParser.extract(response)
         self.assertEqual(code, "x = 1")
 
@@ -236,9 +233,7 @@ class TestBuildSystemPrompt(unittest.TestCase):
         returned prompt is a plain str with no CaMeLValue repr.
         """
         tools = _make_tools()
-        prompt = self.wrapper.build_system_prompt(
-            tools, user_context={"date": "2026-03-17"}
-        )
+        prompt = self.wrapper.build_system_prompt(tools, user_context={"date": "2026-03-17"})
         self.assertIsInstance(prompt, str)
         self.assertNotIn("CaMeLValue", prompt)
 
@@ -331,9 +326,7 @@ class TestGeneratePlanRetry(unittest.IsolatedAsyncioTestCase):
         """generate_plan() retries when extracted code has a SyntaxError."""
         bad_code = "def foo( :"  # deliberately invalid syntax
         good_code = "result = get_email()"
-        backend = _make_backend(
-            [_wrap_plan(bad_code), _wrap_plan(good_code)]
-        )
+        backend = _make_backend([_wrap_plan(bad_code), _wrap_plan(good_code)])
         wrapper = PLLMWrapper(backend)
 
         plan = await wrapper.generate_plan(
@@ -456,9 +449,7 @@ class TestGeneratePlanRetry(unittest.IsolatedAsyncioTestCase):
     async def test_backend_error_propagates_without_retry(self) -> None:
         """LLMBackendError from the backend is propagated immediately."""
         backend = MagicMock()
-        backend.generate = AsyncMock(
-            side_effect=LLMBackendError("network timeout")
-        )
+        backend.generate = AsyncMock(side_effect=LLMBackendError("network timeout"))
         wrapper = PLLMWrapper(backend, max_retries=10)
 
         with self.assertRaises(LLMBackendError):

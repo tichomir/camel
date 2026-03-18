@@ -76,9 +76,7 @@ class TestTimingModuleImportsBlocked:
         interp = _interp()
         with pytest.raises(ForbiddenImportError) as exc_info:
             interp.exec("import time")
-        assert exc_info.value.module_name == "time", (
-            "M4-F10: module_name must be 'time'"
-        )
+        assert exc_info.value.module_name == "time", "M4-F10: module_name must be 'time'"
 
     def test_from_time_import_sleep_raises_forbidden_import(self) -> None:
         """'from time import sleep' must raise ForbiddenImportError (M4-F10/M4-F12)."""
@@ -170,9 +168,7 @@ class TestTimingNameAccessBlocked:
     """Verify that direct name access to timing primitives raises ForbiddenNameError (M4-F14)."""
 
     @pytest.mark.parametrize("timing_name", _TIMING_PRIMITIVES)
-    def test_timing_primitive_name_raises_forbidden_name_error(
-        self, timing_name: str
-    ) -> None:
+    def test_timing_primitive_name_raises_forbidden_name_error(self, timing_name: str) -> None:
         """M4-F12/M4-F14: accessing any timing primitive name raises ForbiddenNameError."""
         interp = _interp()
         with pytest.raises(ForbiddenNameError) as exc_info:
@@ -217,9 +213,7 @@ class TestTimingNamesAbsentFromNamespace:
     """Verify timing names are absent from the interpreter's permitted namespace (M4-F12)."""
 
     @pytest.mark.parametrize("timing_name", _TIMING_PRIMITIVES)
-    def test_timing_primitive_absent_from_permitted_namespace(
-        self, timing_name: str
-    ) -> None:
+    def test_timing_primitive_absent_from_permitted_namespace(self, timing_name: str) -> None:
         """M4-F12: timing primitive must not appear in build_permitted_namespace()."""
         ns = build_permitted_namespace()
         assert timing_name not in ns, (
@@ -240,16 +234,13 @@ class TestTimingNamesAbsentFromNamespace:
         excluded = get_excluded_timing_names()
         overlap = permitted & excluded
         assert not overlap, (
-            f"M4-F12: names appear in both permitted and excluded sets: "
-            f"{sorted(overlap)}"
+            f"M4-F12: names appear in both permitted and excluded sets: {sorted(overlap)}"
         )
 
     def test_datetime_absent_from_permitted_namespace(self) -> None:
         """M4-F12: 'datetime' must not appear in build_permitted_namespace()."""
         ns = build_permitted_namespace()
-        assert "datetime" not in ns, (
-            "M4-F12: 'datetime' must not appear in the permitted namespace"
-        )
+        assert "datetime" not in ns, "M4-F12: 'datetime' must not appear in the permitted namespace"
 
 
 # ---------------------------------------------------------------------------
@@ -319,23 +310,33 @@ class TestPRDSection11TimingSideChannel:
     ) -> None:
         """PRD §11: timing exclusion must not affect any of the 15 approved builtins."""
         approved = [
-            "len", "range", "list", "dict", "str", "int", "float", "bool",
-            "set", "isinstance", "enumerate", "zip", "sorted", "min", "max",
+            "len",
+            "range",
+            "list",
+            "dict",
+            "str",
+            "int",
+            "float",
+            "bool",
+            "set",
+            "isinstance",
+            "enumerate",
+            "zip",
+            "sorted",
+            "min",
+            "max",
         ]
         ns = build_permitted_namespace()
         for name in approved:
             assert name in ns, (
-                f"PRD §11: '{name}' must remain in permitted namespace "
-                f"after timing exclusion"
+                f"PRD §11: '{name}' must remain in permitted namespace after timing exclusion"
             )
 
     def test_prd_section11_no_timing_primitive_in_permitted_namespace(self) -> None:
         """PRD §11: no timing primitive must appear in the permitted namespace (M4-F12)."""
         ns = build_permitted_namespace()
         for name in _TIMING_PRIMITIVES:
-            assert name not in ns, (
-                f"PRD §11: '{name}' must not appear in permitted namespace"
-            )
+            assert name not in ns, f"PRD §11: '{name}' must not appear in permitted namespace"
 
     def test_prd_section11_security_audit_log_records_timing_block(self) -> None:
         """PRD §11/NFR-6: blocked timing primitive access must be recorded in audit log."""

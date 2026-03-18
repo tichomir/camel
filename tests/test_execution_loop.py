@@ -470,9 +470,7 @@ class TestOrchestratorHappyPath:
         interp = CaMeLInterpreter(tools={"fetch": tool})
 
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="result = fetch()")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="result = fetch()"))
         sigs = [ToolSignature("fetch", "", "str", "Fetch data.")]
 
         buf: list[CaMeLValue] = []
@@ -497,9 +495,7 @@ class TestOrchestratorHappyPath:
         interp = CaMeLInterpreter(tools={"fetch": tool})
 
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="result = fetch()")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="result = fetch()"))
         sigs = [ToolSignature("fetch", "", "str", "Fetch data.")]
 
         orch = CaMeLOrchestrator(
@@ -517,9 +513,7 @@ class TestOrchestratorHappyPath:
         interp = CaMeLInterpreter(tools={"fetch": tool})
 
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="x = fetch()\nprint(x)")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="x = fetch()\nprint(x)"))
         sigs = [ToolSignature("fetch", "", "str", "Fetch data.")]
 
         buf: list[CaMeLValue] = []
@@ -544,9 +538,7 @@ class TestOrchestratorHappyPath:
         interp = CaMeLInterpreter(tools={"fetch": tool})
 
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="x = fetch()\nprint(x)")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="x = fetch()\nprint(x)"))
         sigs = [ToolSignature("fetch", "", "str", "Fetch data.")]
         orch = CaMeLOrchestrator(
             p_llm=p_llm_mock,
@@ -565,9 +557,7 @@ class TestOrchestratorHappyPath:
         interp = CaMeLInterpreter(tools={"fetch": tool})
 
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="result = fetch()")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="result = fetch()"))
         sigs = [ToolSignature("fetch", "", "str", "Fetch data.")]
         orch = CaMeLOrchestrator(
             p_llm=p_llm_mock,
@@ -592,6 +582,7 @@ class TestOrchestratorRetry:
 
     def test_max_retries_exceeded_raises(self) -> None:
         """MaxRetriesExceededError raised after exactly max_loop_retries failures."""
+
         # Tool that always fails.
         def bad_tool() -> CaMeLValue:
             raise RuntimeError("always fails")
@@ -628,9 +619,7 @@ class TestOrchestratorRetry:
 
         interp = CaMeLInterpreter(tools={"bad": bad_tool})
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="result = bad()")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="result = bad()"))
         sigs = [ToolSignature("bad", "", "None", "bad")]
         orch = CaMeLOrchestrator(
             p_llm=p_llm_mock,
@@ -651,9 +640,7 @@ class TestOrchestratorRetry:
 
         interp = CaMeLInterpreter(tools={"bad": bad_tool})
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            return_value=CodePlan(source="result = bad()")
-        )
+        p_llm_mock.generate_plan = AsyncMock(return_value=CodePlan(source="result = bad()"))
         sigs = [ToolSignature("bad", "", "None", "bad")]
         orch = CaMeLOrchestrator(
             p_llm=p_llm_mock,
@@ -683,9 +670,7 @@ class TestOrchestratorRetry:
 
         interp = CaMeLInterpreter(tools={"bad": bad_tool, "good": good_tool})
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            side_effect=lambda **_kw: next(plan_iter)
-        )
+        p_llm_mock.generate_plan = AsyncMock(side_effect=lambda **_kw: next(plan_iter))
         sigs = [
             ToolSignature("bad", "", "None", "bad"),
             ToolSignature("good", "", "str", "good"),
@@ -726,9 +711,7 @@ class TestOrchestratorRetry:
             tools={"partial": partial_tool, "fail": fail_tool, "success": success_tool}
         )
         p_llm_mock = MagicMock(spec=PLLMWrapper)
-        p_llm_mock.generate_plan = AsyncMock(
-            side_effect=lambda **_kw: next(plan_iter)
-        )
+        p_llm_mock.generate_plan = AsyncMock(side_effect=lambda **_kw: next(plan_iter))
         sigs = [
             ToolSignature("partial", "", "str", "partial"),
             ToolSignature("fail", "", "None", "fail"),
@@ -859,9 +842,7 @@ class TestAdversarialOrchestratorIntegration:
     def _assert_payload_absent(self, received_queries: list[str], payload: str) -> None:
         """Assert *payload* does not appear in any of the recorded P-LLM queries."""
         for i, q in enumerate(received_queries):
-            assert payload not in q, (
-                f"Adversarial payload found in P-LLM query #{i}: {q!r}"
-            )
+            assert payload not in q, f"Adversarial payload found in P-LLM query #{i}: {q!r}"
 
     # 10 adversarial cases -------------------------------------------------------
 
@@ -1359,8 +1340,10 @@ class TestExecutionTraceIntegrityMultiStep:
         """TraceRecord.args contains unwrapped raw values."""
 
         def greet(name: Any) -> CaMeLValue:
-            return wrap(f"Hello {name.raw if isinstance(name, CaMeLValue) else name}",
-                        sources=frozenset({"CaMeL"}))
+            return wrap(
+                f"Hello {name.raw if isinstance(name, CaMeLValue) else name}",
+                sources=frozenset({"CaMeL"}),
+            )
 
         plan_src = 'greeting = greet("Alice")'
         interp = CaMeLInterpreter(tools={"greet": greet})

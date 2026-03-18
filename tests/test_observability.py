@@ -274,9 +274,7 @@ class TestMetricsServer:
         port = server.server_address[1]
 
         try:
-            with urllib.request.urlopen(
-                f"http://localhost:{port}/metrics", timeout=5
-            ) as resp:
+            with urllib.request.urlopen(f"http://localhost:{port}/metrics", timeout=5) as resp:
                 assert resp.status == 200
                 body = resp.read().decode("utf-8")
                 assert "camel_policy_denial_rate" in body
@@ -293,9 +291,7 @@ class TestMetricsServer:
         server = start_metrics_server(port=0, collector=collector)
         port = server.server_address[1]
         try:
-            with urllib.request.urlopen(
-                f"http://localhost:{port}/metrics", timeout=5
-            ) as resp:
+            with urllib.request.urlopen(f"http://localhost:{port}/metrics", timeout=5) as resp:
                 ct = resp.headers.get("Content-Type", "")
                 assert "text/plain" in ct
         finally:
@@ -308,9 +304,7 @@ class TestMetricsServer:
         port = server.server_address[1]
         try:
             with pytest.raises(urllib.error.HTTPError) as exc_info:
-                urllib.request.urlopen(
-                    f"http://localhost:{port}/other", timeout=5
-                )
+                urllib.request.urlopen(f"http://localhost:{port}/other", timeout=5)
             assert exc_info.value.code == 404
         finally:
             server.shutdown()
@@ -327,9 +321,7 @@ class TestMetricsServer:
         server = start_metrics_server(port=0, collector=collector)
         port = server.server_address[1]
         try:
-            with urllib.request.urlopen(
-                f"http://localhost:{port}/metrics", timeout=5
-            ) as resp:
+            with urllib.request.urlopen(f"http://localhost:{port}/metrics", timeout=5) as resp:
                 body = resp.read().decode("utf-8")
             assert "camel_policy_denial_rate" in body
             assert "camel_qlm_error_rate" in body
@@ -419,8 +411,14 @@ class TestAuditLogRecord:
 
     def test_decision_values_representable(self) -> None:
         """Standard decision values are representable."""
-        decisions = ["Allowed", "Denied", "UserApproved", "UserRejected",
-                     "TaskSuccess", "TaskFailure"]
+        decisions = [
+            "Allowed",
+            "Denied",
+            "UserApproved",
+            "UserRejected",
+            "TaskSuccess",
+            "TaskFailure",
+        ]
         for d in decisions:
             record = _make_record(decision=d)
             assert record.decision == d
@@ -454,8 +452,14 @@ class TestAuditSinkStdout:
         captured = capsys.readouterr()
         parsed = json.loads(captured.out.strip())
         for field_name in [
-            "timestamp", "session_id", "event_type", "tool_name",
-            "policy_name", "decision", "capability_summary", "backend_id",
+            "timestamp",
+            "session_id",
+            "event_type",
+            "tool_name",
+            "policy_name",
+            "decision",
+            "capability_summary",
+            "backend_id",
         ]:
             assert field_name in parsed, f"Missing field: {field_name}"
 
@@ -487,6 +491,7 @@ class TestAuditSinkFile:
     def test_write_to_file(self, tmp_path: object) -> None:
         """write() appends a JSON line to the specified file."""
         import pathlib  # noqa: PLC0415
+
         log_file = pathlib.Path(str(tmp_path)) / "audit.log"  # type: ignore[arg-type]
 
         sink = AuditSink(AuditSinkConfig(mode=SinkMode.FILE, file_path=str(log_file)))
@@ -499,6 +504,7 @@ class TestAuditSinkFile:
     def test_file_appends_multiple_records(self, tmp_path: object) -> None:
         """Multiple writes append multiple JSON lines."""
         import pathlib  # noqa: PLC0415
+
         log_file = pathlib.Path(str(tmp_path)) / "audit2.log"  # type: ignore[arg-type]
 
         sink = AuditSink(AuditSinkConfig(mode=SinkMode.FILE, file_path=str(log_file)))
@@ -513,6 +519,7 @@ class TestAuditSinkFile:
     def test_file_contains_all_required_fields(self, tmp_path: object) -> None:
         """File JSON contains all required schema fields."""
         import pathlib  # noqa: PLC0415
+
         log_file = pathlib.Path(str(tmp_path)) / "audit3.log"  # type: ignore[arg-type]
 
         sink = AuditSink(AuditSinkConfig(mode=SinkMode.FILE, file_path=str(log_file)))
@@ -520,14 +527,21 @@ class TestAuditSinkFile:
 
         parsed = json.loads(log_file.read_text().strip())
         for field_name in [
-            "timestamp", "session_id", "event_type", "tool_name",
-            "policy_name", "decision", "capability_summary", "backend_id",
+            "timestamp",
+            "session_id",
+            "event_type",
+            "tool_name",
+            "policy_name",
+            "decision",
+            "capability_summary",
+            "backend_id",
         ]:
             assert field_name in parsed
 
     def test_file_created_if_missing(self, tmp_path: object) -> None:
         """File is created automatically if it does not exist."""
         import pathlib  # noqa: PLC0415
+
         log_file = pathlib.Path(str(tmp_path)) / "new_dir" / "audit.log"  # type: ignore[arg-type]
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -538,6 +552,7 @@ class TestAuditSinkFile:
     def test_env_var_file_mode(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
         """CAMEL_AUDIT_SINK=file:/path configures FILE mode via env."""
         import pathlib  # noqa: PLC0415
+
         log_file = pathlib.Path(str(tmp_path)) / "env_audit.log"  # type: ignore[arg-type]
         monkeypatch.setenv("CAMEL_AUDIT_SINK", f"file:{log_file}")
 
@@ -615,8 +630,14 @@ class TestAuditSinkExternal:
 
         assert received
         for field_name in [
-            "timestamp", "session_id", "event_type", "tool_name",
-            "policy_name", "decision", "capability_summary", "backend_id",
+            "timestamp",
+            "session_id",
+            "event_type",
+            "tool_name",
+            "policy_name",
+            "decision",
+            "capability_summary",
+            "backend_id",
         ]:
             assert field_name in received[0], f"Missing field: {field_name}"
 
@@ -648,11 +669,13 @@ class TestAuditSinkExternal:
         threading.Thread(target=_serve, daemon=True).start()
         ready.wait()
 
-        sink = AuditSink(AuditSinkConfig(
-            mode=SinkMode.EXTERNAL,
-            external_url=f"http://localhost:{port}/ingest",
-            auth_header="Bearer secret-token",
-        ))
+        sink = AuditSink(
+            AuditSinkConfig(
+                mode=SinkMode.EXTERNAL,
+                external_url=f"http://localhost:{port}/ingest",
+                auth_header="Bearer secret-token",
+            )
+        )
         sink.write(_make_record())
 
         deadline = time.monotonic() + 3.0
@@ -700,9 +723,7 @@ class TestAuditSinkEnvParsing:
         assert config.mode is SinkMode.FILE
         assert config.file_path == "/var/log/camel.log"
 
-    def test_unknown_value_falls_back_to_stdout(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unknown_value_falls_back_to_stdout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Unknown CAMEL_AUDIT_SINK value falls back to stdout."""
         monkeypatch.setenv("CAMEL_AUDIT_SINK", "unknown_sink_type")
         config = _config_from_env()
@@ -773,9 +794,7 @@ class TestNFR6Compliance:
     def _task_completion_record(self) -> AuditLogRecord:
         return _make_record(event_type="task_completion", decision="TaskSuccess")
 
-    def test_all_nfr6_event_types_produce_records(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_all_nfr6_event_types_produce_records(self, capsys: pytest.CaptureFixture[str]) -> None:
         """All NFR-6 event categories are representable as AuditLogRecords."""
         sink = AuditSink(AuditSinkConfig(mode=SinkMode.STDOUT))
         records_to_write = [
@@ -794,8 +813,13 @@ class TestNFR6Compliance:
         assert len(stored) == 7
         event_types = {r.event_type for r in stored}
         for et in [
-            "tool_call", "policy_evaluation", "consent_decision",
-            "capability_assignment", "qlm_error", "pllm_retry", "task_completion",
+            "tool_call",
+            "policy_evaluation",
+            "consent_decision",
+            "capability_assignment",
+            "qlm_error",
+            "pllm_retry",
+            "task_completion",
         ]:
             assert et in event_types, f"Missing NFR-6 event type: {et}"
 
@@ -816,21 +840,21 @@ class TestNFR6Compliance:
             assert d["session_id"], f"Missing session_id in {r.event_type}"
             assert "backend_id" in d, f"Missing backend_id in {r.event_type}"
 
-    def test_write_from_dict_creates_valid_record(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_write_from_dict_creates_valid_record(self, capsys: pytest.CaptureFixture[str]) -> None:
         """write_from_dict builds and writes a valid AuditLogRecord."""
         sink = AuditSink(AuditSinkConfig(mode=SinkMode.STDOUT))
-        sink.write_from_dict({
-            "session_id": "s-dict",
-            "event_type": "tool_call",
-            "tool_name": "echo",
-            "policy_name": "",
-            "decision": "Allowed",
-            "capability_summary": "sources={'User literal'}",
-            "backend_id": "gemini:gemini-2.5-flash",
-            "loop_attempt": 0,  # extra field
-        })
+        sink.write_from_dict(
+            {
+                "session_id": "s-dict",
+                "event_type": "tool_call",
+                "tool_name": "echo",
+                "policy_name": "",
+                "decision": "Allowed",
+                "capability_summary": "sources={'User literal'}",
+                "backend_id": "gemini:gemini-2.5-flash",
+                "loop_attempt": 0,  # extra field
+            }
+        )
 
         records = sink.get_records()
         assert len(records) == 1
@@ -908,8 +932,8 @@ class TestOtlpUrllibFallbackSchema:
         """Inner key is 'scopeMetrics', not 'scope_metrics'."""
         payload = self._capture_payload()
         resource = payload["resourceMetrics"][0]
-        assert "scopeMetrics" in resource, (
-            "Expected camelCase 'scopeMetrics'; got: " + str(list(resource.keys()))
+        assert "scopeMetrics" in resource, "Expected camelCase 'scopeMetrics'; got: " + str(
+            list(resource.keys())
         )
         assert "scope_metrics" not in resource
 
@@ -946,9 +970,7 @@ class TestOtlpUrllibFallbackSchema:
         sum_metrics = [m for m in metrics if "sum" in m]
         assert sum_metrics, "No sum metrics found"
         for metric in sum_metrics:
-            assert "isMonotonic" in metric["sum"], (
-                f"Missing 'isMonotonic' in '{metric['name']}'"
-            )
+            assert "isMonotonic" in metric["sum"], f"Missing 'isMonotonic' in '{metric['name']}'"
             assert "is_monotonic" not in metric["sum"]
 
     def test_aggregation_temporality_present(self) -> None:
@@ -990,8 +1012,7 @@ class TestOtlpUrllibFallbackSchema:
                     + type(dp["startTimeUnixNano"]).__name__
                 )
                 assert isinstance(dp["timeUnixNano"], str), (
-                    "timeUnixNano must be a string, not "
-                    + type(dp["timeUnixNano"]).__name__
+                    "timeUnixNano must be a string, not " + type(dp["timeUnixNano"]).__name__
                 )
 
     def test_attribute_value_key_is_camelCase(self) -> None:
@@ -1018,9 +1039,7 @@ class TestOtlpUrllibFallbackSchema:
 class TestOtlpRuntimeWarning:
     """Verify that a RuntimeWarning is raised when SDK is absent but endpoint set."""
 
-    def test_runtime_warning_when_sdk_absent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_runtime_warning_when_sdk_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_start_otel_push emits RuntimeWarning when opentelemetry is not importable."""
         import importlib.util  # noqa: PLC0415
 
@@ -1038,9 +1057,7 @@ class TestOtlpRuntimeWarning:
             collector._start_otel_push("http://localhost:4318")
         collector.stop_otel_push()
 
-    def test_no_warning_when_sdk_present(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_warning_when_sdk_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_start_otel_push does not emit RuntimeWarning when opentelemetry is available."""
         import importlib.util  # noqa: PLC0415
 
@@ -1051,6 +1068,7 @@ class TestOtlpRuntimeWarning:
                 # Return a truthy spec-like object to simulate SDK presence
                 class _FakeSpec:
                     pass
+
                 return _FakeSpec()
             return original_find_spec(name, *args, **kwargs)
 
@@ -1058,6 +1076,7 @@ class TestOtlpRuntimeWarning:
 
         collector = CamelMetricsCollector()
         import warnings  # noqa: PLC0415
+
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
             # Should not raise — SDK appears to be present

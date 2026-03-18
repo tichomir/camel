@@ -172,7 +172,7 @@ class TestM4F6DependencyAwareRedaction:
         """
         interp = _make_interp()
         # Build a 5-level deep dependency chain rooted at an untrusted source.
-        interp.exec("a = get_email()")   # untrusted: source = get_email
+        interp.exec("a = get_email()")  # untrusted: source = get_email
         interp.exec("b = a")
         interp.exec("c = b")
         interp.exec("d = c")
@@ -626,14 +626,11 @@ class TestM4F9LoopBodyExceptionPropagation:
         failing_on[0] = True
 
         with pytest.raises(RuntimeError) as exc_info:
-            interp.exec(
-                "for item in items:\n    result = failing_tool(item)"
-            )
+            interp.exec("for item in items:\n    result = failing_tool(item)")
         exc = exc_info.value
         # M4-F9: __loop_iter_deps__ should be attached.
         assert hasattr(exc, "__loop_iter_deps__"), (
-            "Exception from loop body with non-public iterable must carry "
-            "__loop_iter_deps__"
+            "Exception from loop body with non-public iterable must carry __loop_iter_deps__"
         )
         # The dep context should include the iterable variable.
         assert isinstance(exc.__loop_iter_deps__, frozenset)  # type: ignore[attr-defined]
@@ -648,9 +645,7 @@ class TestM4F9LoopBodyExceptionPropagation:
         interp.exec("items = get_items()")
 
         with pytest.raises(RuntimeError) as exc_info:
-            interp.exec(
-                "for item in items:\n    result = failing_tool(item)"
-            )
+            interp.exec("for item in items:\n    result = failing_tool(item)")
         exc = exc_info.value
         assert hasattr(exc, "__loop_iter_caps__"), (
             "Exception from loop body must carry __loop_iter_caps__"
@@ -667,9 +662,7 @@ class TestM4F9LoopBodyExceptionPropagation:
         interp = _make_interp(failing_tool=failing_tool)
         # Use a literal list (trusted, User-literal source).
         with pytest.raises(RuntimeError) as exc_info:
-            interp.exec(
-                "for item in [1, 2, 3]:\n    result = failing_tool(item)"
-            )
+            interp.exec("for item in [1, 2, 3]:\n    result = failing_tool(item)")
         exc = exc_info.value
         # For a trusted iterable, __loop_iter_deps__ should NOT be set.
         assert not hasattr(exc, "__loop_iter_deps__"), (
@@ -683,16 +676,16 @@ class TestM4F9LoopBodyExceptionPropagation:
             raise RuntimeError("normal mode loop error")
 
         interp = CaMeLInterpreter(
-            tools={"get_items": lambda: wrap([1, 2, 3], sources=frozenset({"get_items"})),
-                   "failing_tool": failing_tool},
+            tools={
+                "get_items": lambda: wrap([1, 2, 3], sources=frozenset({"get_items"})),
+                "failing_tool": failing_tool,
+            },
             mode=ExecutionMode.NORMAL,
         )
         interp.exec("items = get_items()")
 
         with pytest.raises(RuntimeError) as exc_info:
-            interp.exec(
-                "for item in items:\n    result = failing_tool(item)"
-            )
+            interp.exec("for item in items:\n    result = failing_tool(item)")
         exc = exc_info.value
         assert not hasattr(exc, "__loop_iter_deps__"), (
             "NORMAL mode loop exceptions must NOT carry __loop_iter_deps__"

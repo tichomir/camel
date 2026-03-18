@@ -97,9 +97,7 @@ _RAW_VALUES: list[tuple[Any, str]] = [
 
 
 @pytest.mark.parametrize("raw_value,type_label", _RAW_VALUES)
-def test_camel_value_as_user_query_raises_isolation_error(
-    raw_value: Any, type_label: str
-) -> None:
+def test_camel_value_as_user_query_raises_isolation_error(raw_value: Any, type_label: str) -> None:
     """PLLMIsolationError is raised and no message is constructed.
 
     Parameterized across CaMeLValue wrapping str, dict, list, and a Pydantic
@@ -152,9 +150,7 @@ def test_camel_value_as_context_value_raises_isolation_error(
 
 
 @pytest.mark.parametrize("raw_value,type_label", _RAW_VALUES)
-def test_no_camel_value_repr_in_messages_on_valid_call(
-    raw_value: Any, type_label: str
-) -> None:
+def test_no_camel_value_repr_in_messages_on_valid_call(raw_value: Any, type_label: str) -> None:
     """CaMeLValue repr never appears in any message sent to the backend.
 
     Simulates a successful two-attempt run (first response missing a code
@@ -197,8 +193,7 @@ def test_no_camel_value_repr_in_messages_on_valid_call(
             f"Message content must be a plain str, got {type(content)!r}"
         )
         assert "CaMeLValue" not in content, (
-            f"CaMeLValue repr leaked into {msg['role']!r} message "
-            f"(raw_value type: {type_label})"
+            f"CaMeLValue repr leaked into {msg['role']!r} message (raw_value type: {type_label})"
         )
 
 
@@ -324,9 +319,7 @@ def test_untrusted_error_retry_prompt_contains_only_type_and_location() -> None:
 def test_parse_code_plan_raises_for_no_fenced_block(wrapper: PLLMWrapper) -> None:
     """parse_code_plan raises CodeBlockNotFoundError when no fence is present."""
     with pytest.raises(CodeBlockNotFoundError):
-        wrapper.parse_code_plan(
-            "Here is my response. I will send the email. No code block."
-        )
+        wrapper.parse_code_plan("Here is my response. I will send the email. No code block.")
 
 
 def test_parse_code_plan_raises_for_empty_fenced_block(wrapper: PLLMWrapper) -> None:
@@ -345,9 +338,7 @@ def test_parse_code_plan_raises_for_non_python_fenced_block(
     be accepted, because only Python-tagged blocks are valid execution plans.
     """
     with pytest.raises(CodeBlockNotFoundError):
-        wrapper.parse_code_plan(
-            "Here is your plan:\n\n```javascript\nconsole.log('hello');\n```\n"
-        )
+        wrapper.parse_code_plan("Here is your plan:\n\n```javascript\nconsole.log('hello');\n```\n")
 
 
 def test_parse_code_plan_raises_for_json_fenced_block(wrapper: PLLMWrapper) -> None:

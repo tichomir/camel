@@ -227,18 +227,14 @@ class TestAssertDenied:
         """reason_contains check passes when substring is present."""
         registry = PolicyRegistry()
         registry.register("my_tool", lambda tn, kw: Denied("recipient untrusted"))
-        result = assert_denied(
-            registry, "my_tool", {}, reason_contains="untrusted"
-        )
+        result = assert_denied(registry, "my_tool", {}, reason_contains="untrusted")
         assert "untrusted" in result.reason
 
     def test_reason_contains_check_case_insensitive(self) -> None:
         """reason_contains check is case-insensitive."""
         registry = PolicyRegistry()
         registry.register("my_tool", lambda tn, kw: Denied("Recipient UNTRUSTED"))
-        result = assert_denied(
-            registry, "my_tool", {}, reason_contains="untrusted"
-        )
+        result = assert_denied(registry, "my_tool", {}, reason_contains="untrusted")
         assert result.reason == "Recipient UNTRUSTED"
 
     def test_reason_contains_check_fails_when_missing(self) -> None:
@@ -276,6 +272,7 @@ class TestAssertPolicyAllowed:
 
     def test_passes_when_policy_returns_allowed(self) -> None:
         """assert_policy_allowed passes when the policy function returns Allowed."""
+
         def always_allow(tn: str, kw: object) -> Allowed:
             return Allowed()
 
@@ -283,6 +280,7 @@ class TestAssertPolicyAllowed:
 
     def test_fails_when_policy_returns_denied(self) -> None:
         """assert_policy_allowed raises AssertionError when policy returns Denied."""
+
         def always_deny(tn: str, kw: object) -> Denied:
             return Denied("blocked")
 
@@ -319,6 +317,7 @@ class TestAssertPolicyDenied:
 
     def test_passes_when_policy_returns_denied(self) -> None:
         """assert_policy_denied passes when the policy function returns Denied."""
+
         def always_deny(tn: str, kw: object) -> Denied:
             return Denied("blocked")
 
@@ -327,6 +326,7 @@ class TestAssertPolicyDenied:
 
     def test_fails_when_policy_returns_allowed(self) -> None:
         """assert_policy_denied raises AssertionError when policy returns Allowed."""
+
         def always_allow(tn: str, kw: object) -> Allowed:
             return Allowed()
 
@@ -335,23 +335,21 @@ class TestAssertPolicyDenied:
 
     def test_expected_reason_passes(self) -> None:
         """expected_reason check passes when substring is present."""
+
         def deny_with_reason(tn: str, kw: object) -> Denied:
             return Denied("untrusted recipient detected")
 
-        result = assert_policy_denied(
-            deny_with_reason, "my_tool", {}, expected_reason="untrusted"
-        )
+        result = assert_policy_denied(deny_with_reason, "my_tool", {}, expected_reason="untrusted")
         assert "untrusted" in result.reason
 
     def test_expected_reason_fails_when_missing(self) -> None:
         """expected_reason check raises when fragment is absent from reason."""
+
         def deny_vague(tn: str, kw: object) -> Denied:
             return Denied("policy violation")
 
         with pytest.raises(AssertionError):
-            assert_policy_denied(
-                deny_vague, "my_tool", {}, expected_reason="untrusted"
-            )
+            assert_policy_denied(deny_vague, "my_tool", {}, expected_reason="untrusted")
 
     def test_passes_for_send_email_injected_recipient(self) -> None:
         """assert_policy_denied passes when untrusted recipient is injected."""
@@ -388,11 +386,7 @@ class TestAssertPolicyDenied:
 
     def test_passes_for_fetch_external_url_injected_url(self) -> None:
         """assert_policy_denied passes for untrusted URL in fetch_external_url."""
-        kwargs = {
-            "url": make_untrusted_value(
-                "https://attacker.com/exfil", source="read_email"
-            )
-        }
+        kwargs = {"url": make_untrusted_value("https://attacker.com/exfil", source="read_email")}
         result = assert_policy_denied(
             fetch_external_url_policy,
             "fetch_external_url",
@@ -444,6 +438,7 @@ class TestPolicyTestCaseBase(PolicyTestCase):
 
     def test_evaluation_mode_raises_policy_violation_error(self) -> None:
         """Interpreter in EVALUATION mode raises PolicyViolationError on denial."""
+
         def _blocked_tool(**_kw: object) -> CaMeLValue:
             return wrap("ok", sources=frozenset({"CaMeL"}))
 
@@ -466,6 +461,7 @@ class TestPolicyTestCaseBase(PolicyTestCase):
 
     def test_audit_log_captures_denied_entry(self) -> None:
         """audit_log captures a Denied entry when policy blocks a tool call."""
+
         def _blocked_tool(**_kw: object) -> CaMeLValue:
             return wrap("ok", sources=frozenset({"CaMeL"}))
 
@@ -525,6 +521,7 @@ def test_fixture_audit_log_captures_allowed_entry(
     reference_policy_registry: PolicyRegistry,
 ) -> None:
     """Audit log captures an Allowed entry via the fixture-provided interpreter."""
+
     def _send_email_tool(**_kw: object) -> CaMeLValue:
         return wrap("sent", sources=frozenset({"CaMeL"}))
 
@@ -541,8 +538,7 @@ def test_fixture_audit_log_captures_allowed_entry(
 
     log = interp.audit_log
     assert any(
-        getattr(e, "tool_name", None) == "send_email"
-        and getattr(e, "outcome", None) == "Allowed"
+        getattr(e, "tool_name", None) == "send_email" and getattr(e, "outcome", None) == "Allowed"
         for e in log
     ), f"Expected Allowed entry in audit log, got: {log!r}"
 
@@ -564,32 +560,28 @@ class TestReplayAgentdojoScenario:
     def test_send_email_injected_recipient_is_denied(self) -> None:
         """send_email_injected_recipient scenario results in Denied at registry level."""
         scenario = next(
-            s for s in AGENTDOJO_SCENARIOS
-            if s.scenario_id == "send_email_injected_recipient"
+            s for s in AGENTDOJO_SCENARIOS if s.scenario_id == "send_email_injected_recipient"
         )
         replay_agentdojo_scenario(self.registry, scenario)  # must not raise
 
     def test_send_email_trusted_recipient_is_allowed(self) -> None:
         """send_email_trusted_recipient scenario results in Allowed."""
         scenario = next(
-            s for s in AGENTDOJO_SCENARIOS
-            if s.scenario_id == "send_email_trusted_recipient"
+            s for s in AGENTDOJO_SCENARIOS if s.scenario_id == "send_email_trusted_recipient"
         )
         replay_agentdojo_scenario(self.registry, scenario)  # must not raise
 
     def test_send_money_injected_amount_is_denied(self) -> None:
         """send_money_injected_amount scenario results in Denied."""
         scenario = next(
-            s for s in AGENTDOJO_SCENARIOS
-            if s.scenario_id == "send_money_injected_amount"
+            s for s in AGENTDOJO_SCENARIOS if s.scenario_id == "send_money_injected_amount"
         )
         replay_agentdojo_scenario(self.registry, scenario)
 
     def test_fetch_external_url_injected_url_is_denied(self) -> None:
         """fetch_external_url_injected_url scenario results in Denied."""
         scenario = next(
-            s for s in AGENTDOJO_SCENARIOS
-            if s.scenario_id == "fetch_external_url_injected_url"
+            s for s in AGENTDOJO_SCENARIOS if s.scenario_id == "fetch_external_url_injected_url"
         )
         replay_agentdojo_scenario(self.registry, scenario)
 
@@ -632,21 +624,15 @@ class TestReplayThroughHook:
 
     def test_send_email_injected_recipient_raises_policy_violation(self) -> None:
         """send_email recipient injection raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "send_email_injected_recipient", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("send_email_injected_recipient", self.registry)
 
     def test_send_money_injected_amount_raises_policy_violation(self) -> None:
         """send_money amount manipulation raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "send_money_injected_amount", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("send_money_injected_amount", self.registry)
 
     def test_fetch_external_url_injected_url_raises_policy_violation(self) -> None:
         """fetch_external_url with untrusted URL raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "fetch_external_url_injected_url", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("fetch_external_url_injected_url", self.registry)
 
     def test_post_message_data_to_control_escalation_raises_policy_violation(
         self,
@@ -660,21 +646,15 @@ class TestReplayThroughHook:
 
     def test_send_money_injected_recipient_raises_policy_violation(self) -> None:
         """send_money recipient injection raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "send_money_injected_recipient", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("send_money_injected_recipient", self.registry)
 
     def test_write_file_injected_path_raises_policy_violation(self) -> None:
         """write_file path injection raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "write_file_injected_path", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("write_file_injected_path", self.registry)
 
     def test_post_message_injected_channel_raises_policy_violation(self) -> None:
         """post_message channel injection raises PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "post_message_injected_channel", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("post_message_injected_channel", self.registry)
 
     def test_send_money_data_to_control_escalation_raises_policy_violation(
         self,
@@ -686,25 +666,20 @@ class TestReplayThroughHook:
 
     def test_benign_send_email_does_not_raise(self) -> None:
         """Trusted send_email does NOT raise PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "send_email_trusted_recipient", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("send_email_trusted_recipient", self.registry)
 
     def test_benign_fetch_url_does_not_raise(self) -> None:
         """Trusted fetch_external_url does NOT raise PolicyViolationError."""
-        replay_agentdojo_scenario_through_hook(
-            "fetch_external_url_trusted_url", self.registry
-        )
+        replay_agentdojo_scenario_through_hook("fetch_external_url_trusted_url", self.registry)
 
     def test_unknown_scenario_id_raises_key_error(self) -> None:
         """Passing an unknown scenario_id raises KeyError."""
         with pytest.raises(KeyError, match="no_such_scenario"):
-            replay_agentdojo_scenario_through_hook(
-                "no_such_scenario", self.registry
-            )
+            replay_agentdojo_scenario_through_hook("no_such_scenario", self.registry)
 
     def test_audit_log_has_denied_entry_for_injected_recipient(self) -> None:
         """Verifying audit log directly: send_email injection leaves a Denied entry."""
+
         # Manually run the enforcement hook and verify the audit log.
         def _dummy_send_email(**_kw: object) -> CaMeLValue:
             return wrap("sent", sources=frozenset({"CaMeL"}))
@@ -732,13 +707,12 @@ class TestReplayThroughHook:
         # Verify audit log
         log = interp.audit_log
         denied_entries = [
-            e for e in log
+            e
+            for e in log
             if getattr(e, "tool_name", None) == "send_email"
             and getattr(e, "outcome", None) == "Denied"
         ]
-        assert denied_entries, (
-            f"Expected 'Denied' audit entry for send_email, got: {log!r}"
-        )
+        assert denied_entries, f"Expected 'Denied' audit entry for send_email, got: {log!r}"
 
         # Verify policy violation error reason
         assert "untrusted" in exc_info.value.reason.lower(), (
@@ -769,6 +743,7 @@ class TestAuditLogEntryContent:
 
     def test_allowed_entry_fields(self) -> None:
         """Allowed audit entry has correct tool_name, outcome=Allowed, reason=None."""
+
         def _tool(**_kw: object) -> CaMeLValue:
             return wrap("ok", sources=frozenset({"CaMeL"}))
 
@@ -777,9 +752,7 @@ class TestAuditLogEntryContent:
         interp.exec("r = send_email(to=_to)")
 
         log = interp.audit_log
-        allowed = next(
-            (e for e in log if getattr(e, "outcome", None) == "Allowed"), None
-        )
+        allowed = next((e for e in log if getattr(e, "outcome", None) == "Allowed"), None)
         assert allowed is not None
         assert getattr(allowed, "tool_name") == "send_email"
         assert getattr(allowed, "reason") is None
@@ -787,6 +760,7 @@ class TestAuditLogEntryContent:
 
     def test_denied_entry_fields(self) -> None:
         """Denied audit entry has correct tool_name, outcome=Denied, reason string."""
+
         def _tool(**_kw: object) -> CaMeLValue:
             return wrap("ok", sources=frozenset({"CaMeL"}))
 
@@ -806,9 +780,7 @@ class TestAuditLogEntryContent:
             pass
 
         log = interp.audit_log
-        denied = next(
-            (e for e in log if getattr(e, "outcome", None) == "Denied"), None
-        )
+        denied = next((e for e in log if getattr(e, "outcome", None) == "Denied"), None)
         assert denied is not None
         assert getattr(denied, "tool_name") == "send_email"
         assert getattr(denied, "reason") is not None

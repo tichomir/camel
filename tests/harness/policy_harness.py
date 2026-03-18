@@ -265,9 +265,7 @@ def assert_allowed(
         assert_allowed(registry, "my_tool", {"arg": make_trusted_value("ok")})
     """
     result = registry.evaluate(tool_name, kwargs)
-    assert isinstance(result, Allowed), (
-        f"Expected Allowed for tool {tool_name!r}, got {result!r}"
-    )
+    assert isinstance(result, Allowed), f"Expected Allowed for tool {tool_name!r}, got {result!r}"
 
 
 def assert_denied(
@@ -318,9 +316,7 @@ def assert_denied(
         assert isinstance(result, Denied)
     """
     result = registry.evaluate(tool_name, kwargs)
-    assert isinstance(result, Denied), (
-        f"Expected Denied for tool {tool_name!r}, got {result!r}"
-    )
+    assert isinstance(result, Denied), f"Expected Denied for tool {tool_name!r}, got {result!r}"
     if reason_contains is not None:
         assert reason_contains.lower() in result.reason.lower(), (
             f"Expected denial reason to contain {reason_contains!r} "
@@ -787,7 +783,8 @@ def replay_agentdojo_scenario_through_hook(
         # Verify audit log has a Denied entry for this tool.
         audit = interp.audit_log
         denial_entries = [
-            e for e in audit
+            e
+            for e in audit
             if getattr(e, "tool_name", None) == scenario.tool_name
             and getattr(e, "outcome", None) == "Denied"
         ]
@@ -818,7 +815,8 @@ def replay_agentdojo_scenario_through_hook(
 
         audit = interp.audit_log
         allowed_entries = [
-            e for e in audit
+            e
+            for e in audit
             if getattr(e, "tool_name", None) == scenario.tool_name
             and getattr(e, "outcome", None) == "Allowed"
         ]

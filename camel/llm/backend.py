@@ -267,6 +267,5 @@ def get_backend(provider: str, **kwargs: Any) -> LLMBackend:
 
         return OpenAIBackend(**kwargs)
     raise ValueError(
-        f"Unknown LLM provider: {provider!r}. "
-        "Supported providers: 'claude', 'gemini', 'openai'."
+        f"Unknown LLM provider: {provider!r}. Supported providers: 'claude', 'gemini', 'openai'."
     )

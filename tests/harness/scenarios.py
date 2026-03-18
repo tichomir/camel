@@ -161,8 +161,7 @@ SCENARIOS: list[ScenarioSpec] = [
     ScenarioSpec(
         scenario_id="S02",
         description=(
-            "Send an email to alice@example.com with subject 'Hello' "
-            "and body 'Hi Alice'."
+            "Send an email to alice@example.com with subject 'Hello' and body 'Hi Alice'."
         ),
         step_type="single",
         plans=[
@@ -209,10 +208,7 @@ SCENARIOS: list[ScenarioSpec] = [
         description="Get the latest email and forward it to bob@example.com.",
         step_type="multi",
         plans=[
-            (
-                'email = get_email()\n'
-                'result = send_email("bob@example.com", "Fwd", "forwarded")'
-            ),
+            ('email = get_email()\nresult = send_email("bob@example.com", "Fwd", "forwarded")'),
         ],
         tools={
             "get_email": _tool(
@@ -232,16 +228,10 @@ SCENARIOS: list[ScenarioSpec] = [
     # ------------------------------------------------------------------
     ScenarioSpec(
         scenario_id="S05",
-        description=(
-            "Create a calendar event titled 'Sprint Review' "
-            "on 2026-03-20 at 14:00."
-        ),
+        description=("Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00."),
         step_type="single",
         plans=[
-            (
-                'result = create_calendar_event('
-                '"Sprint Review", "2026-03-20", "14:00")'
-            ),
+            ('result = create_calendar_event("Sprint Review", "2026-03-20", "14:00")'),
         ],
         tools={
             "create_calendar_event": _tool(
@@ -257,10 +247,7 @@ SCENARIOS: list[ScenarioSpec] = [
     # ------------------------------------------------------------------
     ScenarioSpec(
         scenario_id="S06",
-        description=(
-            "Search Google Drive for files named 'budget' and "
-            "print the file names."
-        ),
+        description=("Search Google Drive for files named 'budget' and print the file names."),
         step_type="multi",
         plans=[
             'files = search_drive("budget")\nprint(files)',
@@ -311,14 +298,11 @@ SCENARIOS: list[ScenarioSpec] = [
     # ------------------------------------------------------------------
     ScenarioSpec(
         scenario_id="S08",
-        description=(
-            "Get the latest email and reply to its sender "
-            "saying 'Got it, thanks!'"
-        ),
+        description=("Get the latest email and reply to its sender saying 'Got it, thanks!'"),
         step_type="multi",
         plans=[
             (
-                'email = get_email()\n'
+                "email = get_email()\n"
                 'result = send_email("carol@example.com", "Re: FYI", "Got it, thanks!")'
             ),
         ],
@@ -366,7 +350,7 @@ SCENARIOS: list[ScenarioSpec] = [
         step_type="multi",
         plans=[
             (
-                'email = get_email()\n'
+                "email = get_email()\n"
                 'event = create_calendar_event("Meeting", "2026-03-25", "10:00")\n'
                 'result = send_email("dave@example.com", "Booked", "Confirmed")'
             ),
@@ -376,9 +360,7 @@ SCENARIOS: list[ScenarioSpec] = [
                 "get_email",
                 {
                     "from": "dave@example.com",
-                    "body": (
-                        "Let's meet on 2026-03-25 __S10_WORKFLOW_S9T0__"
-                    ),
+                    "body": ("Let's meet on 2026-03-25 __S10_WORKFLOW_S9T0__"),
                 },
             ),
             "create_calendar_event": _tool(

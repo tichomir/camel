@@ -233,8 +233,7 @@ class TestSendEmailDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            "recipient address from untrusted source is not an "
-            "authorised reader of the email body"
+            "recipient address from untrusted source is not an authorised reader of the email body"
         )
 
     def test_untrusted_to_subject_restricted_denied(self) -> None:
@@ -383,8 +382,7 @@ class TestSendMoneyDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            "transfer recipient originates from untrusted source — "
-            "possible data-flow manipulation"
+            "transfer recipient originates from untrusted source — possible data-flow manipulation"
         )
 
     def test_untrusted_amount_denied(self) -> None:
@@ -398,8 +396,7 @@ class TestSendMoneyDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            "transfer amount originates from untrusted source — "
-            "possible data-flow manipulation"
+            "transfer amount originates from untrusted source — possible data-flow manipulation"
         )
 
 
@@ -473,8 +470,9 @@ class TestCreateCalendarEventAllowed:
             "create_calendar_event",
             {
                 "participants": wrap(["alice@example.com"], sources=_TRUSTED),
-                "title": wrap("Team sync", sources=_EMAIL_TOOL,
-                              readers=frozenset({"owner@example.com"})),
+                "title": wrap(
+                    "Team sync", sources=_EMAIL_TOOL, readers=frozenset({"owner@example.com"})
+                ),
             },
         )
         assert result == Allowed()
@@ -521,8 +519,9 @@ class TestCreateCalendarEventAllowed:
             "create_calendar_event",
             {
                 "participants": wrap([], sources=_EMAIL_TOOL),
-                "title": wrap("Event", sources=_EMAIL_TOOL,
-                              readers=frozenset({"owner@example.com"})),
+                "title": wrap(
+                    "Event", sources=_EMAIL_TOOL, readers=frozenset({"owner@example.com"})
+                ),
             },
         )
         assert result == Allowed()
@@ -718,8 +717,7 @@ class TestWriteFileDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            "file path originates from untrusted source — "
-            "possible path injection"
+            "file path originates from untrusted source — possible path injection"
         )
 
     def test_owner_not_in_content_readers_denied(self, write_file_policy) -> None:  # type: ignore[no-untyped-def]
@@ -737,8 +735,7 @@ class TestWriteFileDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            f"file content is not authorised to be written by the "
-            f"file system owner {FILE_OWNER!r}"
+            f"file content is not authorised to be written by the file system owner {FILE_OWNER!r}"
         )
 
     def test_empty_readers_content_denied(self, write_file_policy) -> None:  # type: ignore[no-untyped-def]
@@ -901,8 +898,9 @@ class TestPostMessageDeniedDeepProvenance:
 
     def test_two_hop_message_restricted_readers_denied(self) -> None:
         """Message derived from document (2-hop) with restricted readers → Denied."""
-        hop1 = wrap("Confidential info", sources=_DOC_TOOL,
-                    readers=frozenset({"alice@company.com"}))
+        hop1 = wrap(
+            "Confidential info", sources=_DOC_TOOL, readers=frozenset({"alice@company.com"})
+        )
         two_hop_message = wrap(
             "Summary of Confidential info",
             sources=_DOC_TOOL | _CAMEL_TRUSTED,
@@ -979,8 +977,7 @@ class TestFetchExternalUrlDenied:
         )
         assert isinstance(result, Denied)
         assert result.reason == (
-            "URL originates from untrusted source — "
-            "possible SSRF or data exfiltration via URL"
+            "URL originates from untrusted source — possible SSRF or data exfiltration via URL"
         )
 
     def test_untrusted_params_denied(self) -> None:

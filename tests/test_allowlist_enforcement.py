@@ -311,7 +311,7 @@ class TestApprovedBuiltinsAccessible:
         assert interp.store["x"].raw == {}
 
     def test_str_accessible(self) -> None:
-        interp = _exec('x = str(42)')
+        interp = _exec("x = str(42)")
         assert interp.store["x"].raw == "42"
 
     def test_int_accessible(self) -> None:
@@ -339,8 +339,7 @@ class TestApprovedBuiltinsAccessible:
         interp = _exec('print("hello")')
         # No ForbiddenNameError should have been raised.
         assert not any(
-            getattr(e, "offending_name", None) == "print"
-            for e in interp.security_audit_log
+            getattr(e, "offending_name", None) == "print" for e in interp.security_audit_log
         )
 
     def test_enumerate_accessible(self) -> None:
@@ -402,9 +401,7 @@ class TestTimingPrimitiveExclusion:
     def test_timing_name_in_excluded_set(self, timing_name: str) -> None:
         """Each timing primitive must appear in get_excluded_timing_names()."""
         excluded = get_excluded_timing_names()
-        assert timing_name in excluded, (
-            f"'{timing_name}' must be listed in excluded_timing_names"
-        )
+        assert timing_name in excluded, f"'{timing_name}' must be listed in excluded_timing_names"
 
     def test_time_import_raises_forbidden_import(self) -> None:
         """'import time' raises ForbiddenImportError, not ForbiddenNameError."""
@@ -418,9 +415,7 @@ class TestTimingPrimitiveExclusion:
         permitted = get_permitted_names()
         excluded = get_excluded_timing_names()
         overlap = permitted & excluded
-        assert not overlap, (
-            f"Names appear in both permitted and excluded sets: {sorted(overlap)}"
-        )
+        assert not overlap, f"Names appear in both permitted and excluded sets: {sorted(overlap)}"
 
 
 # ---------------------------------------------------------------------------
@@ -438,9 +433,7 @@ class TestAllowlistLoading:
         with pytest.raises(FileNotFoundError):
             load_allowlist(missing)
 
-    def test_malformed_yaml_raises_configuration_security_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_malformed_yaml_raises_configuration_security_error(self, tmp_path: Path) -> None:
         """load_allowlist() raises ConfigurationSecurityError for invalid YAML."""
         bad_yaml = tmp_path / "bad_allowlist.yaml"
         bad_yaml.write_text(":::invalid:::yaml:::", encoding="utf-8")
@@ -470,9 +463,7 @@ class TestAllowlistLoading:
                 "reviewers": [],
                 "review_required": True,
             },
-            "permitted_builtins": [
-                {"name": "len", "risk_level": "low", "justification": "ok"}
-            ],
+            "permitted_builtins": [{"name": "len", "risk_level": "low", "justification": "ok"}],
             "excluded_timing_names": [
                 {"name": "time", "category": "stdlib_module", "rationale": "timing"}
             ],
@@ -495,9 +486,7 @@ class TestAllowlistLoading:
         for name in _APPROVED_BUILTINS:
             assert name in permitted, f"'{name}' missing from permitted_names"
 
-    def test_non_mapping_yaml_raises_configuration_security_error(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_mapping_yaml_raises_configuration_security_error(self, tmp_path: Path) -> None:
         """load_allowlist() raises ConfigurationSecurityError when YAML root is not a mapping."""
         list_yaml = tmp_path / "list_allowlist.yaml"
         list_yaml.write_text("- item1\n- item2\n", encoding="utf-8")

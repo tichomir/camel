@@ -162,9 +162,7 @@ class QLLMWrapper:
         schema_description = self._describe_schema(schema)
 
         system_content = (
-            _SYSTEM_PROMPT
-            + f"\nTarget schema: {schema.__name__}\n"
-            + schema_description
+            _SYSTEM_PROMPT + f"\nTarget schema: {schema.__name__}\n" + schema_description
         )
 
         user_content = (

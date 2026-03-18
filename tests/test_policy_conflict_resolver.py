@@ -55,9 +55,7 @@ def _deny(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyRes
 def _make_deny(reason: str, fn_name: str | None = None) -> object:
     """Return a Denied policy with a custom reason string."""
 
-    def _policy(
-        tool_name: str, kwargs: Mapping[str, CaMeLValue]
-    ) -> SecurityPolicyResult:
+    def _policy(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
         return Denied(reason)
 
     _policy.__name__ = fn_name or f"deny_{reason}"
@@ -83,9 +81,7 @@ def _resolver(
     if platform is not None:
         p = platform
 
-        def _p(
-            tn: str, kw: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def _p(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return p
 
         _p.__name__ = "platform_policy"
@@ -94,9 +90,7 @@ def _resolver(
     if tool_provider is not None:
         tp = tool_provider
 
-        def _tp(
-            tn: str, kw: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def _tp(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return tp
 
         _tp.__name__ = "tp_policy"
@@ -105,9 +99,7 @@ def _resolver(
     if user is not None:
         u = user
 
-        def _u(
-            tn: str, kw: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def _u(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             return u
 
         _u.__name__ = "user_policy"
@@ -716,15 +708,11 @@ class TestScenario12AuditTrailCorrectness:
         reg = TieredPolicyRegistry()
         calls: list[str] = []
 
-        def _p_allow(
-            tn: str, kw: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def _p_allow(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             calls.append("p_allow")
             return Allowed()
 
-        def _p_deny(
-            tn: str, kw: Mapping[str, CaMeLValue]
-        ) -> SecurityPolicyResult:
+        def _p_deny(tn: str, kw: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
             calls.append("p_deny")
             return Denied("first_deny")
 

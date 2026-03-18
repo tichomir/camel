@@ -252,8 +252,7 @@ extraction = query_quarantined_llm("extract", "schema")
 note = "static string"
 """)
     assert "extraction" in _deps(interp, "note"), (
-        "STRICT mode: Q-LLM variable must appear in dep graph of subsequent "
-        "assignments (M4-F4)"
+        "STRICT mode: Q-LLM variable must appear in dep graph of subsequent assignments (M4-F4)"
     )
 
 
@@ -380,9 +379,7 @@ def test_m4f5_default_mode_is_strict():
     passed explicitly via ``mode=ExecutionMode.NORMAL``.
     """
     interp = CaMeLInterpreter()
-    assert interp._mode is ExecutionMode.STRICT, (
-        "Default mode must be ExecutionMode.STRICT (M4-F5)"
-    )
+    assert interp._mode is ExecutionMode.STRICT, "Default mode must be ExecutionMode.STRICT (M4-F5)"
 
 
 # ---------------------------------------------------------------------------
@@ -448,12 +445,8 @@ b = query_quarantined_llm("second", "schema")
 note = "static"
 """)
     deps_note = _deps(interp, "note")
-    assert "a" in deps_note, (
-        "STRICT mode: first Q-LLM var 'a' must be in 'note' deps (M4-F4)"
-    )
-    assert "b" in deps_note, (
-        "STRICT mode: second Q-LLM var 'b' must be in 'note' deps (M4-F4)"
-    )
+    assert "a" in deps_note, "STRICT mode: first Q-LLM var 'a' must be in 'note' deps (M4-F4)"
+    assert "b" in deps_note, "STRICT mode: second Q-LLM var 'b' must be in 'note' deps (M4-F4)"
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +489,7 @@ def test_m4f1_nested_loops_inner_body_carries_both_iterables():
                     body = inner
     Expect: 'outer_list' in deps of 'body' AND 'inner_list' in deps of 'body'.
     """
+
     def _get_inner() -> CaMeLValue:
         """Return a second untrusted list."""
         return wrap([4, 5], sources=frozenset({"get_email"}))
@@ -556,9 +550,7 @@ for item in items:
         result = item
 """)
     deps_result = _deps(interp, "result")
-    assert "items" in deps_result, (
-        "STRICT (M4-F1): loop iterable 'items' must be dep of 'result'"
-    )
+    assert "items" in deps_result, "STRICT (M4-F1): loop iterable 'items' must be dep of 'result'"
     assert "flag" in deps_result, (
         "STRICT (M4-F2): if-test 'flag' must be dep of 'result' inside loop"
     )

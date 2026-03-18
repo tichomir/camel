@@ -183,10 +183,7 @@ class TestS02SendFixedEmail:
         """Trace contains exactly one record."""
         orch = _build_orchestrator(S02_PLAN, S02_TOOLS, S02_SIGS)
         result = _run(
-            orch.run(
-                "Send an email to alice@example.com with subject 'Hello' "
-                "and body 'Hi Alice'."
-            )
+            orch.run("Send an email to alice@example.com with subject 'Hello' and body 'Hi Alice'.")
         )
         assert len(result.trace) == 1
 
@@ -194,10 +191,7 @@ class TestS02SendFixedEmail:
         """The send_email call received to='alice@example.com'."""
         orch = _build_orchestrator(S02_PLAN, S02_TOOLS, S02_SIGS)
         result = _run(
-            orch.run(
-                "Send an email to alice@example.com with subject 'Hello' "
-                "and body 'Hi Alice'."
-            )
+            orch.run("Send an email to alice@example.com with subject 'Hello' and body 'Hi Alice'.")
         )
         assert result.trace[0].args["to"] == "alice@example.com"
 
@@ -205,10 +199,7 @@ class TestS02SendFixedEmail:
         """The send_email call received subject='Hello'."""
         orch = _build_orchestrator(S02_PLAN, S02_TOOLS, S02_SIGS)
         result = _run(
-            orch.run(
-                "Send an email to alice@example.com with subject 'Hello' "
-                "and body 'Hi Alice'."
-            )
+            orch.run("Send an email to alice@example.com with subject 'Hello' and body 'Hi Alice'.")
         )
         assert result.trace[0].args["subject"] == "Hello"
 
@@ -216,10 +207,7 @@ class TestS02SendFixedEmail:
         """final_store after execution contains 'result' binding."""
         orch = _build_orchestrator(S02_PLAN, S02_TOOLS, S02_SIGS)
         result = _run(
-            orch.run(
-                "Send an email to alice@example.com with subject 'Hello' "
-                "and body 'Hi Alice'."
-            )
+            orch.run("Send an email to alice@example.com with subject 'Hello' and body 'Hi Alice'.")
         )
         # Memory snapshot is taken during the tool call (before assignment),
         # so use final_store to verify the binding.
@@ -302,9 +290,7 @@ S04_TOOLS: dict[str, Any] = {
 
 S04_SIGS = [
     ToolSignature("get_email", "", "dict", "Retrieve the latest email."),
-    ToolSignature(
-        "send_email", "to: str, subject: str, body: str", "dict", "Send an email."
-    ),
+    ToolSignature("send_email", "to: str, subject: str, body: str", "dict", "Send an email."),
 ]
 
 
@@ -380,9 +366,7 @@ class TestS05CreateCalendarEvent:
         """Trace has a single create_calendar_event record."""
         orch = _build_orchestrator(S05_PLAN, S05_TOOLS, S05_SIGS)
         result = _run(
-            orch.run(
-                "Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00."
-            )
+            orch.run("Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00.")
         )
         assert len(result.trace) == 1
 
@@ -390,9 +374,7 @@ class TestS05CreateCalendarEvent:
         """title argument is 'Sprint Review'."""
         orch = _build_orchestrator(S05_PLAN, S05_TOOLS, S05_SIGS)
         result = _run(
-            orch.run(
-                "Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00."
-            )
+            orch.run("Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00.")
         )
         assert result.trace[0].args["title"] == "Sprint Review"
 
@@ -400,9 +382,7 @@ class TestS05CreateCalendarEvent:
         """date argument is '2026-03-20'."""
         orch = _build_orchestrator(S05_PLAN, S05_TOOLS, S05_SIGS)
         result = _run(
-            orch.run(
-                "Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00."
-            )
+            orch.run("Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00.")
         )
         assert result.trace[0].args["date"] == "2026-03-20"
 
@@ -410,9 +390,7 @@ class TestS05CreateCalendarEvent:
         """final_store contains 'result' after create_calendar_event."""
         orch = _build_orchestrator(S05_PLAN, S05_TOOLS, S05_SIGS)
         result = _run(
-            orch.run(
-                "Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00."
-            )
+            orch.run("Create a calendar event titled 'Sprint Review' on 2026-03-20 at 14:00.")
         )
         # Snapshot taken before assignment; use final_store.
         assert "result" in result.final_store
@@ -451,9 +429,7 @@ class TestS06SearchDrive:
         """Trace has one record for search_drive."""
         orch = _build_orchestrator(S06_PLAN, S06_TOOLS, S06_SIGS)
         result = _run(
-            orch.run(
-                "Search Google Drive for files named 'budget' and print the file names."
-            )
+            orch.run("Search Google Drive for files named 'budget' and print the file names.")
         )
         assert len(result.trace) == 1
 
@@ -461,9 +437,7 @@ class TestS06SearchDrive:
         """search_drive called with query='budget'."""
         orch = _build_orchestrator(S06_PLAN, S06_TOOLS, S06_SIGS)
         result = _run(
-            orch.run(
-                "Search Google Drive for files named 'budget' and print the file names."
-            )
+            orch.run("Search Google Drive for files named 'budget' and print the file names.")
         )
         assert result.trace[0].args.get("query") == "budget"
 
@@ -471,9 +445,7 @@ class TestS06SearchDrive:
         """final_store contains 'files' after search_drive."""
         orch = _build_orchestrator(S06_PLAN, S06_TOOLS, S06_SIGS)
         result = _run(
-            orch.run(
-                "Search Google Drive for files named 'budget' and print the file names."
-            )
+            orch.run("Search Google Drive for files named 'budget' and print the file names.")
         )
         # Snapshot taken before assignment; use final_store.
         assert "files" in result.final_store
@@ -482,9 +454,7 @@ class TestS06SearchDrive:
         """print(files) produces output."""
         orch = _build_orchestrator(S06_PLAN, S06_TOOLS, S06_SIGS)
         result = _run(
-            orch.run(
-                "Search Google Drive for files named 'budget' and print the file names."
-            )
+            orch.run("Search Google Drive for files named 'budget' and print the file names.")
         )
         assert len(result.print_outputs) >= 1
 
@@ -568,9 +538,7 @@ S08_TOOLS: dict[str, Any] = {
 
 S08_SIGS = [
     ToolSignature("get_email", "", "dict", "Retrieve the latest email."),
-    ToolSignature(
-        "send_email", "to: str, subject: str, body: str", "dict", "Send an email."
-    ),
+    ToolSignature("send_email", "to: str, subject: str, body: str", "dict", "Send an email."),
 ]
 
 
@@ -581,9 +549,7 @@ class TestS08ComposeAndSendReply:
         """Trace has exactly two records."""
         orch = _build_orchestrator(S08_PLAN, S08_TOOLS, S08_SIGS)
         result = _run(
-            orch.run(
-                "Get the latest email and reply to its sender saying 'Got it, thanks!'"
-            )
+            orch.run("Get the latest email and reply to its sender saying 'Got it, thanks!'")
         )
         assert len(result.trace) == 2
 
@@ -591,9 +557,7 @@ class TestS08ComposeAndSendReply:
         """Second trace record is send_email."""
         orch = _build_orchestrator(S08_PLAN, S08_TOOLS, S08_SIGS)
         result = _run(
-            orch.run(
-                "Get the latest email and reply to its sender saying 'Got it, thanks!'"
-            )
+            orch.run("Get the latest email and reply to its sender saying 'Got it, thanks!'")
         )
         assert result.trace[1].tool_name == "send_email"
 
@@ -601,9 +565,7 @@ class TestS08ComposeAndSendReply:
         """First trace record is get_email."""
         orch = _build_orchestrator(S08_PLAN, S08_TOOLS, S08_SIGS)
         result = _run(
-            orch.run(
-                "Get the latest email and reply to its sender saying 'Got it, thanks!'"
-            )
+            orch.run("Get the latest email and reply to its sender saying 'Got it, thanks!'")
         )
         assert result.trace[0].tool_name == "get_email"
 
@@ -611,9 +573,7 @@ class TestS08ComposeAndSendReply:
         """Reply body contains 'Got it, thanks!'."""
         orch = _build_orchestrator(S08_PLAN, S08_TOOLS, S08_SIGS)
         result = _run(
-            orch.run(
-                "Get the latest email and reply to its sender saying 'Got it, thanks!'"
-            )
+            orch.run("Get the latest email and reply to its sender saying 'Got it, thanks!'")
         )
         assert "Got it, thanks!" in result.trace[1].args.get("body", "")
 
@@ -704,9 +664,7 @@ S10_SIGS = [
         "dict",
         "Create a calendar event.",
     ),
-    ToolSignature(
-        "send_email", "to: str, subject: str, body: str", "dict", "Send an email."
-    ),
+    ToolSignature("send_email", "to: str, subject: str, body: str", "dict", "Send an email."),
 ]
 
 

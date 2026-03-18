@@ -43,9 +43,7 @@ def _deny_all(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolic
     return Denied("test denial")
 
 
-def _deny_if_untrusted(
-    tool_name: str, kwargs: Mapping[str, CaMeLValue]
-) -> SecurityPolicyResult:
+def _deny_if_untrusted(tool_name: str, kwargs: Mapping[str, CaMeLValue]) -> SecurityPolicyResult:
     """Deny if any arg has an untrusted source."""
     for cv in kwargs.values():
         if cv.sources - {"User literal", "CaMeL"}:
@@ -77,12 +75,7 @@ class TestCaMeLValueBuilder:
 
     def test_with_sources_multiple_calls_accumulate(self) -> None:
         """Multiple with_sources calls union the labels."""
-        cv = (
-            CaMeLValueBuilder("v")
-            .with_sources("User literal")
-            .with_sources("CaMeL")
-            .build()
-        )
+        cv = CaMeLValueBuilder("v").with_sources("User literal").with_sources("CaMeL").build()
         assert cv.sources == frozenset({"User literal", "CaMeL"})
 
     def test_with_sources_varargs(self) -> None:
@@ -92,11 +85,7 @@ class TestCaMeLValueBuilder:
 
     def test_with_readers_restricted(self) -> None:
         """with_readers sets a frozenset of principals."""
-        cv = (
-            CaMeLValueBuilder("secret")
-            .with_readers(frozenset({"alice@example.com"}))
-            .build()
-        )
+        cv = CaMeLValueBuilder("secret").with_readers(frozenset({"alice@example.com"})).build()
         assert cv.readers == frozenset({"alice@example.com"})
 
     def test_with_readers_public(self) -> None:
@@ -154,12 +143,7 @@ class TestCaMeLValueBuilder:
         """Multiple with_dependency calls union all dependencies."""
         dep1 = CaMeLValueBuilder("d1").with_sources("tool_a").build()
         dep2 = CaMeLValueBuilder("d2").with_sources("tool_b").build()
-        cv = (
-            CaMeLValueBuilder("derived")
-            .with_dependency(dep1)
-            .with_dependency(dep2)
-            .build()
-        )
+        cv = CaMeLValueBuilder("derived").with_dependency(dep1).with_dependency(dep2).build()
         assert "tool_a" in cv.sources
         assert "tool_b" in cv.sources
 
@@ -423,9 +407,7 @@ class TestPolicyTestRunner:
                 case_id="injected_recipient",
                 tool_name="send_email",
                 kwargs={
-                    "to": CaMeLValueBuilder("evil@attacker.com")
-                    .with_sources("read_email")
-                    .build(),
+                    "to": CaMeLValueBuilder("evil@attacker.com").with_sources("read_email").build(),
                     # Body is restricted to alice — evil@attacker.com cannot read it.
                     "body": CaMeLValueBuilder("Confidential")
                     .with_sources("User literal")
@@ -469,15 +451,9 @@ class TestPolicySimulator:
             tools=["send_email"],
             policies=registry,
             preset_vars={
-                "_to": CaMeLValueBuilder("alice@example.com")
-                .with_sources("User literal")
-                .build(),
-                "_subj": CaMeLValueBuilder("Hello")
-                .with_sources("User literal")
-                .build(),
-                "_body": CaMeLValueBuilder("Hi there")
-                .with_sources("User literal")
-                .build(),
+                "_to": CaMeLValueBuilder("alice@example.com").with_sources("User literal").build(),
+                "_subj": CaMeLValueBuilder("Hello").with_sources("User literal").build(),
+                "_body": CaMeLValueBuilder("Hi there").with_sources("User literal").build(),
             },
         )
         assert isinstance(report, SimulationReport)
@@ -501,9 +477,7 @@ class TestPolicySimulator:
             tools=["send_email"],
             policies=registry,
             preset_vars={
-                "_to": CaMeLValueBuilder("evil@attacker.com")
-                .with_sources("read_email")
-                .build(),
+                "_to": CaMeLValueBuilder("evil@attacker.com").with_sources("read_email").build(),
                 "_body": CaMeLValueBuilder("Confidential content")
                 .with_sources("User literal")
                 .with_readers(frozenset({"alice@example.com"}))
@@ -599,9 +573,7 @@ class TestPolicySimulator:
         tool_obj = Tool(name="stub_tool", fn=real_fn)
 
         sim = PolicySimulator()
-        report = sim.simulate(
-            plan="r = stub_tool()", tools=[tool_obj], policies=registry
-        )
+        report = sim.simulate(plan="r = stub_tool()", tools=[tool_obj], policies=registry)
         assert len(report.evaluations) == 1
         assert report.evaluations[0].tool_name == "stub_tool"
         # The real function must not have been called.
@@ -662,11 +634,7 @@ class TestCaMeLValueBuilderEdgeCases:
         """frozenset readers with no dependency stays frozenset (covers else branch)."""
         # Set self._readers to a frozenset and _dep_readers to a frozenset too.
         # This exercises the elif branch in build().
-        cv = (
-            CaMeLValueBuilder("v")
-            .with_readers(frozenset({"alice@example.com"}))
-            .build()
-        )
+        cv = CaMeLValueBuilder("v").with_readers(frozenset({"alice@example.com"})).build()
         assert isinstance(cv.readers, frozenset)
         assert "alice@example.com" in cv.readers
 
