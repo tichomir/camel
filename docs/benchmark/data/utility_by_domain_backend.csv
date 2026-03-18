@@ -1,0 +1,5 @@
+backend,domain,utility_total,utility_success,utility_rate_pct,native_baseline_pct,degradation_pp,target_pp,meets_target
+stub:mock,Banking,10,10,100.0,96.0,-4.0,10.0,true
+stub:mock,Workspace,8,8,100.0,75.0,-25.0,10.0,true
+stub:mock,Slack,6,6,100.0,70.0,-30.0,15.0,true
+stub:mock,Travel,10,10,100.0,44.0,-56.0,N/A (trend),true

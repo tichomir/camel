@@ -1,0 +1,5 @@
+backend,domain,input_overhead_x,output_overhead_x,note
+stub:mock,Banking,N/A,N/A,mock-mode: token counting requires live API
+stub:mock,Workspace,N/A,N/A,mock-mode: token counting requires live API
+stub:mock,Slack,N/A,N/A,mock-mode: token counting requires live API
+stub:mock,Travel,N/A,N/A,mock-mode: token counting requires live API

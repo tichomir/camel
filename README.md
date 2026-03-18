@@ -192,6 +192,7 @@ for record in result.trace:
 
 | Document | Description |
 |---|---|
+| [PRD v1.0 Final](docs/PRD.md) | Product Requirements Document — Version 1.0 Final: architecture, security model, phased delivery, NFRs, known limitations, success metrics, open questions |
 | [API Reference](docs/api/index.md) | M2/M3 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop, Policy Engine, Capabilities |
 | [Backend Adapter Developer Guide](docs/backend-adapter-developer-guide.md) | Interface contract, error semantics, P-LLM vs Q-LLM role config, credential injection, skeleton adapter example for adding new providers |
 | [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine, multi-backend adapter layer |
@@ -218,6 +219,8 @@ for record in result.trace:
 | [ADR 010 — Enforcement Hook, Consent Flow & Audit](docs/adr/010-enforcement-hook-consent-audit-harness.md) | Dual-mode enforcement, consent callback, audit log, policy harness |
 | [ADR 011 — Three-Tier Policy Governance](docs/adr/011-three-tier-policy-governance.md) | Three-tier policy model: Platform, Tool-Provider, User |
 | [ADR 012 — Policy Testing Harness & Consent Handler](docs/adr/012-policy-testing-harness-consent-handler.md) | PolicyTestRunner, CaMeLValueBuilder, PolicySimulator, ConsentHandler design |
+| [Known Limitations & Risks Register](docs/limitations.md) | Full register of L1–L9 limitations with severity, mitigation status, and open work items |
+| [Open Questions & Future Work Tracker](docs/future-work.md) | FW-1 through FW-7 tracker with status (Open / In Progress / Resolved) and recommended next steps |
 | [E2E Scenario Specification](docs/e2e-scenario-specification.md) | End-to-end test scenario inventory |
 
 ---

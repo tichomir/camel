@@ -1,0 +1,5 @@
+backend,domain,utility_total,total_retries,median_retries_per_task,meets_target
+stub:mock,Banking,10,0,0.0,true
+stub:mock,Workspace,8,0,0.0,true
+stub:mock,Slack,6,0,0.0,true
+stub:mock,Travel,10,0,0.0,true
