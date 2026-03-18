@@ -200,7 +200,7 @@ from camel.value import CaMeLValue, Public
 from camel_security.agent import AgentResult, CaMeLAgent, PolicyDenialRecord
 from camel_security.tool import Tool
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     # Version

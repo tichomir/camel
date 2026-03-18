@@ -3,7 +3,7 @@
 [![CI](https://github.com/tichomir/camel/actions/workflows/ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/ci.yml)
 [![SDK CI](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml)
 [![Test PyPI](https://img.shields.io/badge/Test%20PyPI-camel--security-blue)](https://test.pypi.org/project/camel-security/)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -79,7 +79,7 @@ mechanics, and the security model.
 
 ## Current Status
 
-**Milestone 4 — STRICT Mode Hardening + Exception Hardening & Redaction (v0.4.0)** — released 2026-03-17
+**Milestone 5 — Production Readiness & Ecosystem (v0.6.0)** — released 2026-03-18
 
 | Component | Module | Status |
 |---|---|---|
@@ -105,6 +105,15 @@ mechanics, and the security model.
 | STRICT annotation preservation across NEIE re-generation (M4-F8) | `camel.execution_loop` | ✅ Released |
 | Loop-body exception STRICT propagation (M4-F9) | `camel.interpreter` | ✅ Released |
 | Redaction audit log events — `RedactionAuditEvent` (M4-F17) | `camel.execution_loop` | ✅ Released |
+| `camel-security` SDK — `CaMeLAgent`, `AgentResult`, `Tool` | `camel_security` | ✅ Released |
+| Three-tier policy governance — `PolicyConflictResolver` | `camel.policy.governance` | ✅ Released |
+| Policy test harness — `PolicyTestRunner`, `CaMeLValueBuilder`, `PolicySimulator` | `camel_security.testing` | ✅ Released |
+| Consent handler — pluggable `ConsentHandler`, session cache | `camel_security.consent` | ✅ Released |
+| Provenance chain — `agent.get_provenance()`, phishing detector | `camel.provenance` | ✅ Released |
+| Multi-backend LLM adapters validated (Claude, Gemini, OpenAI) | `camel.llm.adapters` | ✅ Released |
+| Prometheus / OpenTelemetry metrics endpoint | `camel.observability.metrics` | ✅ Released |
+| Structured JSON audit log with configurable sink | `camel.observability.audit_sink` | ✅ Released |
+| AgentDojo benchmark — 0 ASR across all backends | `scripts/benchmark_agentdojo.py` | ✅ Released |
 
 ---
 

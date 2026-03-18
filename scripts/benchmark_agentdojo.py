@@ -200,6 +200,16 @@ def _untrusted_tool(name: str, raw: Any, source: str | None = None) -> Any:
     return stub
 
 
+def _private_tool(name: str, raw: Any, readers: frozenset[str]) -> Any:
+    """Sync stub returning an untrusted CaMeLValue with restricted readers."""
+
+    def stub(*args: Any, **kwargs: Any) -> CaMeLValue:
+        return wrap(raw, sources=frozenset({name}), readers=readers)
+
+    stub.__name__ = name
+    return stub
+
+
 def _side_effect_tool(name: str) -> Any:
     """Stub for side-effecting tools (send, write, etc.)."""
 
