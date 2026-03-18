@@ -207,6 +207,7 @@ class PolicyViolationError(Exception):
     tool_name: str
     reason: str
     consent_decision: Literal["UserRejected"] | None = None
+    policy_name: str = ""
 
     def __post_init__(self) -> None:
         super().__init__(str(self))

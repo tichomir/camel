@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from camel.interpreter import CaMeLInterpreter
+from camel.interpreter import CaMeLInterpreter, PolicyViolationError
 from camel.llm.exceptions import NotEnoughInformationError as LLMNotEnoughInfoError
 from camel.llm.p_llm import PLLMWrapper, ToolSignature, UserContext
 from camel.value import CaMeLValue, wrap
@@ -1068,6 +1068,11 @@ class CaMeLOrchestrator:
                     final_store=self._interpreter.store,
                     loop_attempts=attempt,
                 )
+            except PolicyViolationError:
+                # A security policy denial is a definitive security outcome —
+                # it must NOT be retried.  Propagate immediately so the caller
+                # can record it and return success=False.
+                raise
             except Exception as exc:
                 # Snapshot the store at the point of failure for redaction.
                 store_snapshot_before = self._interpreter.store

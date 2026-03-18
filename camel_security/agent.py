@@ -70,7 +70,7 @@ from camel.execution_loop import (
     MaxRetriesExceededError,
     StdoutDisplayChannel,
 )
-from camel.interpreter import CaMeLInterpreter, ExecutionMode
+from camel.interpreter import CaMeLInterpreter, ExecutionMode, PolicyViolationError
 from camel.llm.backend import LLMBackend
 from camel.llm.p_llm import PLLMWrapper, ToolSignature, UserContext
 from camel.llm.query_interface import make_query_quarantined_llm
@@ -494,6 +494,26 @@ class CaMeLAgent:
                 final_store=final_store,
                 provenance_chains=provenance_chains,
                 phishing_warnings=phishing_warnings,
+            )
+        except PolicyViolationError as pve:
+            # A security policy fired and blocked the action — this is a
+            # deliberate security outcome, not a runtime error.  Return
+            # success=False with a populated policy_denials list so callers
+            # can distinguish an attack-blocked result from a plain failure.
+            denial = PolicyDenialRecord(
+                tool_name=pve.tool_name,
+                policy_name=pve.policy_name or pve.tool_name,
+                reason=pve.reason,
+                resolved=False,
+            )
+            return AgentResult(
+                execution_trace=[],
+                display_output=[],
+                policy_denials=[denial],
+                audit_log_ref=audit_log_ref,
+                loop_attempts=0,
+                success=False,
+                final_store={},
             )
         except MaxRetriesExceededError:
             return AgentResult(

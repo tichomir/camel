@@ -64,6 +64,9 @@ Usage (schema definition — QResponse subclass, still works)
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
+import os
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel, Field, create_model
@@ -82,6 +85,22 @@ T = TypeVar("T", bound=BaseModel)
 
 #: Name of the sentinel field injected into every augmented schema.
 _HEI_FIELD_NAME: str = "have_enough_information"
+
+#: Shared thread pool reused across all Q-LLM calls to avoid per-call
+#: executor creation/teardown overhead.  Bounded to avoid resource exhaustion
+#: under concurrent load.  Size defaults to min(32, cpu_count + 4) which
+#: matches the stdlib ThreadPoolExecutor default, but can be overridden via
+#: the ``CAMEL_QLLM_THREAD_POOL_SIZE`` environment variable.
+_QLLM_EXECUTOR: concurrent.futures.ThreadPoolExecutor = (
+    concurrent.futures.ThreadPoolExecutor(
+        max_workers=int(
+            os.environ.get(
+                "CAMEL_QLLM_THREAD_POOL_SIZE",
+                min(32, (os.cpu_count() or 1) + 4),
+            )
+        )
+    )
+)
 
 #: Description embedded in the injected field's JSON Schema representation.
 _HEI_FIELD_DESCRIPTION: str = (
@@ -194,7 +213,7 @@ class QueryQLLMCallable(Protocol):
        field into a P-LLM context.
     """
 
-    async def __call__(
+    def __call__(
         self,
         prompt: str,
         output_schema: type[T],
@@ -306,8 +325,8 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
 
     wrapper = QLLMWrapper(backend)
 
-    async def _query(prompt: str, output_schema: type[T]) -> T:
-        """Bound implementation of :class:`QueryQLLMCallable`."""
+    async def _query_async(prompt: str, output_schema: type[T]) -> T:
+        """Async implementation of :class:`QueryQLLMCallable`."""
         augmented = augment_schema_with_hei(output_schema)
 
         # If the schema is already a QResponse subclass, augmented == output_schema.
@@ -344,5 +363,19 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
 
         raw = validated.model_dump(exclude={_HEI_FIELD_NAME})
         return output_schema.model_validate(raw)
+
+    def _query(prompt: str, output_schema: type[T]) -> T:
+        """Synchronous bound implementation of :class:`QueryQLLMCallable`.
+
+        The interpreter calls tools synchronously.  When the orchestrator's
+        async event loop is already running we cannot use ``asyncio.run()``
+        directly (it raises ``RuntimeError: This event loop is already
+        running``).  Instead we execute the coroutine in a worker thread from
+        the module-level shared :data:`_QLLM_EXECUTOR` pool.  Reusing the
+        pool avoids the per-call overhead of creating and tearing down a
+        ``ThreadPoolExecutor`` and an asyncio event loop on every invocation.
+        """
+        future = _QLLM_EXECUTOR.submit(asyncio.run, _query_async(prompt, output_schema))
+        return future.result()
 
     return _query

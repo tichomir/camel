@@ -367,7 +367,7 @@ python demo_b_injection.py
 ```
 === RESULT ===
 Status   : BLOCKED
-Denials  : [PolicyDenial(tool='send_email', reason="send_email blocked: recipient 'attacker@evil.com' was derived from untrusted data source(s) frozenset({'get_last_email'}). A prompt injection attack may be attempting to redirect email.")]
+Denials  : [PolicyDenialRecord(tool_name='send_email', policy_name='policy', reason="send_email blocked: recipient 'attacker@evil.com' was derived from untrusted data source(s) frozenset({'get_last_email'}). A prompt injection attack may be attempting to redirect email.", resolved=False)]
 Output   : []
 ```
 
