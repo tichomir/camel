@@ -1,6 +1,15 @@
 # CaMeL Policy Authorship Guide
 
-_CaMeL v0.5 and later — Multi-Party Policy Governance (ADR-011, PRD FW-5)_
+> **Deprecated — superseded by [Policy Authoring Guide](policy-authoring-guide.md)**
+>
+> This document is retained for its additional detail on compliance query patterns
+> and environment-based deployment configuration not yet present in the combined
+> guide. For all new work, use [**docs/policy-authoring-guide.md**](policy-authoring-guide.md),
+> which covers policy basics, the three-tier model, test harness, simulator,
+> enterprise patterns, and migration in a single place.
+
+_CaMeL v0.5 — Multi-Party Policy Governance (ADR-011, PRD FW-5)_
+_See the current guide at [policy-authoring-guide.md](policy-authoring-guide.md) for v0.6.0+._
 
 ---
 
@@ -630,9 +639,9 @@ resolver = PolicyConflictResolver.load_from_env()
 
 ## Reference
 
-- [ADR-011: Three-Tier Policy Governance](../docs/adr/011-three-tier-policy-governance.md)
-- [ADR-009: Policy Engine Architecture](../docs/adr/009-policy-engine-architecture.md)
-- [ADR-010: Enforcement Hook, Consent Flow, Audit Log](../docs/adr/010-enforcement-hook-consent-audit-harness.md)
+- [ADR-011: Three-Tier Policy Governance](adr/011-three-tier-policy-governance.md)
+- [ADR-009: Policy Engine Architecture](adr/009-policy-engine-architecture.md)
+- [ADR-010: Enforcement Hook, Consent Flow, Audit Log](adr/010-enforcement-hook-consent-audit-harness.md)
 - [Reference Policy Library Specification](policies/reference-policy-spec.md)
 - [Architecture Reference §11 — Policy Engine](architecture.md#11-policy-engine)
 - [Architecture Reference §10.7 — Open Questions (FW-5 Resolved)](architecture.md#107-open-questions--future-work)

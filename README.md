@@ -190,6 +190,17 @@ for record in result.trace:
 
 ## Documentation
 
+### Getting Started
+
+| Document | Description |
+|---|---|
+| [Developer Quickstart](docs/quickstart.md) | **5-minute walkthrough** — SDK install, P-LLM/Q-LLM config, first run, audit log verification |
+| [Tool Onboarding Guide](docs/tool-onboarding.md) | Register a new tool: function signature, capability annotation, per-tool policy, worked example |
+| [Migration Guide](docs/migration-guide.md) | Move from the M4 prototype to the `camel-security` v0.6.0 SDK — all breaking changes with before/after snippets |
+| [Policy Authoring Guide](docs/policy-authoring-guide.md) | Three-tier governance model, `PolicyTestRunner` test harness, `PolicySimulator` walkthrough |
+
+### Reference Documentation
+
 | Document | Description |
 |---|---|
 | [PRD v1.0 Final](docs/PRD.md) | Product Requirements Document — Version 1.0 Final: architecture, security model, phased delivery, NFRs, known limitations, success metrics, open questions |

@@ -1324,3 +1324,35 @@ Deliverables:
 - ✅ Fix: CSV data files contain fabricated metrics not derived from real runs — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 5 — Benchmark Validation & Full Documentation Publication | 2026-03-18 | 📋 reviewing | 32 SP
+**Goal:** [Phase: Benchmark Validation & Full Documentation Publication]
+Execute the full AgentDojo benchmark suite across all supported model backends and task domains (Banking, Workspace, Slack, Travel), producing a published benchmark report meeting the utility and security targets. Complete and publish all project documentation: PRD final version, architecture guide, developer quickstart, tool onboarding guide, migration guide, policy authoring guide, known limitations register, and success metrics report. Covers all benchmark requirements in milestone_5.md and NFR-6, NFR-7, NFR-9, and PRD sections 9–12.
+
+Deliverables:
+- Full AgentDojo benchmark report: utility degradation and attack success rate (ASR) for Banking, Workspace, Slack, and Travel suites across all five model backends
+- Confirmed 0 successful prompt injections across all suites and all backends
+- Utility targets met: ≤10% degradation on Banking, Workspace; ≤15% on Slack; trend improvement documented for Travel
+- Token overhead report confirming ≤3× input and ≤3× output vs. native tool-calling (NFR-3)
+- P-LLM retry rate report confirming ≤2 retries per task median (success metrics)
+- User consent prompt rate report confirming ≤20% of tasks on well-annotated domains
+- PRD updated to Version 1.0 Final: all sections reviewed and published, including Sections 8 (Phased Delivery), 9 (NFRs), 10 (Known Limitations), 11 (Success Metrics), 12 (Open Questions & Future Work)
+- Developer quickstart guide (5-minute integration walkthrough)
+- Tool onboarding guide (registering a new tool with capability annotations and policies)
+- Migration guide for teams moving from Milestone 4 prototype to SDK-based deployment
+- Policy authoring guide (three-tier model, test harness usage, simulator walkthrough)
+- Architecture reference document covering all five core components with sequence diagrams
+- Known limitations and risks register (L1–L8) published with current mitigations and open work items
+- Open questions and future work tracker (FW-1 through FW-7) published with status
+
+**Delivered:**
+- ✅ Execute full AgentDojo benchmark suite across all backends and produce benchmark report — Qa Engineer (◉ Deep, 8 SP)
+- ✅ Author and publish all developer-facing guides (quickstart, tool onboarding, migration, policy authoring) — Software Architect (◉ Deep, 5 SP)
+- ❌ Publish architecture reference document with sequence diagrams — Software Architect (◈ Standard, 3 SP)
+- ✅ Finalize and publish PRD v1.0 Final including Sections 8–12 — Software Architect (⚡ Quick, 2 SP)
+- ✅ Publish known limitations register and open questions tracker — Software Architect (⚡ Quick, 2 SP)
+- ✅ Fix: Benchmark script runs simulated data instead of actual AgentDojo suite — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: CSV data files contain fabricated metrics not derived from real runs — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: Verify API signatures and import paths in new docs match actual codebase — Software Architect (◈ Standard, 3 SP)
+- ✅ Fix: Resolve duplicate/overlapping policy authoring docs and update cross-links — Software Architect (◈ Standard, 3 SP)
+
+---
