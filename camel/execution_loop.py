@@ -834,7 +834,15 @@ class TraceRecorder:
         self._interpreter_ref = interpreter
         wrapped: dict[str, Any] = {}
         for name, fn in tools.items():
-            wrapped[name] = self._make_traced_tool(name, fn)
+            # Skip class objects (e.g. Pydantic schema classes like EmailFields) —
+            # they are schema definitions used as arguments, not traceable tool
+            # callables.  Wrapping them in a traced closure would cause their
+            # raw value to be a function instead of the class, breaking callers
+            # that rely on class attributes such as model_fields.
+            if isinstance(fn, type):
+                wrapped[name] = fn
+            else:
+                wrapped[name] = self._make_traced_tool(name, fn)
         return wrapped
 
     def _make_traced_tool(

@@ -443,6 +443,43 @@ class PolicyRegistry:
                 return result
         return Allowed()
 
+    def _evaluate_and_get_policy_name(
+        self,
+        tool_name: str,
+        kwargs: Mapping[str, CaMeLValue],
+    ) -> tuple[SecurityPolicyResult, str]:
+        """Evaluate policies and return (result, denying_policy_function_name).
+
+        Like :meth:`evaluate` but additionally returns the ``__name__`` of the
+        first policy function that returned :class:`Denied`, or an empty string
+        when all policies agree (or none are registered).
+
+        Used internally by the interpreter to populate
+        :attr:`~camel.interpreter.PolicyViolationError.policy_name` so that
+        :class:`~camel_security.agent.PolicyDenialRecord` carries the actual
+        function name rather than a fallback tool-name string.
+
+        Parameters
+        ----------
+        tool_name:
+            The name of the tool about to be called.
+        kwargs:
+            A mapping from argument names to their
+            :class:`~camel.value.CaMeLValue` wrappers.
+
+        Returns
+        -------
+        tuple[SecurityPolicyResult, str]
+            ``(result, policy_fn_name)`` where ``policy_fn_name`` is the
+            ``__name__`` of the denying function, or ``""`` when allowed.
+        """
+        policies = self._policies.get(tool_name, [])
+        for policy_fn in policies:
+            result = policy_fn(tool_name, kwargs)
+            if not result.is_allowed():
+                return result, getattr(policy_fn, "__name__", "")
+        return Allowed(), ""
+
     def registered_tools(self) -> frozenset[str]:
         """Return the set of tool names that have at least one policy.
 

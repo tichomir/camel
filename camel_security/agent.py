@@ -64,7 +64,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from camel.execution_loop import (
     CaMeLOrchestrator,
@@ -113,7 +113,14 @@ class EmailFields(BaseModel):
         send_email(to=fields.to, subject=fields.subject, body=fields.body)
     """
 
-    to: str = ""
+    to: str = Field(
+        default="",
+        description=(
+            "Recipient email address for forwarding. "
+            "Leave empty ('') if the content is not a composed/forwarded email "
+            "or if no explicit recipient is present."
+        ),
+    )
     subject: str = ""
     body: str = ""
     sender: str = ""

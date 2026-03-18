@@ -1967,7 +1967,16 @@ class CaMeLInterpreter:
                     else:
                         # --- Flat registry path (ADR-009) ---
                         assert self._policy_engine is not None  # guaranteed by outer if-guard
-                        policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
+                        _eval_fn = getattr(
+                            self._policy_engine,
+                            "_evaluate_and_get_policy_name",
+                            None,
+                        )
+                        if _eval_fn is not None:
+                            policy_result, _policy_fn_name = _eval_fn(name, kwargs_mapping)
+                        else:
+                            policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
+                            _policy_fn_name = ""
                         if not policy_result.is_allowed():
                             denial_reason = str(policy_result.reason)
                             if self._enforcement_mode is EnforcementMode.PRODUCTION:
@@ -2011,6 +2020,7 @@ class CaMeLInterpreter:
                                         tool_name=name,
                                         reason=denial_reason,
                                         consent_decision="UserRejected",
+                                        policy_name=_policy_fn_name,
                                     )
                             else:
                                 # EVALUATION mode — raise immediately, no UI.
@@ -2023,7 +2033,11 @@ class CaMeLInterpreter:
                                         consent_decision=None,
                                     )
                                 )
-                                raise PolicyViolationError(tool_name=name, reason=denial_reason)
+                                raise PolicyViolationError(
+                                    tool_name=name,
+                                    reason=denial_reason,
+                                    policy_name=_policy_fn_name,
+                                )
                         else:
                             self._audit_log.append(
                                 AuditLogEntry(
