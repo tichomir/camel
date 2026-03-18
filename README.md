@@ -296,8 +296,10 @@ pytest tests/test_policy_conflict_resolver.py # PolicyConflictResolver scenarios
 pytest tests/test_sdk_thread_safety.py        # CaMeLAgent thread-safety (M5-F6)
 ```
 
-For a tutorial on writing and testing your own policies, see the
-[Policy Authoring Tutorial](docs/policy-authoring-tutorial.md).
+For a complete guide to writing and testing your own policies, see the
+[Policy Authoring Guide](docs/policy-authoring-guide.md) (three-tier model,
+test harness, simulator walkthrough).  For a step-by-step worked tutorial, see
+the [Policy Authoring Tutorial](docs/policy-authoring-tutorial.md).
 
 ---
 

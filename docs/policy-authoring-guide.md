@@ -669,7 +669,7 @@ agent = CaMeLAgent(..., policies=resolver)
 
 - [Policy Authoring Tutorial](policy-authoring-tutorial.md) — full step-by-step tutorial with detailed worked examples for `send_email` and `write_file`, including `PolicyTestRunner` output interpretation
 - [Reference Policy Specification](policies/reference-policy-spec.md) — authoritative spec for the six built-in policies
-- [Three-Tier Policy Authorship Guide](policies/three-tier-policy-authorship-guide.md) — additional enterprise patterns (in `docs/policies/`; distinct from the deprecated `policy_authorship_guide.md` in `docs/`)
+- [Three-Tier Policy Authorship Guide](policies/three-tier-policy-authorship-guide.md) — supplementary enterprise patterns and tier-selection guidance in `docs/policies/`
 - [Consent Handler Integration Guide](consent-handler-integration.md) — customising the user consent UX
 - [Security Audit Log Reference](security-audit-log.md) — audit log schema
 - [Architecture Reference §11](architecture.md#11-policy-engine) — Policy Engine design

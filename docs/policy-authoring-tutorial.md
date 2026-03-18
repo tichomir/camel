@@ -1,6 +1,6 @@
 # Policy Authoring Tutorial
 
-_CaMeL v0.5.0 | Last updated: 2026-03-18_
+_CaMeL v0.6.0 | Last updated: 2026-03-18_
 
 This tutorial walks you through authoring and validating CaMeL security
 policies using the developer tooling in `camel_security.testing`.  By the end
@@ -748,8 +748,9 @@ pytest tests/test_my_policies.py -v
 
 ## See Also
 
+- [Policy Authoring Guide](policy-authoring-guide.md) — **primary combined reference** covering policy basics, three-tier governance model, test harness, simulator, enterprise deployment patterns, and migration path in a single document (v0.6.0)
 - [Reference Policy Specification](policies/reference-policy-spec.md) — authoritative spec for the six built-in policies
-- [Three-Tier Policy Authorship Guide](policies/three-tier-policy-authorship-guide.md) — Platform / Tool-Provider / User tier model
+- [Three-Tier Policy Authorship Guide](policies/three-tier-policy-authorship-guide.md) — Platform / Tool-Provider / User tier model with additional enterprise patterns
 - [Consent Handler Integration Guide](consent-handler-integration.md) — customising the user consent UX
 - [Security Audit Log Reference](security-audit-log.md) — audit log schema and `ConsentAuditEntry` fields
 - [Architecture Reference](architecture.md) — full system design including the policy enforcement hook
