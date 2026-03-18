@@ -1622,3 +1622,75 @@ Deliverables:
 - ✅ Enforce lint in CI and add pre-commit hook configuration — Devops Engineer (⚡ Quick, 2 SP)
 
 ---
+### Milestone 5 — Lint Fix Sprint | 2026-03-18 | ✅ done | 3 SP
+**Goal:** CI / Lint (ruff) (push) is failing. as reported in GIT. We have to fix
+
+Run ruff format --check .
+Would reformat: camel/capabilities/annotations.py
+Would reformat: camel/config/loader.py
+Would reformat: camel/exceptions.py
+Would reformat: camel/execution_loop.py
+Would reformat: camel/interpreter.py
+Would reformat: camel/llm/adapters/openai.py
+Would reformat: camel/llm/backend.py
+Would reformat: camel/llm/exceptions.py
+Would reformat: camel/llm/p_llm.py
+Would reformat: camel/llm/qllm.py
+Would reformat: camel/observability/audit_sink.py
+Would reformat: camel/observability/metrics.py
+Would reformat: camel/policy/governance.py
+Would reformat: camel/policy/interfaces.py
+Would reformat: camel/policy/reference_policies.py
+Would reformat: camel_security/agent.py
+Would reformat: camel_security/testing.py
+Would reformat: scripts/benchmark_agentdojo.py
+Would reformat: scripts/benchmark_interpreter.py
+Would reformat: tests/harness/policy_harness.py
+Would reformat: tests/harness/recording_backend.py
+Would reformat: tests/harness/results_reporter.py
+Would reformat: tests/harness/scenarios.py
+Would reformat: tests/integration/test_multi_backend_adapters.py
+Would reformat: tests/integration/test_provenance_integration.py
+Would reformat: tests/integration/test_strict_mode_e2e.py
+Would reformat: tests/llm/test_backend.py
+Would reformat: tests/llm/test_pllm.py
+Would reformat: tests/policies/test_agentdojo_mapping.py
+Would reformat: tests/policies/test_reference_policies.py
+Would reformat: tests/side_channel/test_exception_bit_leakage.py
+Would reformat: tests/side_channel/test_loop_count_inference.py
+Would reformat: tests/side_channel/test_timing_primitive_exclusion.py
+Would reformat: tests/test_allowlist_enforcement.py
+Would reformat: tests/test_backend_swap.py
+Would reformat: tests/test_capability_assignment.py
+Would reformat: tests/test_consent_handler.py
+Would reformat: tests/test_dependency_graph.py
+Would reformat: tests/test_e2e_enforcement.py
+Would reformat: tests/test_e2e_scenarios.py
+Would reformat: tests/test_escalation_detection.py
+Would reformat: tests/test_exception_hardening.py
+Would reformat: tests/test_execution_loop.py
+Would reformat: tests/test_exit_criteria.py
+Would reformat: tests/test_interpreter.py
+Would reformat: tests/test_isolation_harness.py
+Would reformat: tests/test_multi_backend_swap.py
+Would reformat: tests/test_observability.py
+Would reformat: tests/test_p_llm_isolation.py
+Would reformat: tests/test_policy.py
+Would reformat: tests/test_policy_conflict_resolver.py
+Would reformat: tests/test_policy_harness.py
+Would reformat: tests/test_policy_testing_harness.py
+Would reformat: tests/test_provenance.py
+Would reformat: tests/test_qllm.py
+Would reformat: tests/test_qllm_validation.py
+Would reformat: tests/test_qllm_wrapper.py
+Would reformat: tests/test_redaction_completeness.py
+Would reformat: tests/test_strict_mode.py
+Would reformat: tests/test_three_tier_policy.py
+60 files would be reformatted, 35 files already formatted
+Error: Process completed with exit code 1.
+
+**Delivered:**
+- ✅ Run ruff format to auto-reformat all 60 flagged files — Backend Developer (⚡ Quick, 1 SP)
+- ✅ Verify CI lint workflow passes end-to-end after reformat — Devops Engineer (⚡ Quick, 2 SP)
+
+---
