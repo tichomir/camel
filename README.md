@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/tichomir/camel/actions/workflows/ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/ci.yml)
 [![SDK CI](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml)
+[![Lint](https://img.shields.io/badge/lint-ruff%20passing-brightgreen)](#)
+[![Type Check](https://img.shields.io/badge/mypy--strict-passing-brightgreen)](#)
 [![Test PyPI](https://img.shields.io/badge/Test%20PyPI-camel--security-blue)](https://test.pypi.org/project/camel-security/)
 [![Version](https://img.shields.io/badge/version-0.6.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
@@ -79,6 +81,12 @@ mechanics, and the security model.
 
 ## Current Status
 
+**Milestone 6 — CI & Code Quality Polish (v0.6.0)** — completed 2026-03-18
+
+All lint (`ruff check`, `ruff format`), type-check (`mypy --strict`), and test
+CI gates pass.  This milestone applied no functional changes; it hardened the
+developer toolchain so every future PR is blocked on a clean CI baseline.
+
 **Milestone 5 — Production Readiness & Ecosystem (v0.6.0)** — released 2026-03-18
 
 | Component | Module | Status |
@@ -114,13 +122,15 @@ mechanics, and the security model.
 | Prometheus / OpenTelemetry metrics endpoint | `camel.observability.metrics` | ✅ Released |
 | Structured JSON audit log with configurable sink | `camel.observability.audit_sink` | ✅ Released |
 | AgentDojo benchmark — 0 ASR across all backends | `scripts/benchmark_agentdojo.py` | ✅ Released |
+| Lint gate (ruff check + ruff format) — CI enforced | CI / `pyproject.toml` | ✅ Milestone 6 |
+| Type-check gate (mypy --strict) — CI enforced | CI / `pyproject.toml` | ✅ Milestone 6 |
 
 ---
 
 ## Quick Start
 
 ```bash
-pip install camel
+pip install camel-security
 ```
 
 ### Interpreter only (Milestone 1 API)
@@ -203,6 +213,7 @@ for record in result.trace:
 
 | Document | Description |
 |---|---|
+| [Demo Guide](docs/demo-guide.md) | **8-scenario demo walkthrough** — showcasing prompt injection defence, policy enforcement, consent flow, provenance chain, and audit log to stakeholders |
 | [Developer Quickstart](docs/quickstart.md) | **5-minute walkthrough** — SDK install, P-LLM/Q-LLM config, first run, audit log verification |
 | [Tool Onboarding Guide](docs/tool-onboarding.md) | Register a new tool: function signature, capability annotation, per-tool policy, worked example |
 | [Migration Guide](docs/migration-guide.md) | Move from the M4 prototype to the `camel-security` v0.6.0 SDK — all breaking changes with before/after snippets |
@@ -250,7 +261,7 @@ for record in result.trace:
 ### Production
 
 ```bash
-pip install camel
+pip install camel-security
 ```
 
 ### Development (from source)

@@ -1,6 +1,6 @@
 """CaMeL — Capabilities for Machine Learning runtime.
 
-Public API for Milestone 4 (v0.4.0):
+Public API for CaMeL v0.6.0 (Milestone 5):
 
 Value & capability system
 --------------------------

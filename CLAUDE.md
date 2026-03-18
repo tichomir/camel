@@ -1730,3 +1730,18 @@ If not showing, let's make we have latest code in github and have the CI run the
 - ✅ Verify end-to-end CI passes and merge to main — Devops Engineer (⚡ Quick, 2 SP)
 
 ---
+### Milestone 6 — Documentation Polish | 2026-03-18 | ✅ done | 16 SP
+**Goal:** Maybe the last two changes:
+1. The README file has not been updated accordingly, I guess, to reflect the latest version of the tool being available. 
+2. I would like to have a document that outlines how to demo the solution we have developed. 
+
+This is only documentation, make sure we don't change code anywhere.
+
+**Delivered:**
+- ✅ Update README to reflect current project state — Backend Developer (◈ Standard, 3 SP)
+- ✅ Write DEMO.md — end-to-end demo walkthrough document — Software Architect (◉ Deep, 5 SP)
+- ✅ Peer review and cross-check README and DEMO.md for accuracy — Qa Engineer (⚡ Quick, 2 SP)
+- ✅ Fix: README CI badge URLs point to wrong GitHub repository — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: camel/__init__.py public API docstring references outdated version (v0.4.0/Milestone 4) — Qa Engineer (◈ Standard, 3 SP)
+
+---
