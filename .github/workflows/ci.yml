@@ -57,8 +57,7 @@ jobs:
           pip install pytest-cov
 
       - name: Type-check (mypy)
-        run: mypy camel/
-        continue-on-error: true  # mypy is advisory in CI for now; promote to hard-fail in Milestone 2
+        run: mypy --strict camel_security/
 
       - name: Run tests with coverage
         run: |

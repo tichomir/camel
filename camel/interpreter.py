@@ -1965,6 +1965,7 @@ class CaMeLInterpreter:
                             )
                     else:
                         # --- Flat registry path (ADR-009) ---
+                        assert self._policy_engine is not None  # guaranteed by outer if-guard
                         policy_result = self._policy_engine.evaluate(name, kwargs_mapping)
                         if not policy_result.is_allowed():
                             denial_reason = str(policy_result.reason)

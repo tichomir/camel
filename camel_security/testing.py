@@ -614,7 +614,7 @@ class CaMeLValueBuilder:
         if isinstance(dep.readers, _PublicType) or isinstance(self._dep_readers, _PublicType):
             self._dep_readers = Public
         else:
-            self._dep_readers = self._dep_readers | dep.readers  # type: ignore[operator]
+            self._dep_readers = self._dep_readers | dep.readers
         return self
 
     def build(self) -> CaMeLValue:
@@ -859,7 +859,7 @@ class PolicySimulator:
         # Inject preset variables.
         if preset_vars:
             for var_name, cv in preset_vars.items():
-                interp._store[var_name] = cv  # type: ignore[attr-defined]
+                interp._store[var_name] = cv
 
         # Execute the plan, catching PolicyViolationError to continue.
         try:

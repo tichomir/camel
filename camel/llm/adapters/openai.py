@@ -24,7 +24,7 @@ Requirements
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -154,7 +154,7 @@ class OpenAIBackend:
         content = response.choices[0].message.content
         if content is None:  # pragma: no cover
             raise ValueError(f"OpenAI returned no message content. Full response: {response}")
-        return content
+        return cast(str, content)
 
     # ------------------------------------------------------------------
     # QlLMBackend protocol (Q-LLM)
