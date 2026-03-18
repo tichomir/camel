@@ -1694,3 +1694,28 @@ Error: Process completed with exit code 1.
 - ✅ Verify CI lint workflow passes end-to-end after reformat — Devops Engineer (⚡ Quick, 2 SP)
 
 ---
+### Milestone 6 — Fix mypy --strict errors | 2026-03-18 | ✅ done | 14 SP
+**Goal:** Let's fix the mypy errors as reported by Github
+
+Run mypy --strict camel_security/
+camel/config/loader.py:34: error: Library stubs not installed for "yaml"  [import-untyped]
+camel/config/loader.py:34: note: Hint: "python3 -m pip install types-PyYAML"
+camel/config/loader.py:34: note: (or run "mypy --install-types" to install all missing stub packages)
+camel/config/loader.py:34: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+camel/interpreter.py:1968: error: Item "None" of "Any | None" has no attribute "evaluate"  [union-attr]
+camel_security/testing.py:617: error: Unused "type: ignore" comment  [unused-ignore]
+camel_security/testing.py:862: error: Unused "type: ignore" comment  [unused-ignore]
+camel/llm/adapters/openai.py:157: error: Returning Any from function declared to return "str"  [no-any-return]
+Found 5 errors in 4 files (checked 5 source files)
+Error: Process completed with exit code 1.
+
+**Delivered:**
+- ✅ Add types-PyYAML dev dependency and fix loader.py import-untyped error — Backend Developer (⚡ Quick, 1 SP)
+- ✅ Fix interpreter.py union-attr None error at line 1968 — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Remove unused `type: ignore` comments in camel_security/testing.py — Backend Developer (⚡ Quick, 1 SP)
+- ✅ Fix no-any-return in camel/llm/adapters/openai.py line 157 — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Verify full mypy --strict clean run and update CI gate — Devops Engineer (⚡ Quick, 2 SP)
+- ✅ Fix Python 3.9 compatibility: replace datetime.UTC with timezone.utc — Backend Developer (◈ Standard, 3 SP)
+- ✅ Fix: Commit unstaged mypy code fixes to version control — Devops Engineer (◈ Standard, 3 SP)
+
+---
