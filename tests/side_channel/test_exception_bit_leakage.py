@@ -33,13 +33,10 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
-from camel.execution_loop import ExceptionRedactor, RedactedError, RedactionAuditEvent
 from camel.exceptions import NotEnoughInformationError as CamelNEIE
+from camel.execution_loop import ExceptionRedactor, RedactionAuditEvent
 from camel.interpreter import CaMeLInterpreter, ExecutionMode
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 
 # ---------------------------------------------------------------------------
 # Helpers

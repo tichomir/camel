@@ -17,11 +17,9 @@ Covers:
 
 from __future__ import annotations
 
-import io
-from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -38,9 +36,8 @@ from camel.interpreter import (
     EnforcementMode,
     PolicyViolationError,
 )
-from camel.policy.interfaces import Allowed, Denied, PolicyRegistry
+from camel.policy.interfaces import Denied, PolicyRegistry
 from camel.value import CaMeLValue, Public, wrap
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -98,7 +95,7 @@ class TestConsentAuditEntry:
     """Tests for ConsentAuditEntry dataclass."""
 
     def test_creation(self) -> None:
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         entry = ConsentAuditEntry(
             decision=ConsentDecision.APPROVE,
             timestamp=ts,

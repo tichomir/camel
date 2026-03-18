@@ -102,15 +102,13 @@ import inspect
 import operator as _operator
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal, Protocol
 
 from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
-from camel.provenance import build_provenance_chain
 from camel.consent import (
     ConsentAuditEntry,
-    ConsentDecision,
     ConsentDecisionCache,
     ConsentHandler,
     _resolve_consent,
@@ -122,6 +120,7 @@ from camel.exceptions import (
     ForbiddenImportError,
     ForbiddenNameError,
 )
+from camel.provenance import build_provenance_chain
 from camel.value import (
     CaMeLValue,
     Public,
@@ -1898,7 +1897,7 @@ class CaMeLInterpreter:
                                         outcome="Denied",
                                         reason=denial_reason,
                                         timestamp=datetime.now(
-                                            timezone.utc
+                                            UTC
                                         ).isoformat(),
                                         consent_decision=None,
                                         authoritative_tier=_auth_tier,
@@ -1932,7 +1931,7 @@ class CaMeLInterpreter:
                                             outcome="Denied",
                                             reason=denial_reason,
                                             timestamp=datetime.now(
-                                                timezone.utc
+                                                UTC
                                             ).isoformat(),
                                             consent_decision="UserApproved",
                                             authoritative_tier=_auth_tier,
@@ -1947,7 +1946,7 @@ class CaMeLInterpreter:
                                             outcome="Denied",
                                             reason=denial_reason,
                                             timestamp=datetime.now(
-                                                timezone.utc
+                                                UTC
                                             ).isoformat(),
                                             consent_decision="UserRejected",
                                             authoritative_tier=_auth_tier,
@@ -1966,7 +1965,7 @@ class CaMeLInterpreter:
                                         outcome="Denied",
                                         reason=denial_reason,
                                         timestamp=datetime.now(
-                                            timezone.utc
+                                            UTC
                                         ).isoformat(),
                                         consent_decision=None,
                                         authoritative_tier=_auth_tier,
@@ -1983,7 +1982,7 @@ class CaMeLInterpreter:
                                     outcome="Allowed",
                                     reason=None,
                                     timestamp=datetime.now(
-                                        timezone.utc
+                                        UTC
                                     ).isoformat(),
                                     consent_decision=None,
                                     authoritative_tier=_auth_tier,
@@ -2024,7 +2023,7 @@ class CaMeLInterpreter:
                                             outcome="Denied",
                                             reason=denial_reason,
                                             timestamp=datetime.now(
-                                                timezone.utc
+                                                UTC
                                             ).isoformat(),
                                             consent_decision="UserApproved",
                                         )
@@ -2037,7 +2036,7 @@ class CaMeLInterpreter:
                                             outcome="Denied",
                                             reason=denial_reason,
                                             timestamp=datetime.now(
-                                                timezone.utc
+                                                UTC
                                             ).isoformat(),
                                             consent_decision="UserRejected",
                                         )
@@ -2055,7 +2054,7 @@ class CaMeLInterpreter:
                                         outcome="Denied",
                                         reason=denial_reason,
                                         timestamp=datetime.now(
-                                            timezone.utc
+                                            UTC
                                         ).isoformat(),
                                         consent_decision=None,
                                     )
@@ -2070,7 +2069,7 @@ class CaMeLInterpreter:
                                     outcome="Allowed",
                                     reason=None,
                                     timestamp=datetime.now(
-                                        timezone.utc
+                                        UTC
                                     ).isoformat(),
                                     consent_decision=None,
                                     provenance_chains={
@@ -2697,7 +2696,7 @@ class CaMeLInterpreter:
         DataToControlFlowAuditEvent
             The event appended to the log (reference kept for later mutation).
         """
-        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         event = DataToControlFlowAuditEvent(
             timestamp=ts,
             lineno=warning.lineno,
@@ -2822,7 +2821,7 @@ class CaMeLInterpreter:
                 if isinstance(elt, ast.Name):
                     target_names.append(elt.id)
 
-        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         for var_name in target_names:
             dedup_key = (stmt_lineno, var_name)
             if dedup_key not in self._strict_dep_seen:
@@ -2888,7 +2887,7 @@ class CaMeLInterpreter:
         error_message:
             String representation of the exception that will be raised.
         """
-        ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ts = datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         if event_type == "ForbiddenImport":
             self._security_audit_log.append(
                 ForbiddenImportEvent(

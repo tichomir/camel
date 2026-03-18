@@ -120,7 +120,7 @@ def main() -> int:
     median_ms, times = run_benchmark(verbose=args.verbose)
 
     p95 = sorted(times)[int(0.95 * len(times))]
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Steps    : {NUM_STEPS}")
     print(f"  Median   : {median_ms:.2f} ms  (threshold: {THRESHOLD_MS:.0f} ms)")
     print(f"  Min      : {min(times):.2f} ms")

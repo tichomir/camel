@@ -29,11 +29,8 @@ mitigation is absent).
 
 from __future__ import annotations
 
-import pytest
-
 from camel.interpreter import CaMeLInterpreter, ExecutionMode
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 
 # ---------------------------------------------------------------------------
 # Helpers

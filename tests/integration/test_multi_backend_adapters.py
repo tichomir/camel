@@ -33,7 +33,6 @@ from pydantic import BaseModel
 from camel.llm.backend import LLMBackend, LLMBackendError, get_backend
 from camel.llm.schemas import QResponse
 
-
 # ---------------------------------------------------------------------------
 # Shared schemas
 # ---------------------------------------------------------------------------
@@ -605,7 +604,7 @@ class TestIndependentPQLLMBackendAssignment:
                 """Return True for protocol conformance."""
                 return True
 
-        q_backend = _QBackendSpy()
+        _q_backend = _QBackendSpy()
 
         # Confirm P-LLM generate works without touching Q-LLM.
         result = await p_backend.generate([{"role": "user", "content": "Plan."}])
@@ -654,7 +653,7 @@ class TestAdapterPromptInjectionSecurity:
     ) -> Any:
         """Run structured_complete with injection text and return the schema output."""
         with patch.dict(sys.modules, mock_modules):
-            backend = get_backend(provider, api_key="test")
+            _backend = get_backend(provider, api_key="test")
 
         # The injection text is the "untrusted content" passed to the Q-LLM.
         # Even if the model internally processes it, the adapter must return

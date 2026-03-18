@@ -178,14 +178,6 @@ from camel.consent import (
     ConsentHandler,
     DefaultCLIConsentHandler,
 )
-from camel.provenance import (
-    PhishingWarning,
-    ProvenanceChain,
-    ProvenanceHop,
-    TRUSTED_SOURCES,
-    build_provenance_chain,
-    detect_phishing_content,
-)
 from camel.interpreter import ExecutionMode
 from camel.llm.backend import get_backend
 from camel.policy.governance import (
@@ -196,6 +188,14 @@ from camel.policy.governance import (
     TierEvaluationRecord,
 )
 from camel.policy.interfaces import Allowed, Denied, PolicyRegistry
+from camel.provenance import (
+    TRUSTED_SOURCES,
+    PhishingWarning,
+    ProvenanceChain,
+    ProvenanceHop,
+    build_provenance_chain,
+    detect_phishing_content,
+)
 from camel.value import CaMeLValue, Public
 from camel_security.agent import AgentResult, CaMeLAgent, PolicyDenialRecord
 from camel_security.tool import Tool

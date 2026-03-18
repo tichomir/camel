@@ -51,7 +51,7 @@ import ast
 import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from camel.interpreter import CaMeLInterpreter
@@ -447,7 +447,7 @@ class ExceptionRedactor:
         """
         from camel.exceptions import NotEnoughInformationError as CamelNEIE  # noqa: PLC0415
 
-        orig_message = str(exc) if str(exc) else None
+        _orig_message = str(exc) if str(exc) else None
         orig_message_len = len(str(exc)) if exc.args else 0
 
         # Check if M4-F9 loop annotation is present.
@@ -636,7 +636,7 @@ class ExceptionRedactor:
         if self._audit_log is None:
             return
         event = RedactionAuditEvent(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             line_number=redacted.lineno,
             redaction_reason=redaction_reason,
             dependency_chain=list(dependency_chain),

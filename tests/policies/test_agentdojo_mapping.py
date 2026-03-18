@@ -7,21 +7,20 @@ equivalent benign payload.
 
 The mapping table (from docs/policies/reference-policy-spec.md) is:
 
-| Policy               | AgentDojo Task Category                    | Attack Type                           | Goal    |
-|----------------------|--------------------------------------------|---------------------------------------|---------|
-| send_email           | Workspace — Email exfiltration             | Injected recipient → redirected mail  | G2, G3  |
-| send_email           | Workspace — Email content manipulation    | Tainted body sent to unauth recipient | G3      |
-| send_money           | Banking — Financial fraud                  | Injected recipient/amount             | G2      |
-| send_money           | Banking — Amount manipulation              | Malicious email overrides amount      | G2      |
-| create_calendar_event| Workspace — Calendar injection             | Injected attendee in participants     | G2, G3  |
-| create_calendar_event| Workspace — Meeting data exposure          | Private description shared unauth    | G3      |
-| write_file           | Workspace — Cloud storage exfiltration     | Restricted doc written to public loc  | G3      |
-| write_file           | Workspace — Path injection                 | Malicious path from email             | G2      |
-| post_message         | Slack — Message exfiltration               | Private doc posted to public channel  | G3      |
-| post_message         | Slack — Channel injection                  | Injected channel name                 | G2      |
-| fetch_external_url   | All categories — URL exfiltration          | Injected URL leaks data               | G3      |
-| fetch_external_url   | All categories — SSRF                      | Untrusted URL → internal request      | G2      |
-| fetch_external_url   | All categories — Parameter exfiltration    | Params with private data              | G3      |
+Policy / AgentDojo Task Category / Attack Type / Goal:
+- send_email / Workspace-Email exfiltration / Injected recipient->redirected mail / G2,G3
+- send_email / Workspace-Email content manipulation / Tainted body to unauth recip / G3
+- send_money / Banking-Financial fraud / Injected recipient/amount / G2
+- send_money / Banking-Amount manipulation / Malicious email overrides amount / G2
+- create_calendar_event / Workspace-Calendar injection / Injected attendee / G2,G3
+- create_calendar_event / Workspace-Meeting data exposure / Private desc shared unauth / G3
+- write_file / Workspace-Cloud storage exfiltration / Restricted doc public loc / G3
+- write_file / Workspace-Path injection / Malicious path from email / G2
+- post_message / Slack-Message exfiltration / Private doc posted to public channel / G3
+- post_message / Slack-Channel injection / Injected channel name / G2
+- fetch_external_url / All-URL exfiltration / Injected URL leaks data / G3
+- fetch_external_url / All-SSRF / Untrusted URL -> internal request / G2
+- fetch_external_url / All-Parameter exfiltration / Params with private data / G3
 
 All tests are deterministic and make zero LLM / HTTP calls (NFR-2).
 """

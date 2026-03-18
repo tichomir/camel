@@ -29,7 +29,6 @@ All LLM backends are stubs — no real API calls required.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -38,18 +37,15 @@ from camel.exceptions import NotEnoughInformationError as CamelNEIE
 from camel.execution_loop import (
     CaMeLOrchestrator,
     ExceptionRedactor,
-    MaxRetriesExceededError,
     RedactedError,
 )
 from camel.llm.exceptions import NotEnoughInformationError as LLMNotEnoughInfoError
-from camel.llm.p_llm import CodePlan, PLLMWrapper, ToolSignature
+from camel.llm.p_llm import PLLMWrapper, ToolSignature
 from camel.llm.schemas import QResponse
 from camel.value import CaMeLValue, wrap
-
 from tests.harness.isolation_assertions import assert_exception_message_redacted
 from tests.harness.recording_backend import RecordingBackend, StubBackend
 from tests.harness.results_reporter import HarnessResultsReporter
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -47,8 +47,7 @@ from camel.config.loader import (
     get_permitted_names,
 )
 from camel.exceptions import ForbiddenImportError, ForbiddenNameError
-from camel.interpreter import CaMeLInterpreter, ExecutionMode
-
+from camel.interpreter import CaMeLInterpreter
 
 # ---------------------------------------------------------------------------
 # Helper

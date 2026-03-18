@@ -31,7 +31,6 @@ from __future__ import annotations
 import asyncio
 import os
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -39,10 +38,9 @@ from pydantic import BaseModel
 from camel import CaMeLInterpreter
 from camel.execution_loop import CaMeLOrchestrator, ExecutionTrace
 from camel.llm.backend import LLMBackend
-from camel.llm.p_llm import CodePlan, PLLMWrapper, ToolSignature
+from camel.llm.p_llm import PLLMWrapper, ToolSignature
 from camel.llm.protocols import Message
 from camel.value import CaMeLValue, wrap
-
 
 # ---------------------------------------------------------------------------
 # Shared plan strings used in swap tests

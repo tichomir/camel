@@ -39,14 +39,12 @@ from camel.policy.interfaces import (
 from camel.policy.reference_policies import (
     configure_reference_policies,
     fetch_external_url_policy,
-    post_message_policy,
     send_email_policy,
     send_money_policy,
 )
 from camel.value import CaMeLValue, Public, wrap
 from tests.harness.policy_harness import (
     AGENTDOJO_SCENARIOS,
-    AgentDojoScenario,
     PolicyTestCase,
     assert_allowed,
     assert_denied,
@@ -58,7 +56,6 @@ from tests.harness.policy_harness import (
     replay_agentdojo_scenario,
     replay_agentdojo_scenario_through_hook,
 )
-
 
 # ===========================================================================
 # 1. Value factory helpers

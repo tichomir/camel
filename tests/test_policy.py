@@ -13,16 +13,15 @@ Covers:
 
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 import types
 from collections.abc import Mapping
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from camel.interpreter import AuditLogEntry, CaMeLInterpreter, PolicyViolationError
+from camel.interpreter import CaMeLInterpreter, PolicyViolationError
 from camel.policy import (
     Allowed,
     Denied,
@@ -35,7 +34,6 @@ from camel.policy import (
 )
 from camel.policy.interfaces import TRUSTED_SOURCE_LABELS
 from camel.value import CaMeLValue, Public, wrap
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -766,8 +764,11 @@ class TestNFR2Compliance:
 
     def test_policy_fn_type_alias_is_synchronous_callable(self) -> None:
         """PolicyFn type alias requires synchronous callable signature."""
-        # Verify a sync lambda satisfies the PolicyFn contract
-        fn: PolicyFn = lambda tn, kw: Allowed()
+        # Verify a sync callable satisfies the PolicyFn contract
+        def _always_allowed(tn: str, kw: object) -> SecurityPolicyResult:
+            return Allowed()
+
+        fn: PolicyFn = _always_allowed
         result = fn("tool", {})
         assert isinstance(result, SecurityPolicyResult)
 

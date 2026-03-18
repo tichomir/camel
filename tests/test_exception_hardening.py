@@ -12,7 +12,6 @@ M4-F17 Audit log entry emitted for every redaction event.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -22,19 +21,16 @@ from camel.execution_loop import (
     AcceptedState,
     CaMeLOrchestrator,
     ExceptionRedactor,
-    MaxRetriesExceededError,
     RedactedError,
     RedactionAuditEvent,
     RetryPromptBuilder,
 )
 from camel.interpreter import ExecutionMode
 from camel.llm.exceptions import NotEnoughInformationError as LLMNotEnoughInfoError
-from camel.llm.p_llm import CodePlan, PLLMWrapper, ToolSignature
+from camel.llm.p_llm import PLLMWrapper, ToolSignature
 from camel.llm.schemas import QResponse
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 from tests.harness.recording_backend import RecordingBackend, StubBackend
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -351,7 +347,7 @@ class TestM4F7NEIEHandler:
 
     def test_interpreter_attaches_lineno_to_neie(self) -> None:
         """M4-F7: interpreter._eval_Call attaches __lineno__ to NEIE from tool."""
-        neie_raised = [False]
+        _neie_raised = [False]
 
         def qllm_tool(*args: Any, **kwargs: Any) -> CaMeLValue:
             raise CamelNEIE()
@@ -471,7 +467,7 @@ class TestM4F8AnnotationPreservation:
         The test verifies that variables assigned before NEIE retain their
         dependency edges in the restarted plan.
         """
-        captured_dep_graph_after_retry: dict[str, frozenset[str]] = {}
+        _captured_dep_graph_after_retry: dict[str, frozenset[str]] = {}
         call_count = [0]
 
         def neie_tool(*args: Any, **kwargs: Any) -> CaMeLValue:

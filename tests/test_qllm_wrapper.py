@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import unittest
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pydantic import BaseModel
@@ -513,7 +513,7 @@ class TestAugmentedSchemaPassThrough(unittest.IsolatedAsyncioTestCase):
             the wrapper's strip-and-revalidate step still passes."""
 
             sender: str
-            have_enough_information: Optional[bool] = None
+            have_enough_information: bool | None = None
 
         captured_schemas: list[type[BaseModel]] = []
 

@@ -36,10 +36,7 @@ from camel import CaMeLInterpreter
 from camel.execution_loop import CaMeLOrchestrator, ExecutionResult
 from camel.llm.backend import LLMBackend
 from camel.llm.p_llm import PLLMWrapper, ToolSignature
-from camel.value import CaMeLValue, wrap
-
 from tests.harness.scenarios import SCENARIOS
-
 
 # ---------------------------------------------------------------------------
 # S02 scenario fixture (simplest single-step, used across all swap tests)

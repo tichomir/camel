@@ -47,7 +47,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from camel.value import CaMeLValue, Public, _PublicType
+from camel.value import CaMeLValue, _PublicType
 
 __all__ = [
     "ProvenanceHop",

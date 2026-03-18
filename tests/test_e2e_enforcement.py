@@ -31,7 +31,6 @@ from __future__ import annotations
 import statistics
 import time
 from collections.abc import Callable
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,7 +39,6 @@ from camel.interpreter import (
     AuditLogEntry,
     CaMeLInterpreter,
     EnforcementMode,
-    ExecutionMode,
     PolicyViolationError,
 )
 from camel.policy.interfaces import (
@@ -51,10 +49,7 @@ from camel.policy.interfaces import (
 )
 from camel.policy.reference_policies import (
     configure_reference_policies,
-    create_calendar_event_policy,
     fetch_external_url_policy,
-    make_write_file_policy,
-    post_message_policy,
     send_email_policy,
     send_money_policy,
 )
@@ -842,7 +837,11 @@ class TestNFR9Independence:
 
     def test_wrap_produces_correct_capability_tags(self) -> None:
         """wrap() produces CaMeLValue with correct sources and readers."""
-        cv = wrap("data", sources=frozenset({"read_email"}), readers=frozenset({"alice@example.com"}))
+        cv = wrap(
+            "data",
+            sources=frozenset({"read_email"}),
+            readers=frozenset({"alice@example.com"}),
+        )
         assert cv.sources == frozenset({"read_email"})
         assert cv.readers == frozenset({"alice@example.com"})
         assert not is_trusted(cv)

@@ -15,7 +15,6 @@ from pydantic import ValidationError
 from camel.llm.qllm import QLLMWrapper
 from camel.llm.schemas import QResponse
 
-
 # ---------------------------------------------------------------------------
 # Test schema
 # ---------------------------------------------------------------------------

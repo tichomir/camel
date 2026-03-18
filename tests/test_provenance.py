@@ -5,7 +5,8 @@ Covers:
   2. ProvenanceChain construction, is_trusted property, to_dict() and to_json() round-trip.
   3. build_provenance_chain() with single/multi source, trusted/untrusted origins.
   4. TRUSTED_SOURCES boundary logic — hops from untrusted sources flagged correctly.
-  5. detect_phishing_content() — returns PhishingWarning for known patterns, empty for clean/trusted.
+  5. detect_phishing_content() — returns PhishingWarning for known patterns, empty for
+     clean/trusted.
   6. _build_provenance_data() helper producing schema-valid output.
   7. CaMeLAgent.get_provenance() — KeyError semantics and concurrent AgentResult safety.
 """
@@ -21,15 +22,13 @@ import pytest
 from camel.interpreter import CaMeLInterpreter, EnforcementMode, ExecutionMode
 from camel.provenance import (
     TRUSTED_SOURCES,
-    PhishingWarning,
     ProvenanceChain,
     ProvenanceHop,
     build_provenance_chain,
     detect_phishing_content,
 )
-from camel.value import CaMeLValue, Public, wrap
+from camel.value import CaMeLValue, Public
 from camel_security.agent import AgentResult, _build_provenance_data
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -563,9 +562,6 @@ class TestGetProvenance:
         )
 
     def test_get_provenance_returns_chain(self) -> None:
-        from camel_security.agent import CaMeLAgent
-        from unittest.mock import MagicMock
-        from camel.llm.backend import LLMBackend
 
         # We only need the get_provenance method — create minimal mock agent.
         # Rather than constructing the full agent, directly test the logic.
@@ -759,8 +755,8 @@ class TestAuditLogProvenanceChains:
 
     def test_allowed_entry_has_provenance_chains(self) -> None:
         """AuditLogEntry for an allowed tool call has provenance_chains dict."""
-        from camel.interpreter import EnforcementMode
-        from camel.policy.interfaces import Allowed as PolicyAllowed, PolicyRegistry
+        from camel.policy.interfaces import Allowed as PolicyAllowed
+        from camel.policy.interfaces import PolicyRegistry
 
         registry = PolicyRegistry()
         registry.register("my_tool", lambda tool_name, kwargs: PolicyAllowed())
@@ -789,8 +785,8 @@ class TestAuditLogProvenanceChains:
 
     def test_provenance_chains_json_serialisable(self) -> None:
         """provenance_chains in AuditLogEntry can be JSON-serialised."""
-        from camel.interpreter import EnforcementMode
-        from camel.policy.interfaces import Allowed as PolicyAllowed, PolicyRegistry
+        from camel.policy.interfaces import Allowed as PolicyAllowed
+        from camel.policy.interfaces import PolicyRegistry
 
         registry = PolicyRegistry()
         registry.register("another_tool", lambda tool_name, kwargs: PolicyAllowed())
@@ -813,8 +809,8 @@ class TestAuditLogProvenanceChains:
 
     def test_audit_entry_fields_complete(self) -> None:
         """AuditLogEntry has all expected fields including provenance_chains."""
-        from camel.interpreter import EnforcementMode
-        from camel.policy.interfaces import Allowed as PolicyAllowed, PolicyRegistry
+        from camel.policy.interfaces import Allowed as PolicyAllowed
+        from camel.policy.interfaces import PolicyRegistry
 
         def simple_tool(x: int) -> CaMeLValue:
             return CaMeLValue(
@@ -856,7 +852,7 @@ class TestAgentGetProvenanceMethod:
 
     def _make_agent_result_with_chains(
         self, store: dict[str, Any]
-    ) -> "AgentResult":  # noqa: F821
+    ) -> AgentResult:  # noqa: F821
         from camel_security.agent import AgentResult
 
         chains, warnings = _build_provenance_data(store)

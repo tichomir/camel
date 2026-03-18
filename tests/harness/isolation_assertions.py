@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from tests.harness.recording_backend import RecordedCall
 
-
 # ---------------------------------------------------------------------------
 # I-1: No tool return value content in P-LLM context
 # ---------------------------------------------------------------------------

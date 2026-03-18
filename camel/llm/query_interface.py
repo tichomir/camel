@@ -328,7 +328,6 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         # Slow path: augmented is a dynamically created BaseModel subclass.
         # Build a synthetic QResponse wrapper to satisfy QLLMWrapper typing.
         # Instead, validate directly using the augmented schema.
-        from camel.llm.protocols import Message
 
         messages = wrapper._build_messages(prompt, augmented)  # type: ignore[arg-type]
         raw_result = await backend.structured_complete(  # type: ignore[type-var]

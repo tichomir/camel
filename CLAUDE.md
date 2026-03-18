@@ -1612,3 +1612,13 @@ Deliverables:
 - ✅ Fix: Resolve duplicate/overlapping policy authoring docs and update cross-links — Software Architect (◈ Standard, 3 SP)
 
 ---
+### Milestone 6 — Lint Fix Sprint | 2026-03-18 | ✅ done | 11 SP
+**Goal:** Let's fix all errors that Lint (fuff) is throwing / showing
+
+**Delivered:**
+- ✅ Audit and catalogue all Ruff/Flake8 lint errors — Qa Engineer (⚡ Quick, 2 SP)
+- ✅ Apply Ruff auto-fixes and resolve all auto-fixable violations — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Manually fix remaining lint violations requiring code changes — Backend Developer (◉ Deep, 5 SP)
+- ✅ Enforce lint in CI and add pre-commit hook configuration — Devops Engineer (⚡ Quick, 2 SP)
+
+---

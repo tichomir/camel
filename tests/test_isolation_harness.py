@@ -46,8 +46,6 @@ import pytest
 from camel import CaMeLInterpreter
 from camel.execution_loop import CaMeLOrchestrator, ExecutionResult
 from camel.llm.p_llm import PLLMWrapper, ToolSignature
-from camel.value import CaMeLValue, wrap
-
 from tests.harness.isolation_assertions import (
     assert_exception_message_redacted,
     assert_no_qllm_freeform_in_messages,
@@ -56,7 +54,6 @@ from tests.harness.isolation_assertions import (
 from tests.harness.recording_backend import RecordingBackend, StubBackend
 from tests.harness.results_reporter import HarnessResultsReporter
 from tests.harness.scenarios import RETRY_SCENARIO, SCENARIOS, ScenarioSpec
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,14 +157,14 @@ async def test_isolation_harness(
     )
 
     # Verify I-1: no tool return value content in P-LLM messages.
-    i1_passed = True
+    _i1_passed = True
     try:
         assert_no_tool_value_in_messages(
             recording.recorded_calls,
             scenario.tool_sentinels,
         )
     except AssertionError:
-        i1_passed = False
+        _i1_passed = False
         harness_reporter.record("I1_no_tool_return_in_p_llm", False)
         raise
     harness_reporter.record("I1_no_tool_return_in_p_llm", True)
@@ -220,7 +217,7 @@ async def test_retry_isolation_i3(
     recording = RecordingBackend(stub)
     orchestrator = _build_orchestrator(scenario, recording)
 
-    result: ExecutionResult = await orchestrator.run(
+    _result: ExecutionResult = await orchestrator.run(
         user_query=scenario.description,
     )
 

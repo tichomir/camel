@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,14 +30,12 @@ from camel.execution_loop import (
     RedactedError,
     RetryPromptBuilder,
     StdoutDisplayChannel,
-    TraceRecord,
     TraceRecorder,
 )
 from camel.llm.exceptions import NotEnoughInformationError as LLMNotEnoughInfoError
 from camel.llm.p_llm import CodePlan, PLLMWrapper, ToolSignature
 from camel.llm.schemas import QResponse
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 
 # ---------------------------------------------------------------------------
 # Helpers

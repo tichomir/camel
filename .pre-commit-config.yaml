@@ -1,0 +1,10 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in sync with the ruff version pinned in pyproject.toml [project.optional-dependencies].dev
+    rev: v0.4.0
+    hooks:
+      # Lint — fail on any ruff violation (mirrors the CI 'lint' job)
+      - id: ruff
+        args: [--fix]
+      # Format — fail if any file would be reformatted (mirrors `ruff format --check` in CI)
+      - id: ruff-format

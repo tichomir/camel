@@ -33,8 +33,7 @@ from camel.policy.interfaces import (
     SecurityPolicyResult,
     is_trusted,
 )
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 
 # ---------------------------------------------------------------------------
 # Mock tools

@@ -50,7 +50,7 @@ from __future__ import annotations
 import importlib
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import final
 
@@ -61,7 +61,6 @@ from camel.policy.interfaces import (
     SecurityPolicyResult,
 )
 from camel.value import CaMeLValue
-
 
 # ---------------------------------------------------------------------------
 # PolicyTier — authorship tier enum
@@ -471,7 +470,7 @@ class TieredPolicyRegistry:
         )
 
     @classmethod
-    def load_from_env(cls) -> "TieredPolicyRegistry":
+    def load_from_env(cls) -> TieredPolicyRegistry:
         """Create a registry pre-populated from a deployment-specific module.
 
         Reads the ``CAMEL_TIERED_POLICY_MODULE`` environment variable.  If set,
@@ -734,7 +733,7 @@ class PolicyConflictResolver:
         return self.evaluate(tool_name, kwargs).outcome
 
     @classmethod
-    def load_from_env(cls) -> "PolicyConflictResolver":
+    def load_from_env(cls) -> PolicyConflictResolver:
         """Create a resolver pre-populated from a deployment-specific module.
 
         Reads ``CAMEL_TIERED_POLICY_MODULE`` via

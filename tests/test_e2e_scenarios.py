@@ -41,10 +41,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from camel import CaMeLInterpreter
-from camel.execution_loop import CaMeLOrchestrator, ExecutionResult, TraceRecord
+from camel.execution_loop import CaMeLOrchestrator, ExecutionResult
 from camel.llm.p_llm import CodePlan, PLLMWrapper, ToolSignature
 from camel.value import CaMeLValue, wrap
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -32,12 +32,9 @@ Coverage
 
 from __future__ import annotations
 
-import pytest
-
 from camel.dependency_graph import DependencyGraph, _InternalGraph
 from camel.interpreter import CaMeLInterpreter, ExecutionMode
-from camel.value import wrap, Public
-
+from camel.value import wrap
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -41,10 +41,9 @@ from camel.provenance import (
     build_provenance_chain,
     detect_phishing_content,
 )
-from camel.value import CaMeLValue, Public, propagate_binary_op, wrap
+from camel.value import CaMeLValue, Public, propagate_binary_op
 from camel_security.agent import AgentResult, _build_provenance_data
 from camel_security.testing import CaMeLValueBuilder
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -59,7 +59,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from camel.capabilities.types import CapabilityAnnotationFn, default_capability_annotation
+from camel.capabilities.types import CapabilityAnnotationFn
 from camel.value import CaMeLValue, Public, Readers, _PublicType
 
 __all__ = [

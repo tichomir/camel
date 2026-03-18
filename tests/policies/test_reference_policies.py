@@ -277,7 +277,7 @@ class TestSendEmailDeniedDeepProvenance:
     def test_two_hop_untrusted_to_body_restricted_denied(self) -> None:
         """to = user_prefix + email_part  (2-hop sources) → still denied."""
         # Hop 1: email_sender came from read_email
-        email_sender = _hop1_email("injected_part")
+        _email_sender = _hop1_email("injected_part")
         # Hop 2: formatted_to = "prefix-" + email_sender  (union of User literal + read_email)
         two_hop_to = _hop2_derived(
             "prefix-injected_part",

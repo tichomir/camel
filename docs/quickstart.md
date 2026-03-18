@@ -15,6 +15,33 @@ run your first task, and verify the security audit log output.
 
 ---
 
+## 0. Set Up Pre-commit Hooks (recommended for contributors)
+
+CaMeL ships a `.pre-commit-config.yaml` that runs `ruff check` and
+`ruff format --check` automatically before every `git commit`, keeping your
+local branch clean and preventing lint failures in CI.
+
+```bash
+# Install the pre-commit tool (already included in the dev extras)
+pip install -e ".[dev]"
+
+# Register the hooks with git
+pre-commit install
+```
+
+After this one-time setup, every `git commit` will automatically run the ruff
+lint and format checks.  To run the hooks manually against all files:
+
+```bash
+pre-commit run --all-files
+```
+
+> **Note:** The CI pipeline enforces the same checks in a dedicated `lint` job
+> that must pass before any test jobs start.  Running pre-commit locally catches
+> violations before they reach CI.
+
+---
+
 ## 1. Install the SDK
 
 ```bash

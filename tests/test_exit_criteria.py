@@ -3,7 +3,8 @@
 Criteria validated
 ------------------
 EC-1  100% unit test pass rate — subprocess pytest invocation over all Milestone 1 test files.
-EC-2  ≥20 dependency-graph programs verified — collection count + full run of test_dependency_graph.py.
+EC-2  ≥20 dependency-graph programs verified — collection count + full run of
+      test_dependency_graph.py.
 EC-3  CaMeLValue round-trip fidelity — wrap, propagate through all six operation classes, assert
       unwrapped result and capability union.
 EC-4  ≥15 negative syntax tests — UnsupportedSyntaxError raised with correct node_type and lineno.
@@ -405,7 +406,11 @@ def test_ec5_session_persistence_capability_metadata_carries_forward():
     """Capability metadata set in one exec() is accessible in later exec() calls."""
     from camel.value import wrap
 
-    tool_value = wrap("data", sources=frozenset({"external_tool"}), readers=frozenset({"admin@x.com"}))
+    tool_value = wrap(
+        "data",
+        sources=frozenset({"external_tool"}),
+        readers=frozenset({"admin@x.com"}),
+    )
 
     def external_tool() -> CaMeLValue:
         return tool_value

@@ -26,11 +26,8 @@ M4-F5: STRICT mode is the default — NORMAL mode requires explicit opt-in.
 
 from __future__ import annotations
 
-import pytest
-
 from camel.interpreter import CaMeLInterpreter, ExecutionMode
-from camel.value import CaMeLValue, Public, wrap
-
+from camel.value import CaMeLValue, wrap
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,7 +38,9 @@ _UNTRUSTED_SOURCES: frozenset[str] = frozenset({"get_email"})
 _TOOL_SOURCES: frozenset[str] = frozenset({"get_items"})
 
 
-def _make_interp(mode: ExecutionMode = ExecutionMode.STRICT, **extra_tools: object) -> CaMeLInterpreter:
+def _make_interp(
+    mode: ExecutionMode = ExecutionMode.STRICT, **extra_tools: object
+) -> CaMeLInterpreter:
     """Build a CaMeLInterpreter with a standard set of mock tools."""
 
     def _qllm_tool(prompt: object, schema: object = None) -> CaMeLValue:
@@ -398,7 +397,9 @@ def test_m4f5_normal_mode_requires_explicit_opt_in():
     Demonstrate that without mode=ExecutionMode.NORMAL, the if-condition
     propagates taint (STRICT behaviour), whereas with NORMAL it does not.
     """
-    interp_strict = CaMeLInterpreter(tools={"get_email": lambda: wrap(1, sources=frozenset({"get_email"}))})
+    interp_strict = CaMeLInterpreter(
+        tools={"get_email": lambda: wrap(1, sources=frozenset({"get_email"}))}
+    )
     interp_strict.exec("flag = get_email()")
     interp_strict.exec("v = 42")
     interp_strict.exec("""

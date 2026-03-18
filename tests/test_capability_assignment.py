@@ -19,8 +19,8 @@ from typing import Any
 import pytest
 
 from camel.capabilities import (
-    CapabilityAnnotationFn,
     CaMeLValue,
+    CapabilityAnnotationFn,
     Public,
     annotate_get_file,
     annotate_read_document,
@@ -31,7 +31,6 @@ from camel.capabilities import (
 from camel.interpreter import CaMeLInterpreter
 from camel.tools import ToolRegistry
 from camel.value import wrap
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -377,7 +376,9 @@ class TestToolRegistryCustomAnnotation:
 
         def ann(rv: Any, kw: Mapping[str, Any]) -> CaMeLValue:
             called.append(True)
-            return CaMeLValue(value=rv, sources=frozenset({"ann"}), inner_source=None, readers=Public)
+            return CaMeLValue(
+                value=rv, sources=frozenset({"ann"}), inner_source=None, readers=Public
+            )
 
         reg = ToolRegistry()
         reg.register("t", tool, capability_annotation=ann)

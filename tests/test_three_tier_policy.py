@@ -23,13 +23,11 @@ from camel.policy.governance import (
     MergedPolicyResult,
     PolicyConflictResolver,
     PolicyTier,
-    TieredPolicyEntry,
     TieredPolicyRegistry,
     TierEvaluationRecord,
 )
 from camel.policy.interfaces import Allowed, Denied, SecurityPolicyResult
 from camel.value import CaMeLValue, Public, wrap
-
 
 # ---------------------------------------------------------------------------
 # Helpers

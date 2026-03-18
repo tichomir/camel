@@ -14,7 +14,6 @@ Thread-safety contract reference: ``camel_security/agent.py`` module docstring a
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
 import textwrap
@@ -30,7 +29,6 @@ from camel.llm.backend import LLMBackend
 from camel.policy.interfaces import Allowed, Denied, PolicyRegistry
 from camel.value import CaMeLValue, Public, wrap
 from camel_security import AgentResult, CaMeLAgent, Tool
-
 
 # ---------------------------------------------------------------------------
 # Minimal in-process mock backend (no network calls)

@@ -10,13 +10,12 @@ forwarded to the underlying model.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
 
 from camel.llm.protocols import Message
-
 
 # ---------------------------------------------------------------------------
 # Data model

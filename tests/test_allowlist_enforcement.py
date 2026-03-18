@@ -37,7 +37,6 @@ from camel.exceptions import (
 from camel.interpreter import CaMeLInterpreter, ExecutionMode
 from camel.value import CaMeLValue, Public, wrap
 
-
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
@@ -451,11 +450,12 @@ class TestAllowlistLoading:
     def test_yaml_missing_required_fields_raises_configuration_security_error(
         self, tmp_path: Path
     ) -> None:
-        """load_allowlist() raises ConfigurationSecurityError when required sections are absent."""
+        """load_allowlist() raises ConfigurationSecurityError when required sections absent."""
         incomplete_yaml = tmp_path / "incomplete_allowlist.yaml"
         # Missing permitted_builtins and excluded_timing_names.
         incomplete_yaml.write_text(
-            "review_gate:\n  last_reviewed: '2026-01-01'\n  reviewers: []\n  review_required: false\n",
+            "review_gate:\n  last_reviewed: '2026-01-01'\n"
+            "  reviewers: []\n  review_required: false\n",
             encoding="utf-8",
         )
         with pytest.raises(ConfigurationSecurityError):
