@@ -1719,3 +1719,14 @@ Error: Process completed with exit code 1.
 - ✅ Fix: Commit unstaged mypy code fixes to version control — Devops Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 6 — Lint & CI Polish | 2026-03-18 | ✅ done | 12 SP
+**Goal:** Let's fix all errors that Lint (fuff) is throwing / showing
+If not showing, let's make we have latest code in github and have the CI run there to clear out any outstanding errors.
+
+**Delivered:**
+- ✅ Audit current ruff and mypy CI output — Devops Engineer (⚡ Quick, 2 SP)
+- ✅ Fix all remaining ruff lint errors across src and tests — Backend Developer (◈ Standard, 3 SP)
+- ✅ Fix all remaining mypy --strict errors across src — Backend Developer (◉ Deep, 5 SP)
+- ✅ Verify end-to-end CI passes and merge to main — Devops Engineer (⚡ Quick, 2 SP)
+
+---
