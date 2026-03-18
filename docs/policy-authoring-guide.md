@@ -161,14 +161,25 @@ resolver = PolicyConflictResolver(registry)
 
 ### 2.3 Wiring into CaMeLAgent
 
+`CaMeLAgent.policies` accepts a flat `PolicyRegistry`.  Wrap the
+`PolicyConflictResolver` in a thin adapter registered on a flat registry:
+
 ```python
 from camel_security import CaMeLAgent
+from camel.policy.interfaces import PolicyRegistry
+
+flat_registry = PolicyRegistry()
+
+def _tiered_send_email(tool_name, kwargs):
+    return resolver.evaluate(tool_name, kwargs).outcome
+
+flat_registry.register("send_email", _tiered_send_email)
 
 agent = CaMeLAgent(
     p_llm=backend,
     q_llm=backend,
     tools=[send_email_tool],
-    policies=resolver,  # accepts PolicyRegistry or PolicyConflictResolver
+    policies=flat_registry,
 )
 ```
 

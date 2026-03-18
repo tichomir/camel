@@ -334,18 +334,30 @@ registry.register_user("send_email", send_email_user_policy)
 
 resolver = PolicyConflictResolver(registry)
 
+# CaMeLAgent.policies accepts PolicyRegistry only.
+# Wrap the tiered resolver in a flat PolicyRegistry via a thin adapter:
+from camel.policy.interfaces import PolicyRegistry as FlatRegistry
+
+flat_registry = FlatRegistry()
+
+def _tiered_send_email(tool_name, kwargs):
+    return resolver.evaluate(tool_name, kwargs).outcome
+
+flat_registry.register("send_email", _tiered_send_email)
+
 agent = CaMeLAgent(
     p_llm=backend,
     q_llm=backend,
     tools=[send_email_tool],
-    policies=resolver,  # accepts both PolicyRegistry and PolicyConflictResolver
+    policies=flat_registry,
 )
 ```
 
-> **Compatibility note:** `PolicyRegistry` (flat) still accepted by `CaMeLAgent.policies`.
-> Adopt `TieredPolicyRegistry` incrementally by wrapping existing flat policies at the
-> appropriate tier.  See the migration path in the
-> [Policy Authoring Guide](policy-authoring-guide.md#migration-path-from-flat-policyregistry).
+> **Compatibility note:** `CaMeLAgent.policies` accepts `PolicyRegistry` (flat).  When
+> using `TieredPolicyRegistry` / `PolicyConflictResolver`, wrap each tool's resolver
+> call in a thin adapter function registered on a flat `PolicyRegistry`, as shown above.
+> See the [Policy Authoring Guide](policy-authoring-guide.md#migration-path-from-flat-policyregistry)
+> for a complete step-by-step migration path.
 
 ---
 
@@ -396,20 +408,20 @@ Configure via environment variables:
 
 ```bash
 # Write audit log to a file (newline-delimited JSON)
-export CAMEL_AUDIT_SINK=file
-export CAMEL_AUDIT_SINK_PATH=/var/log/camel-audit.jsonl
+export CAMEL_AUDIT_SINK=file:/var/log/camel-audit.jsonl
 
-# Write to stdout
+# Write to stdout (default when CAMEL_AUDIT_SINK is unset)
 export CAMEL_AUDIT_SINK=stdout
 
-# Suppress (no-op sink)
-# Omit both variables
+# External HTTP aggregator
+export CAMEL_AUDIT_SINK=external:http://logs.internal/camel
+export CAMEL_AUDIT_EXTERNAL_AUTH="Bearer my-token"
 ```
 
 Or configure programmatically:
 
 ```python
-from camel.observability.audit_sink import AuditSink, SinkMode, AuditSinkConfig
+from camel.observability.audit_sink import AuditSink, AuditSinkConfig, SinkMode
 
 config = AuditSinkConfig(mode=SinkMode.FILE, file_path="/var/log/camel-audit.jsonl")
 sink = AuditSink(config=config)
@@ -456,7 +468,7 @@ No public provenance API.  Provenance was tracked internally but not queryable.
 
 ```python
 # After agent.run() completes:
-for var_name, chain in result.provenance.items():
+for var_name, chain in result.provenance_chains.items():
     print(f"{var_name}: {chain.to_dict()}")
 
 # Or via the low-level interpreter:
@@ -518,8 +530,8 @@ New environment variables introduced in M5:
 
 | Variable | Default | Description |
 |---|---|---|
-| `CAMEL_AUDIT_SINK` | _(none — no-op)_ | Audit sink mode: `file`, `stdout` |
-| `CAMEL_AUDIT_SINK_PATH` | _(none)_ | File path when `CAMEL_AUDIT_SINK=file` |
+| `CAMEL_AUDIT_SINK` | `stdout` | Audit sink: `stdout`, `file:/path/to/log`, or `external:http://host/path` |
+| `CAMEL_AUDIT_EXTERNAL_AUTH` | _(none)_ | `Bearer <token>` auth header for `external` sink mode |
 | `CAMEL_OTEL_ENDPOINT` | _(none)_ | OTLP/HTTP endpoint for OpenTelemetry metric push |
 | `CAMEL_TIERED_POLICY_MODULE` | _(none)_ | Python module path exporting `configure_tiered_policies` |
 
@@ -654,7 +666,7 @@ for record in result.execution_trace:    # renamed from result.trace
 - [ ] Update `result.display_lines` → `result.display_output`
 - [ ] Update `result.attempts` → `result.loop_attempts`
 - [ ] (Optional) Migrate flat `PolicyRegistry` to `TieredPolicyRegistry` — see [Policy Authoring Guide](policy-authoring-guide.md)
-- [ ] (Optional) Configure audit log sink via `CAMEL_AUDIT_SINK` / `CAMEL_AUDIT_SINK_PATH`
+- [ ] (Optional) Configure audit log sink via `CAMEL_AUDIT_SINK` (e.g. `file:/var/log/camel-audit.jsonl`)
 - [ ] Run full test suite after migration: `pytest`
 
 ---
