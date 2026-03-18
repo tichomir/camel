@@ -14,6 +14,7 @@ workflow, coding conventions, and the three-step process for adding a new tool
 4. [Swapping LLM Backends](#4-swapping-llm-backends)
 5. [Running Tests](#5-running-tests)
 6. [Pull Request Checklist](#6-pull-request-checklist)
+7. [Secret Scanning](#7-secret-scanning)
 
 ---
 
@@ -326,3 +327,59 @@ Before opening a PR, confirm:
       `Raises` sections.
 - [ ] `CHANGELOG.md` updated if the change affects the public API or
       user-visible behaviour.
+- [ ] No secrets or credentials committed (`detect-secrets scan` clean).
+
+---
+
+## 7. Secret Scanning
+
+CaMeL uses [`detect-secrets`](https://github.com/Yelp/detect-secrets) to prevent
+API keys, tokens, and other credentials from being committed to the repository.
+
+### Setup (required after cloning)
+
+Run `pre-commit install` after cloning to activate the hooks:
+
+```bash
+git clone <repo-url> camel && cd camel
+pip install -e ".[dev]"
+pre-commit install          # installs ruff + detect-secrets hooks
+```
+
+From this point on, every `git commit` automatically runs the secret scanner.
+Any detected secret that is **not** in the `.secrets.baseline` file will block
+the commit.
+
+### Handling false positives
+
+If `detect-secrets` flags a legitimate non-secret (e.g. a documentation example
+that resembles an API key), add it to the baseline:
+
+```bash
+# 1. Re-scan to update the baseline with the new entry
+detect-secrets scan \
+  --exclude-files '\.git/.*' \
+  --exclude-files '\.mypy_cache/.*' \
+  --exclude-files 'node_modules/.*' \
+  --baseline .secrets.baseline
+
+# 2. Interactively mark each new entry as a false positive
+detect-secrets audit .secrets.baseline
+
+# 3. Commit the updated baseline alongside your code change
+git add .secrets.baseline
+git commit -m "chore: acknowledge detect-secrets false positive in <file>"
+```
+
+### CI enforcement
+
+The `secret-scan` job in `.github/workflows/ci.yml` runs `detect-secrets` on
+every push and pull request.  It uses the same `.secrets.baseline` file so that
+acknowledged false positives do not block CI.  **Any new secret that is not in
+the baseline will fail the build.**
+
+### Never bypass secret scanning
+
+Do **not** use `git commit --no-verify` to skip the pre-commit hooks.  If you
+believe a detection is a false positive, follow the baseline update process
+above instead.

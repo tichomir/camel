@@ -8,3 +8,20 @@ repos:
         args: [--fix]
       # Format — fail if any file would be reformatted (mirrors `ruff format --check` in CI)
       - id: ruff-format
+
+  # Secret scanning — blocks commits that contain API keys, tokens, or credentials.
+  # False positives are acknowledged in .secrets.baseline (run `detect-secrets audit
+  # .secrets.baseline` to review and approve any new entries).
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - --baseline
+          - .secrets.baseline
+          - --exclude-files
+          - \.git/.*
+          - --exclude-files
+          - \.mypy_cache/.*
+          - --exclude-files
+          - node_modules/.*
