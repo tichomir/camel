@@ -73,6 +73,7 @@ from pydantic import BaseModel, Field, create_model
 
 from camel.llm.exceptions import NotEnoughInformationError
 from camel.llm.schemas import QResponse
+from camel.value import CaMeLValue, wrap
 
 if TYPE_CHECKING:
     from camel.llm.protocols import QlLMBackend
@@ -91,13 +92,11 @@ _HEI_FIELD_NAME: str = "have_enough_information"
 #: under concurrent load.  Size defaults to min(32, cpu_count + 4) which
 #: matches the stdlib ThreadPoolExecutor default, but can be overridden via
 #: the ``CAMEL_QLLM_THREAD_POOL_SIZE`` environment variable.
-_QLLM_EXECUTOR: concurrent.futures.ThreadPoolExecutor = (
-    concurrent.futures.ThreadPoolExecutor(
-        max_workers=int(
-            os.environ.get(
-                "CAMEL_QLLM_THREAD_POOL_SIZE",
-                min(32, (os.cpu_count() or 1) + 4),
-            )
+_QLLM_EXECUTOR: concurrent.futures.ThreadPoolExecutor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=int(
+        os.environ.get(
+            "CAMEL_QLLM_THREAD_POOL_SIZE",
+            min(32, (os.cpu_count() or 1) + 4),
         )
     )
 )
@@ -364,7 +363,7 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         raw = validated.model_dump(exclude={_HEI_FIELD_NAME})
         return output_schema.model_validate(raw)
 
-    def _query(prompt: str, output_schema: type[T]) -> T:
+    def _query(prompt: str, output_schema: type[T]) -> CaMeLValue:
         """Synchronous bound implementation of :class:`QueryQLLMCallable`.
 
         The interpreter calls tools synchronously.  When the orchestrator's
@@ -374,8 +373,20 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         the module-level shared :data:`_QLLM_EXECUTOR` pool.  Reusing the
         pool avoids the per-call overhead of creating and tearing down a
         ``ThreadPoolExecutor`` and an asyncio event loop on every invocation.
+
+        The Pydantic result is wrapped in a :class:`~camel.value.CaMeLValue`
+        tagged with ``sources={"query_quarantined_llm"}`` so the interpreter's
+        type assertion and M4-F3/F4 post-Q-LLM taint propagation work
+        correctly.  Attribute access on the result (e.g. ``result.text``) is
+        handled by the interpreter's ``_eval_Attribute`` path which re-wraps
+        each field with propagated capability tags.
         """
         future = _QLLM_EXECUTOR.submit(asyncio.run, _query_async(prompt, output_schema))
-        return future.result()
+        pydantic_result: T = future.result()
+        return wrap(
+            pydantic_result,
+            sources=frozenset({"query_quarantined_llm"}),
+            readers=frozenset(),
+        )
 
     return _query

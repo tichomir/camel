@@ -64,6 +64,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel
+
 from camel.execution_loop import (
     CaMeLOrchestrator,
     ExecutionResult,
@@ -91,6 +93,52 @@ __all__ = [
     "CaMeLAgent",
 ]
 
+# ---------------------------------------------------------------------------
+# Q-LLM system tool signature — injected into every P-LLM system prompt
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Pre-built Q-LLM extraction schemas — always available in interpreter namespace
+# ---------------------------------------------------------------------------
+
+
+class EmailFields(BaseModel):
+    """Pre-registered schema for extracting standard email fields.
+
+    Available by name in every P-LLM-generated plan — no ``import`` or
+    ``class`` definition required.  Use with ``query_quarantined_llm``::
+
+        email = get_last_email()
+        fields = query_quarantined_llm(email, EmailFields)
+        send_email(to=fields.to, subject=fields.subject, body=fields.body)
+    """
+
+    to: str = ""
+    subject: str = ""
+    body: str = ""
+    sender: str = ""
+
+
+#: Fixed :class:`~camel.llm.p_llm.ToolSignature` for the
+#: ``query_quarantined_llm`` built-in.  This tells the P-LLM that the Q-LLM
+#: is available for structured extraction of untrusted data, enabling it to
+#: generate plans that use ``result = query_quarantined_llm(data, Schema)``
+#: instead of printing raw tool return values.
+_QLLM_TOOL_SIGNATURE = ToolSignature(
+    name="query_quarantined_llm",
+    signature="prompt: str, output_schema: type",
+    return_type="object",
+    description=(
+        "Extract structured information from untrusted content via the "
+        "Quarantined LLM. Pass the untrusted data as the prompt and a "
+        "pre-registered schema class as output_schema. Access result fields "
+        "with attribute notation: result.field_name. "
+        "Pre-registered schemas available (no class definition needed): "
+        "EmailFields (fields: to, subject, body, sender). "
+        "Use this whenever you need to interpret or summarise untrusted tool "
+        "output (e.g. email bodies, document text)."
+    ),
+)
 
 # ---------------------------------------------------------------------------
 # AgentResult — stable return type
@@ -451,12 +499,16 @@ class CaMeLAgent:
 
         # Build per-run tools dict: capability-annotated user tools + Q-LLM callable.
         # query_quarantined_llm is passed directly (not through ToolRegistry) because
-        # it returns a Pydantic model, not a CaMeLValue; the interpreter handles it
-        # specially via CaMeLInterpreter._QLLM_TOOL_NAMES.
+        # the interpreter handles it specially via CaMeLInterpreter._QLLM_TOOL_NAMES
+        # (M4-F3/F4 post-Q-LLM taint propagation).
         run_tools: dict[str, Any] = dict(self._tool_registry.as_interpreter_tools())
         run_tools["query_quarantined_llm"] = make_query_quarantined_llm(
             self._q_llm_backend  # type: ignore[arg-type]
         )
+        # Pre-registered extraction schemas — available by name in P-LLM-generated
+        # code without requiring class definitions (which are forbidden in the
+        # interpreter's restricted Python subset).
+        run_tools["EmailFields"] = EmailFields
 
         # Each run() gets a fresh interpreter — guarantees no shared mutable
         # state between concurrent invocations (thread-safety contract).
@@ -647,8 +699,13 @@ class CaMeLAgent:
         return registry
 
     def _build_tool_signatures(self) -> list[ToolSignature]:
-        """Build :class:`~camel.llm.ToolSignature` list from the tool list."""
-        return [
+        """Build :class:`~camel.llm.ToolSignature` list from the tool list.
+
+        Always appends the built-in ``query_quarantined_llm`` signature so the
+        P-LLM knows the Q-LLM is available for structured extraction of
+        untrusted data.
+        """
+        sigs = [
             ToolSignature(
                 name=tool.name,
                 signature=tool.params,
@@ -657,6 +714,8 @@ class CaMeLAgent:
             )
             for tool in self._tools
         ]
+        sigs.append(_QLLM_TOOL_SIGNATURE)
+        return sigs
 
     def _build_run_policy_registry(self) -> PolicyRegistry:
         """Build a per-run policy registry merging global + per-tool policies.
