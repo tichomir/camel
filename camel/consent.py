@@ -70,7 +70,7 @@ from __future__ import annotations
 import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import final
 
@@ -516,7 +516,7 @@ def _resolve_consent(
     if cached is not None:
         entry = ConsentAuditEntry(
             decision=cached,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             tool_name=tool_name,
             argument_summary=argument_summary,
             session_cache_hit=True,
@@ -528,7 +528,7 @@ def _resolve_consent(
     cache.store(tool_name, argument_summary, decision)
     entry = ConsentAuditEntry(
         decision=decision,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         tool_name=tool_name,
         argument_summary=argument_summary,
         session_cache_hit=False,

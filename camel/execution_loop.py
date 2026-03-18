@@ -51,7 +51,7 @@ import ast
 import textwrap
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from camel.interpreter import CaMeLInterpreter
@@ -634,7 +634,7 @@ class ExceptionRedactor:
         if self._audit_log is None:
             return
         event = RedactionAuditEvent(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             line_number=redacted.lineno,
             redaction_reason=redaction_reason,
             dependency_chain=list(dependency_chain),

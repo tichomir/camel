@@ -17,7 +17,7 @@ Covers:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -95,7 +95,7 @@ class TestConsentAuditEntry:
     """Tests for ConsentAuditEntry dataclass."""
 
     def test_creation(self) -> None:
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         entry = ConsentAuditEntry(
             decision=ConsentDecision.APPROVE,
             timestamp=ts,
