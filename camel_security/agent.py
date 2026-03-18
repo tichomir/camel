@@ -75,7 +75,14 @@ from camel.llm.p_llm import PLLMWrapper, ToolSignature, UserContext
 from camel.llm.backend import LLMBackend
 from camel.llm.query_interface import make_query_quarantined_llm
 from camel.policy.interfaces import PolicyRegistry
+from camel.provenance import (
+    PhishingWarning,
+    ProvenanceChain,
+    build_provenance_chain,
+    detect_phishing_content,
+)
 from camel.tools.registry import ToolRegistry
+from camel.value import CaMeLValue
 from camel_security.tool import Tool
 
 __all__ = [
@@ -200,6 +207,44 @@ class AgentResult:
     loop_attempts: int
     success: bool
     final_store: dict[str, Any] = field(default_factory=dict)
+    provenance_chains: dict[str, ProvenanceChain] = field(default_factory=dict)
+    """Provenance chains keyed by variable name.
+
+    Populated for every variable present in :attr:`final_store` after a
+    successful run.  Each :class:`~camel.provenance.ProvenanceChain` records
+    the complete origin lineage of that variable's value.
+
+    Use :meth:`CaMeLAgent.get_provenance` to look up individual chains with
+    ``KeyError`` semantics on unknown variables, or access this dict directly
+    to iterate over all chains.
+
+    JSON representation
+    -------------------
+    Each chain is independently serialisable via
+    :meth:`~camel.provenance.ProvenanceChain.to_json`.  For audit-log
+    inclusion pass ``chain.to_dict()`` to your log writer.
+
+    Stability guarantee
+    -------------------
+    Field is **stable** (added in v0.6.0).  May be empty when
+    ``success`` is ``False``.
+    """
+    phishing_warnings: list[PhishingWarning] = field(default_factory=list)
+    """Phishing-content warnings detected during provenance analysis.
+
+    Populated from :func:`~camel.provenance.detect_phishing_content` applied
+    to all variables in :attr:`final_store` after a successful run.
+
+    A non-empty list means that at least one variable contains text matching
+    a trusted-sender-claim pattern (e.g. ``From: alice@corp.com``) while
+    originating from an untrusted tool output.  The UI should surface these
+    warnings to the user (PRD NG2 partial mitigation).
+
+    Stability guarantee
+    -------------------
+    Field is **stable** (added in v0.6.0).  Empty when ``success`` is
+    ``False`` or when no phishing patterns are detected.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +487,8 @@ class CaMeLAgent:
                 user_query=user_query,
                 user_context=user_context,
             )
+            final_store = dict(exec_result.final_store)
+            provenance_chains, phishing_warnings = _build_provenance_data(final_store)
             return AgentResult(
                 execution_trace=list(exec_result.trace),
                 display_output=[str(v.raw) for v in exec_result.print_outputs],
@@ -449,7 +496,9 @@ class CaMeLAgent:
                 audit_log_ref=audit_log_ref,
                 loop_attempts=exec_result.loop_attempts,
                 success=True,
-                final_store=dict(exec_result.final_store),
+                final_store=final_store,
+                provenance_chains=provenance_chains,
+                phishing_warnings=phishing_warnings,
             )
         except MaxRetriesExceededError:
             return AgentResult(
@@ -486,6 +535,60 @@ class CaMeLAgent:
             See :meth:`run`.
         """
         return asyncio.run(self.run(user_query=user_query, user_context=user_context))
+
+    def get_provenance(
+        self,
+        variable_name: str,
+        result: AgentResult,
+    ) -> ProvenanceChain:
+        """Return the :class:`~camel.provenance.ProvenanceChain` for *variable_name*.
+
+        Looks up the named variable in *result*'s
+        :attr:`~AgentResult.provenance_chains` mapping and returns the
+        corresponding chain.  Raises :exc:`KeyError` when the variable was
+        not assigned during the run (or when *result* represents a failed
+        execution with an empty store).
+
+        Parameters
+        ----------
+        variable_name:
+            Name of the variable to look up (must match a key in
+            :attr:`~AgentResult.final_store`).
+        result:
+            :class:`AgentResult` returned by a previous :meth:`run` or
+            :meth:`run_sync` call.
+
+        Returns
+        -------
+        ProvenanceChain
+            Full provenance lineage for *variable_name* — one
+            :class:`~camel.provenance.ProvenanceHop` per distinct origin
+            source that contributed to the variable's final value.
+
+        Raises
+        ------
+        KeyError
+            If *variable_name* is not present in
+            :attr:`~AgentResult.provenance_chains` (i.e. the variable was
+            never assigned during execution, or the run failed).
+
+        Examples
+        --------
+        ::
+
+            result = await agent.run("Forward the latest email to alice@example.com")
+            chain = agent.get_provenance("email_body", result)
+
+            print(chain.is_trusted)        # False — body from get_last_email
+            print(chain.to_json(indent=2)) # full JSON lineage
+        """
+        try:
+            return result.provenance_chains[variable_name]
+        except KeyError:
+            raise KeyError(
+                f"Variable {variable_name!r} not found in execution result. "
+                f"Available variables: {sorted(result.provenance_chains)}"
+            ) from None
 
     # ------------------------------------------------------------------
     # Properties
@@ -577,6 +680,45 @@ class CaMeLAgent:
 # ---------------------------------------------------------------------------
 # Internal proxy helper
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Provenance data builder — internal helper
+# ---------------------------------------------------------------------------
+
+
+def _build_provenance_data(
+    final_store: dict[str, Any],
+) -> tuple[dict[str, ProvenanceChain], list[PhishingWarning]]:
+    """Build provenance chains and phishing warnings from a final variable store.
+
+    Called by :meth:`CaMeLAgent.run` after successful execution to populate
+    :attr:`AgentResult.provenance_chains` and
+    :attr:`AgentResult.phishing_warnings`.
+
+    Parameters
+    ----------
+    final_store:
+        The interpreter's final variable store, mapping variable names to
+        :class:`~camel.value.CaMeLValue` instances.
+
+    Returns
+    -------
+    tuple[dict[str, ProvenanceChain], list[PhishingWarning]]
+        A tuple of (provenance_chains mapping, flat list of phishing warnings
+        across all variables).
+    """
+    chains: dict[str, ProvenanceChain] = {}
+    all_warnings: list[PhishingWarning] = []
+
+    for var_name, value in final_store.items():
+        if not isinstance(value, CaMeLValue):
+            continue
+        chain = build_provenance_chain(var_name, value)
+        chains[var_name] = chain
+        all_warnings.extend(detect_phishing_content(var_name, value))
+
+    return chains, all_warnings
 
 
 class _ProxyPolicy:

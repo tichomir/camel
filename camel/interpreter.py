@@ -107,6 +107,7 @@ from enum import Enum
 from typing import Any, Literal, Protocol
 
 from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
+from camel.provenance import build_provenance_chain
 from camel.consent import (
     ConsentAuditEntry,
     ConsentDecision,
@@ -270,6 +271,11 @@ class AuditLogEntry:
     consent_decision: Literal["UserApproved", "UserRejected"] | None = None
     authoritative_tier: str | None = None
     non_overridable_denial: bool = False
+    provenance_chains: dict[str, Any] | None = None
+    """Serialised :class:`~camel.provenance.ProvenanceChain` dicts for each
+    tool argument, keyed by argument name.  Populated on ``outcome="Allowed"``
+    entries; ``None`` for denied or pre-policy entries.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -1982,6 +1988,10 @@ class CaMeLInterpreter:
                                     consent_decision=None,
                                     authoritative_tier=_auth_tier,
                                     non_overridable_denial=False,
+                                    provenance_chains={
+                                        k: build_provenance_chain(k, v).to_dict()
+                                        for k, v in kwargs_mapping.items()
+                                    },
                                 )
                             )
                     else:
@@ -2063,6 +2073,10 @@ class CaMeLInterpreter:
                                         timezone.utc
                                     ).isoformat(),
                                     consent_decision=None,
+                                    provenance_chains={
+                                        k: build_provenance_chain(k, v).to_dict()
+                                        for k, v in kwargs_mapping.items()
+                                    },
                                 )
                             )
 

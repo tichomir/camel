@@ -125,6 +125,32 @@ Consent UX (ADR-012)
 :class:`ConsentDecisionCache`
     Session-level cache for ``APPROVE_FOR_SESSION`` decisions.
 
+Provenance viewer (ADR-013)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:class:`ProvenanceHop`
+    One origin hop in a provenance chain (tool name, inner source, readers,
+    timestamp).
+
+:class:`ProvenanceChain`
+    Full lineage for a named variable — returned by
+    :meth:`~CaMeLAgent.get_provenance`.  Serialisable to JSON via
+    :meth:`~ProvenanceChain.to_json`.
+
+:class:`PhishingWarning`
+    Structured warning from :func:`detect_phishing_content` when a value
+    claims a trusted sender identity but originates from an untrusted tool.
+
+:data:`TRUSTED_SOURCES`
+    ``frozenset[str]`` of origin labels considered intrinsically trusted
+    (``"User literal"``, ``"CaMeL"``).
+
+:func:`build_provenance_chain`
+    Construct a :class:`ProvenanceChain` from a
+    :class:`~camel.value.CaMeLValue`.
+
+:func:`detect_phishing_content`
+    Heuristic detector for trusted-sender-claim patterns in untrusted values.
+
 Version
 ~~~~~~~
 :data:`__version__`
@@ -151,6 +177,14 @@ from camel.consent import (
     ConsentDecisionCache,
     ConsentHandler,
     DefaultCLIConsentHandler,
+)
+from camel.provenance import (
+    PhishingWarning,
+    ProvenanceChain,
+    ProvenanceHop,
+    TRUSTED_SOURCES,
+    build_provenance_chain,
+    detect_phishing_content,
 )
 from camel.interpreter import ExecutionMode
 from camel.llm.backend import get_backend
@@ -200,4 +234,11 @@ __all__ = [
     "ConsentHandler",
     "DefaultCLIConsentHandler",
     "ConsentDecisionCache",
+    # Provenance viewer (ADR-013)
+    "ProvenanceHop",
+    "ProvenanceChain",
+    "PhishingWarning",
+    "TRUSTED_SOURCES",
+    "build_provenance_chain",
+    "detect_phishing_content",
 ]

@@ -1,0 +1,52 @@
+{
+  "name": "@camel-security/ui",
+  "version": "0.6.0",
+  "description": "CaMeL chat UI annotation layer — framework-agnostic provenance badge and phishing warning components.",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "keywords": [
+    "camel",
+    "provenance",
+    "security",
+    "chat-ui",
+    "annotation",
+    "phishing-warning",
+    "accessibility",
+    "wcag"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@storybook/html": "^8.0.0",
+    "@storybook/html-webpack5": "^8.0.0",
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  }
+}

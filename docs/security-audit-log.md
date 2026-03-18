@@ -1,6 +1,6 @@
 # Security Audit Log Reference
 
-_CaMeL v0.5.0 | Last updated: 2026-03-18_
+_CaMeL v0.6.0 | Last updated: 2026-03-18_
 
 CaMeL maintains several immutable audit log streams inside `CaMeLInterpreter`
 to satisfy NFR-6: all tool calls, policy evaluations, consent decisions,
@@ -249,6 +249,85 @@ for ev in interp.strict_dep_audit_log:
 
 ---
 
+## `AgentResult` Provenance Fields — Run-Level Audit Data
+
+In addition to the interpreter-level log streams above, `AgentResult` carries
+two run-level provenance fields populated after every successful `run()` call
+(v0.6.0, ADR-013):
+
+### `provenance_chains` — Variable Origin Lineage
+
+| Field | Type | Description |
+|---|---|---|
+| `provenance_chains` | `dict[str, ProvenanceChain]` | One `ProvenanceChain` per variable in `final_store`; keyed by variable name.  Empty when `success` is `False`. |
+
+Each `ProvenanceChain` serialises to:
+
+```json
+{
+  "variable_name": "email_body",
+  "is_trusted": false,
+  "hops": [
+    {
+      "tool_name": "get_last_email",
+      "inner_source": "body",
+      "readers": ["alice@example.com"],
+      "timestamp": null
+    }
+  ]
+}
+```
+
+**Including provenance in an audit log entry:**
+
+```python
+audit_entry = {
+    "run_ref": result.audit_log_ref,
+    "provenance_chains": {
+        var: chain.to_dict()
+        for var, chain in result.provenance_chains.items()
+    },
+}
+```
+
+### `phishing_warnings` — Advisory Phishing Surface Events
+
+| Field | Type | Description |
+|---|---|---|
+| `phishing_warnings` | `list[PhishingWarning]` | Zero or more advisory warnings from the phishing-content heuristic.  Empty when `success` is `False` or when no patterns match. |
+
+Each `PhishingWarning` serialises to:
+
+```json
+{
+  "variable_name": "email_body",
+  "matched_pattern": "From:\\s*\\S+@\\S+",
+  "matched_text": "From: ceo@company.com",
+  "untrusted_sources": ["get_last_email"],
+  "provenance_chain": {
+    "variable_name": "email_body",
+    "is_trusted": false,
+    "hops": [...]
+  }
+}
+```
+
+**Including phishing warnings in an audit log entry:**
+
+```python
+audit_entry["phishing_warnings"] = [
+    w.to_dict() for w in result.phishing_warnings
+]
+```
+
+**NFR-6 note:** Phishing warnings are advisory and do not block execution.
+They are surfaced in `AgentResult` for UI display and audit logging; no
+separate interpreter-level log stream is maintained.  The `audit_log_ref` on
+`AgentResult` can be used to correlate the run-level phishing warning with the
+interpreter-level `AuditLogEntry` records for the same execution.
+
+---
+
 ## NFR-6 Compliance Summary
 
 NFR-6 requires all of the following to be recorded in the security audit log:
@@ -263,13 +342,17 @@ NFR-6 requires all of the following to be recorded in the security audit log:
 | Forbidden name access (M4-F14) | `security_audit_log` | ✅ |
 | Data-to-control-flow escalation detection (M4-F15) | `security_audit_log` | ✅ |
 | STRICT mode per-statement dependency additions (M4-F18) | `strict_dep_audit_log` | ✅ |
+| Variable provenance chains (M5-F20, ADR-013) | `AgentResult.provenance_chains` | ✅ |
+| Phishing-content surface events (M5-F22, ADR-013) | `AgentResult.phishing_warnings` | ✅ |
 
 ---
 
 ## See Also
 
+- [Provenance Badges User Guide](user-guide/provenance-badges.md) — end-user guide for interpreting provenance badges and phishing warnings
 - [Consent Handler Integration Guide](consent-handler-integration.md) — implementing custom `ConsentHandler`
 - [Policy Authoring Tutorial](policy-authoring-tutorial.md) — writing and testing policies
 - [Architecture Reference](architecture.md) — full system design
 - [ADR-010 — Enforcement Hook, Consent Flow & Audit](adr/010-enforcement-hook-consent-audit-harness.md)
 - [ADR-012 — Policy Testing Harness, ConsentHandler](adr/012-policy-testing-harness-consent-handler.md)
+- [ADR-013 — Provenance Chain API and Phishing-Content Heuristic](adr/013-provenance-chain-phishing-heuristic.md)

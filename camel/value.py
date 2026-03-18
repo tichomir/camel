@@ -144,6 +144,18 @@ class CaMeLValue:
         For a *derived* value (produced by an operation over other
         ``CaMeLValue``s) ``sources`` is the *union* of all input ``sources``
         sets.  The field is a ``frozenset`` to enforce immutability.
+
+        **Transitive-closure invariant:** ``sources`` must be the *complete*
+        transitive union of all upstream origin labels, not just the direct
+        parent labels.  This invariant is maintained automatically by all
+        :func:`propagate_*` functions and :meth:`merge`.  Code that constructs
+        a ``CaMeLValue`` directly (bypassing the propagation helpers) is
+        responsible for supplying the full transitive closure.
+
+        Violation of this invariant causes :func:`~camel.provenance.build_provenance_chain`
+        to silently under-report provenance hops, which can lead
+        :func:`~camel.provenance.detect_phishing_content` to suppress warnings
+        it should have raised.  See ADR-013 §Decision 1 for details.
     inner_source:
         An optional sub-source label within the originating tool.  Used to
         track which *field* of a structured tool response a value came from

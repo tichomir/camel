@@ -1225,3 +1225,25 @@ Deliverables:
 - ✅ Write policy authoring tutorial and update all affected documentation — Software Architect (◈ Standard, 3 SP)
 
 ---
+### Provenance Viewer & Chat UI Integration | 2026-03-18 | ✅ done | 24 SP
+**Goal:** [Phase: Provenance Viewer & Chat UI Integration]
+Implement `agent.get_provenance()` returning a full `ProvenanceChain` for any variable, chat UI annotation of untrusted-source values with `[Source: <tool>]` badges, and phishing-content surface detection. Addresses PRD goals G3, NG2 (partial mitigation via metadata surfacing), and milestone requirements M5-F20 through M5-F22.
+
+Deliverables:
+- `agent.get_provenance(variable_name) -> ProvenanceChain` API returning each hop's tool name, inner source, and readers
+- Chat UI integration layer that annotates response text originating from untrusted tool outputs with a `[Source: <tool_name>]` badge or equivalent provenance indicator
+- Phishing-content detection heuristic that identifies text claiming trusted sender identity but originating from an untrusted tool output, surfacing a UI warning
+- Provenance chain serialisation to JSON for inclusion in `AgentResult` and audit log
+- End-user documentation explaining how to interpret provenance badges and source warnings
+- Updated PRD Section 6.4 (Capabilities) and Section 7.2 (Trusted Boundary) documenting provenance chain structure and phishing surface logic
+
+**Delivered:**
+- ✅ Design ProvenanceChain API, serialisation schema, and phishing heuristic spec — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement agent.get_provenance(), ProvenanceChain serialisation, and phishing detector — Backend Developer (◉ Deep, 5 SP)
+- ✅ Implement chat UI provenance badge annotation and phishing warning display — Frontend Developer (◉ Deep, 5 SP)
+- ✅ Write end-user documentation and update all affected reference docs — Software Architect (⚡ Quick, 2 SP)
+- ✅ Integration test suite for provenance API, phishing detector, and chat UI annotation — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: No tests exist for ProvenanceChain API, serialisation schema, or phishing heuristics — Software Architect (◈ Standard, 3 SP)
+- ✅ Fix: ProvenanceChain uses merged-union of sources instead of DAG — no validation that union is correct — Software Architect (◈ Standard, 3 SP)
+
+---

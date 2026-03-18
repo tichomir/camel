@@ -1,6 +1,6 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 1.6 (Milestone 5 — Policy Testing Harness & Consent UX)
+**Version:** 1.7 (Milestone 5 — Provenance Viewer & Chat UI Integration)
 **Date:** 2026-03-18
 **Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
@@ -19,7 +19,7 @@
 9. [Execution Trace Recorder](#9-execution-trace-recorder)
 10. [Security Model](#10-security-model)
 11. [Policy Engine](#11-policy-engine) _(includes §11.7 Three-Tier Policy Governance — ADR-011; §11.8 Developer Testing Tools — ADR-012)_
-12. [Capability Assignment Engine](#12-capability-assignment-engine)
+12. [Capability Assignment Engine](#12-capability-assignment-engine) _(includes §12.6 ProvenanceChain & Phishing Heuristic — ADR-013)_
 13. [Reference Policy Library](#13-reference-policy-library)
 14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow) _(includes §14.2 ConsentHandler & ConsentDecision — ADR-012; §14.3 Session Consent Cache)_
 15. [SDK Layer — camel-security Public API](#15-sdk-layer--camel-security-public-api)
@@ -770,6 +770,30 @@ inspected at runtime.  If it resolves to a `CaMeLValue` with sources outside
 `{"User literal", "CaMeL"}`, the call is treated as a data-to-control-flow escalation
 attempt and blocked by the elevated consent gate regardless of existing policy outcomes.
 
+**Phishing surface (NG2 partial mitigation — M5-F22, ADR-013):** CaMeL cannot prevent
+a user from acting on phishing content embedded in tool outputs.  However, the provenance
+system (§12.6) provides partial mitigation via *metadata surfacing*:
+
+- Any `CaMeLValue` in the final variable store whose text matches a trusted-sender-claim
+  pattern (e.g. `From: alice@corp.com`, `I am Alice`) **and** whose `sources` contains at
+  least one untrusted origin generates a `PhishingWarning` in `AgentResult.phishing_warnings`.
+- The `TRUSTED_SOURCES` constant (`frozenset({"User literal", "CaMeL"})`) defines the
+  trusted boundary: values whose `sources ⊆ TRUSTED_SOURCES` never trigger a warning.
+- Warnings are **advisory only** — they do not block execution or alter policy decisions.
+  Chat UIs and operators are responsible for surfacing the warning to the end-user.
+
+**Phishing heuristic patterns (v0.6.0):**
+
+| Pattern | Rationale |
+|---|---|
+| `From:\s*\S+@\S+` | Email `From:` header in injected content |
+| `Sender:\s*\S+` | RFC 5322 `Sender:` variant |
+| `Reply-To:\s*\S+@\S+` | Reply address impersonating a trusted sender |
+| `\b(?:I am\|This is)\s+\w+` | First-person identity claim (social engineering) |
+| `\bMessage\s+from\s+\w+` | Common phishing preamble |
+
+See `camel/provenance.py` and ADR-013 for implementation details.
+
 ### 10.3 Attack Vectors Mitigated
 
 | Attack | CaMeL defence |
@@ -1380,6 +1404,114 @@ register_built_in_tools(
 Registers any subset of the three built-in tools with their correct annotators
 in a single call.  Pass `None` to omit a tool.
 
+### 12.6 ProvenanceChain & Phishing-Content Heuristic (ADR-013, M5-F20–F22)
+
+**Module:** `camel/provenance.py` | **ADR:** [013](adr/013-provenance-chain-phishing-heuristic.md)
+
+The provenance viewer exposes structured origin lineage for any CaMeL variable.
+It addresses PRD Goals G3 (private data exfiltration prevention) and NG2 (partial
+phishing mitigation via metadata surfacing).
+
+#### 12.6.1 ProvenanceChain Structure
+
+| Field | Type | Description |
+|---|---|---|
+| `variable_name` | `str` | Variable name in the interpreter store |
+| `hops` | `list[ProvenanceHop]` | One hop per distinct source in `CaMeLValue.sources` |
+| `is_trusted` | `bool` (property) | `True` iff all hops are in `TRUSTED_SOURCES` |
+
+Each `ProvenanceHop`:
+
+| Field | Type | Description |
+|---|---|---|
+| `tool_name` | `str` | Origin label (tool ID or trusted label e.g. `"User literal"`) |
+| `inner_source` | `str \| None` | Sub-field within tool output; `None` for derived values |
+| `readers` | `list[str] \| "Public"` | Authorised audience for this hop |
+| `timestamp` | `str \| None` | ISO 8601; reserved — always `None` in v0.6.0 |
+
+**Hop ordering:** Trusted hops (`TRUSTED_SOURCES`) appear first (alphabetic),
+then untrusted tool hops (alphabetic).  This makes fully-trusted variables easy to
+scan at a glance.
+
+#### 12.6.2 JSON Serialisation Schema
+
+`ProvenanceChain.to_dict()` and `to_json()` produce a stable JSON schema:
+
+```json
+{
+  "variable_name": "email_body",
+  "is_trusted": false,
+  "hops": [
+    {
+      "tool_name": "get_last_email",
+      "inner_source": "body",
+      "readers": ["alice@example.com"],
+      "timestamp": null
+    }
+  ]
+}
+```
+
+This schema is stable from v0.6.0.  New hop fields may be added in minor releases;
+existing fields will not be removed or renamed without a major-version bump.
+
+#### 12.6.3 `agent.get_provenance()` API
+
+```python
+chain: ProvenanceChain = agent.get_provenance(variable_name, result)
+```
+
+- Returns the `ProvenanceChain` for `variable_name` from `result.provenance_chains`.
+- Raises `KeyError` with a message listing available variable names when the variable
+  was not assigned during execution (or when `result.success` is `False`).
+- Thread-safe: takes the immutable `AgentResult` as input; no agent-level mutable state.
+
+#### 12.6.4 `AgentResult` Provenance Fields
+
+`AgentResult` exposes two new fields populated after every successful `run()` call:
+
+| Field | Type | Content |
+|---|---|---|
+| `provenance_chains` | `dict[str, ProvenanceChain]` | One chain per variable in `final_store` |
+| `phishing_warnings` | `list[PhishingWarning]` | Phishing-content warnings across all variables |
+
+Both fields have `default_factory=list/dict` — they are empty on failed runs (`success=False`).
+
+#### 12.6.5 TRUSTED_SOURCES Constant
+
+```python
+TRUSTED_SOURCES: frozenset[str] = frozenset({"User literal", "CaMeL"})
+```
+
+This constant defines the boundary between trusted and untrusted origins.  Values whose
+`sources ⊆ TRUSTED_SOURCES` were produced entirely from user-supplied constants or CaMeL
+internals and carry no adversary-reachable taint.
+
+Exported from `camel.provenance` and `camel_security` for use in custom heuristics.
+
+#### 12.6.6 PhishingWarning and detect_phishing_content
+
+`detect_phishing_content(variable_name, cv)` applies the five heuristic patterns
+(see §10.2) to `str(cv.value)` and returns one `PhishingWarning` per matched pattern
+when `cv.sources - TRUSTED_SOURCES` is non-empty.
+
+**Warning fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `variable_name` | `str` | Variable that triggered the warning |
+| `matched_pattern` | `str` | Regex pattern string |
+| `matched_text` | `str` | The matched substring |
+| `untrusted_sources` | `frozenset[str]` | Sources outside `TRUSTED_SOURCES` |
+| `provenance_chain` | `ProvenanceChain` | Full chain for UI display |
+
+**Chat UI annotation guidance:**  Render a `[Source: <tool_name>]` badge for any value
+whose `ProvenanceChain.is_trusted` is `False`.  For `PhishingWarning` entries, surface:
+
+> ⚠ **Provenance warning** — This response contains text claiming a sender identity
+> (e.g. `From: alice@corp.com`) but originates from the untrusted tool `<tool_name>`.
+> Verify independently before acting.
+
 ---
 
 ## 13. Reference Policy Library
@@ -1768,18 +1900,64 @@ class CaMeLAgent:
 ```python
 @dataclass(frozen=True)
 class AgentResult:
-    execution_trace: list[TraceRecord]     # One record per successful tool call
-    display_output:  list[str]             # print() outputs from execution plan
-    policy_denials:  list[PolicyDenialRecord]  # Denials in production mode
-    audit_log_ref:   str                   # "camel-audit:<hex_id>" token
-    loop_attempts:   int                   # 0-based outer-loop retry count
-    success:         bool                  # False if MaxRetriesExceededError
-    final_store:     dict[str, Any]        # Interpreter variable store snapshot
+    execution_trace:    list[TraceRecord]        # One record per successful tool call
+    display_output:     list[str]                # print() outputs from execution plan
+    policy_denials:     list[PolicyDenialRecord] # Denials in production mode
+    audit_log_ref:      str                      # "camel-audit:<hex_id>" token
+    loop_attempts:      int                      # 0-based outer-loop retry count
+    success:            bool                     # False if MaxRetriesExceededError
+    final_store:        dict[str, Any]           # Interpreter variable store snapshot
+    # Provenance fields (added v0.6.0, ADR-013, M5-F20–F22)
+    provenance_chains:  dict[str, ProvenanceChain]  # One chain per variable in final_store
+    phishing_warnings:  list[PhishingWarning]        # Phishing-content warnings (advisory)
 ```
+
+**Field descriptions:**
+
+| Field | Type | Stable since | Description |
+|---|---|---|---|
+| `execution_trace` | `list[TraceRecord]` | v0.5.0 | One `TraceRecord` per successful tool call, in execution order |
+| `display_output` | `list[str]` | v0.5.0 | `print()` outputs from P-LLM-generated code (M2-F10) |
+| `policy_denials` | `list[PolicyDenialRecord]` | v0.5.0 | Policy denials captured in production mode; empty in evaluation mode |
+| `audit_log_ref` | `str` | v0.5.0 | Opaque `"camel-audit:<hex_id>"` token for correlating with the interpreter audit log |
+| `loop_attempts` | `int` | v0.5.0 | Number of outer-loop retries consumed (0 = first plan succeeded) |
+| `success` | `bool` | v0.5.0 | `False` if `MaxRetriesExceededError` or non-redactable exception |
+| `final_store` | `dict[str, Any]` | v0.5.0 | Shallow snapshot of the interpreter variable store after plan completion; empty on failure |
+| `provenance_chains` | `dict[str, ProvenanceChain]` | **v0.6.0** | One `ProvenanceChain` per variable in `final_store`; empty on failure.  Use `agent.get_provenance(var, result)` for lookup with `KeyError` semantics.  Serialise with `chain.to_dict()` for audit log inclusion. |
+| `phishing_warnings` | `list[PhishingWarning]` | **v0.6.0** | Advisory warnings from `detect_phishing_content` applied to all variables in `final_store`; empty on failure or when no patterns match.  Surface these in the UI to alert the user (PRD NG2 partial mitigation). |
 
 All fields have **stability guarantee**: not removed or renamed without a
 major-version bump.  New fields may be added in minor releases (always with
 defaults).  See `VERSIONING.md` for the full policy.
+
+**Provenance usage example:**
+
+```python
+result = await agent.run("Forward the latest email to alice@example.com")
+
+if result.success:
+    # Check provenance for a specific variable
+    chain = agent.get_provenance("email_body", result)
+    print(chain.is_trusted)         # False — body came from get_last_email
+    print(chain.to_json(indent=2))  # Full JSON lineage
+
+    # Surface phishing warnings in your UI
+    for warning in result.phishing_warnings:
+        print(f"⚠ {warning.variable_name}: {warning.matched_text!r} "
+              f"from {warning.untrusted_sources}")
+
+    # Include provenance in your audit log
+    audit_payload = {
+        "run_ref": result.audit_log_ref,
+        "provenance_chains": {
+            k: v.to_dict() for k, v in result.provenance_chains.items()
+        },
+        "phishing_warnings": [w.to_dict() for w in result.phishing_warnings],
+    }
+```
+
+See the [Provenance Badges User Guide](user-guide/provenance-badges.md) for the
+full end-user documentation including badge rendering guidance and FAQ.
 
 ### 15.5 Tool — Registration Interface
 

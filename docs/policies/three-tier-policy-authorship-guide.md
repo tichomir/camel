@@ -361,10 +361,124 @@ tp_denials = [
 
 ---
 
+## Using Provenance Metadata in Capability-Aware Policies
+
+CaMeL's provenance system (ADR-013) provides richer origin information about
+argument values than the basic `is_trusted` / `can_readers_read_value` helpers
+alone.  Policy authors can use `ProvenanceChain` data to write more expressive,
+context-aware policies.
+
+### Accessing provenance within a policy
+
+Inside a policy function, argument values are `CaMeLValue` instances with a
+`sources` frozenset.  You can construct a `ProvenanceChain` directly:
+
+```python
+from camel.provenance import build_provenance_chain, TRUSTED_SOURCES
+from camel.policy import Allowed, Denied
+from camel.value import CaMeLValue
+from collections.abc import Mapping
+
+def provenance_aware_send_email_policy(
+    tool_name: str, kwargs: Mapping[str, CaMeLValue]
+) -> Allowed | Denied:
+    """Block send_email when the recipient address came from a tool that
+    also produced phishing-pattern content in the same run."""
+    to = kwargs.get("to")
+    if to is None:
+        return Allowed()
+
+    chain = build_provenance_chain("to", to)
+
+    # Reject if the recipient address originates from an untrusted tool
+    # AND was extracted from a field named "sender" (inner_source).
+    # This blocks a common attack where a malicious email body contains
+    # "Reply-To: attacker@evil.com" that gets extracted as the recipient.
+    for hop in chain.hops:
+        if hop.tool_name not in TRUSTED_SOURCES and hop.inner_source == "sender":
+            return Denied(
+                f"Recipient address originates from the 'sender' field of an "
+                f"untrusted tool ({hop.tool_name!r}).  Verify the recipient "
+                f"independently before sending."
+            )
+    return Allowed()
+```
+
+### Checking inner_source in policy logic
+
+`ProvenanceHop.inner_source` records which sub-field of a tool's structured
+output a value was extracted from (e.g. `"sender"`, `"body"`, `"subject"`).
+Use this to distinguish between different origins within the same tool:
+
+```python
+from camel.provenance import build_provenance_chain, TRUSTED_SOURCES
+
+def subject_only_email_policy(
+    tool_name: str, kwargs: Mapping[str, CaMeLValue]
+) -> Allowed | Denied:
+    """Allow forwarding only content extracted from the email subject,
+    never from the body (which may contain injected content)."""
+    body = kwargs.get("body")
+    if body is None:
+        return Allowed()
+
+    chain = build_provenance_chain("body", body)
+    for hop in chain.hops:
+        if hop.tool_name not in TRUSTED_SOURCES and hop.inner_source == "body":
+            return Denied(
+                "Policy: forwarding email body content is not allowed — "
+                "only subject-line content may be forwarded."
+            )
+    return Allowed()
+```
+
+### Surfacing provenance in denial reasons
+
+The `Denied(reason)` string is displayed to the user in consent prompts and
+written to the audit log.  Include provenance details in the reason to help
+users understand why a call was blocked:
+
+```python
+untrusted = [
+    hop.tool_name for hop in chain.hops
+    if hop.tool_name not in TRUSTED_SOURCES
+]
+if untrusted:
+    return Denied(
+        f"Recipient address traces back to untrusted tool(s): "
+        f"{', '.join(untrusted)}.  Approve only if you recognise this address."
+    )
+```
+
+### Relationship to phishing warnings
+
+Phishing warnings (`AgentResult.phishing_warnings`) are **advisory** — they do
+not block execution.  Policies using `build_provenance_chain` and `inner_source`
+checks are the **enforcement** mechanism.  The two systems are complementary:
+
+- **Policies** gate tool calls before they execute (synchronous, deterministic,
+  NFR-2 compliant).
+- **Phishing warnings** alert the user after the run completes (advisory,
+  pattern-based, surfaced in the UI).
+
+For the maximum protection against injected-sender attacks, combine a
+provenance-aware policy (to block suspicious tool calls) with phishing warning
+display in the chat UI (to alert the user when suspicious content reaches the
+response).
+
+See the [Provenance Badges User Guide](../user-guide/provenance-badges.md) for
+the end-user documentation explaining how to interpret provenance badges and
+phishing warnings in the chat UI.
+
+---
+
 ## Reference
 
 - [ADR-011: Three-Tier Policy Governance](../adr/011-three-tier-policy-governance.md)
 - [ADR-009: Policy Engine Architecture](../adr/009-policy-engine-architecture.md)
 - [ADR-010: Enforcement Hook, Consent Flow, Audit Log](../adr/010-enforcement-hook-consent-audit-harness.md)
+- [ADR-013: Provenance Chain API and Phishing-Content Heuristic](../adr/013-provenance-chain-phishing-heuristic.md)
 - [Reference Policy Library Specification](reference-policy-spec.md)
+- [Provenance Badges User Guide](../user-guide/provenance-badges.md)
+- [PRD Section 6.4 — Capabilities & Provenance](../architecture.md#12-capability-assignment-engine)
 - [PRD Section 6.5 — Security Policies](../architecture.md)
