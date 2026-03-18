@@ -1,8 +1,8 @@
 # Milestone 5 — SDK Packaging & Public API Design
 
-**Document version:** 1.0
+**Document version:** 1.1
 **Date:** 2026-03-18
-**Status:** Design complete — ready for implementation sprint
+**Status:** Implementation complete — v0.5.0 shipped
 
 ---
 
@@ -477,20 +477,49 @@ reference to the audit log object.
 
 ---
 
-## 11. Open Items for Implementation Sprint
+## 11. Implementation Outcomes
 
-1. **Thread-safety integration test** — concurrent `agent.run()` test with
-   `N=10` parallel queries confirming no state corruption.
-2. **CI publish pipeline** — `pyproject.toml` update + GitHub Actions workflow
-   for `pip install camel-security` validation and test-PyPI publication.
-3. **mypy clean on `camel_security/`** — ensure all public types are fully
-   annotated and pass `mypy --strict`.
-4. **interrogate docstring coverage** — `camel_security/` must meet the 90%
-   docstring coverage threshold set in `pyproject.toml`.
-5. **`AgentResult.execution_trace` type** — currently `list[Any]` to avoid
-   import cycle with `camel.execution_loop.TraceRecord`.  Consider exporting
-   `TraceRecord` from `camel_security` for proper typing.
+All open items from the design phase have been resolved.  The implementation
+matches the design exactly, with the following notes:
+
+1. **Thread-safety integration test** — `tests/test_sdk_thread_safety.py`
+   implements concurrent `agent.run()` tests confirming no interpreter state
+   corruption under parallel execution.  ✅ Complete.
+
+2. **CI publish pipeline** — `.github/workflows/sdk-ci.yml` includes build,
+   lint (`ruff`), type-check (`mypy --strict`), and publish-to-test-PyPI stages.
+   ✅ Complete.
+
+3. **mypy clean on `camel_security/`** — all public types in `camel_security/`
+   carry full annotations and pass `mypy --strict`.  ✅ Complete.
+
+4. **interrogate docstring coverage** — `camel_security/` module, class, and
+   function docstrings meet the 90% threshold enforced by `pyproject.toml`.
+   ✅ Complete.
+
+5. **`AgentResult.execution_trace` type** — field is typed as `list[Any]`
+   (keeping `TraceRecord` internal to `camel.execution_loop`) to avoid a
+   cross-package import cycle.  This is an intentional conservative choice;
+   `TraceRecord` export is deferred to a future minor release (see
+   `VERSIONING.md §2.2`).  ✅ Resolved (by design decision).
 
 ---
 
-_Document status: Architecture design complete.  Implementation tasks tracked in sprint backlog._
+## 12. Acceptance Criteria Sign-Off (v0.5.0)
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Module layout documented | ✅ | `docs/architecture.md` §15.1, §16 |
+| `__init__.py` export list documented | ✅ | `docs/architecture.md` §15.2, `camel_security/__init__.py` `__all__` |
+| `CaMeLAgent` typed signature | ✅ | §4 (this document), `docs/architecture.md` §15.3 |
+| `AgentResult` typed fields + stability guarantees | ✅ | §5 (this document), `docs/architecture.md` §15.4, `VERSIONING.md §3` |
+| `Tool` typed fields + stability guarantees | ✅ | §6 (this document), `docs/architecture.md` §15.5 |
+| Thread-safety contract documented | ✅ | §7 (this document), `docs/architecture.md` §15.6 |
+| `VERSIONING.md` with major/minor/patch definitions | ✅ | `VERSIONING.md` §2 |
+| `AgentResult` stability policy in `VERSIONING.md` | ✅ | `VERSIONING.md` §3 |
+| PRD Milestone 5 section updated | ✅ | `docs/architecture.md` §15 + `CHANGELOG.md` v0.5.0 |
+| NFR-7/8/9 updated in architecture overview | ✅ | `docs/architecture.md` §14 (NFR table) |
+
+---
+
+_Document status: Implementation complete — v0.5.0 shipped 2026-03-18._

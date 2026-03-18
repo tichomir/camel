@@ -1112,3 +1112,27 @@ Deliverables:
 - ✅ Fix: publish-test-pypi stage uses both OIDC permission and password secrets inconsistently — Devops Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone 5 — SDK Packaging & Public API | 2026-03-18 | 📋 reviewing | 25 SP
+**Goal:** [Phase: SDK Packaging & Public API]
+Package CaMeL as a pip-installable SDK (`camel-security`) with a stable, typed, thread-safe public API surface. Covers `CaMeLAgent`, `run()`, `AgentResult`, `Tool` registration interface, complete type annotations, docstrings, and semantic versioning contract. Ensures the SDK has no native binary dependencies and that concurrent sessions do not share interpreter state. PRD sections: M5-F1 through M5-F7, NFR-7, NFR-8, NFR-9.
+
+Deliverables:
+- `camel-security` PyPI package publishable via `pip install camel-security` with no native binary dependencies
+- Stable `CaMeLAgent` class with fully typed constructor accepting `p_llm`, `q_llm`, `tools`, `policies`, and `mode` parameters
+- `agent.run(user_query) -> AgentResult` returning execution trace, display output, policy denials, and audit log reference
+- `AgentResult` structured dataclass with documented stability guarantees and major-version bump policy
+- `Tool` registration interface with optional `capability_annotation` and `policies` fields
+- Thread-safety validation: concurrent `agent.run()` calls confirmed not to share interpreter state
+- Complete type annotations and docstrings on all public API classes and functions
+- Semantic versioning policy document
+- SDK packaging CI pipeline (build, lint, publish to test PyPI)
+
+**Delivered:**
+- ✅ Design public API surface and package structure for camel-security SDK — Software Architect (◉ Deep, 5 SP)
+- ✅ Implement camel-security SDK package with public API, type annotations, and docstrings — Backend Developer (◉ Deep, 8 SP)
+- ✅ Build SDK CI pipeline: lint, type-check, build, and publish to Test PyPI — Devops Engineer (◈ Standard, 3 SP)
+- ✅ Write SDK integration and thread-safety test suite — Qa Engineer (◈ Standard, 3 SP)
+- ❌ Fix: replace placeholder org/repo in badge URLs — Devops Engineer (◈ Standard, 3 SP)
+- ❌ Fix: publish-test-pypi stage uses both OIDC permission and password secrets inconsistently — Devops Engineer (◈ Standard, 3 SP)
+
+---

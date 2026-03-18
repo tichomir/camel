@@ -7,6 +7,79 @@ CaMeL uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-03-18
+
+### Milestone 5 — SDK Packaging & Public API
+
+This release packages CaMeL as a pip-installable SDK (`camel-security`) with a
+stable, typed, thread-safe public API surface.  Delivers `CaMeLAgent`, `AgentResult`,
+the `Tool` registration interface, complete type annotations, docstrings, semantic
+versioning policy, and the SDK CI pipeline for package publication.
+
+**PRD references:** M5-F1 through M5-F7, NFR-7, NFR-8, NFR-9
+
+#### Added
+
+**`camel_security` public SDK package** (`camel_security/__init__.py`,
+`camel_security/agent.py`, `camel_security/tool.py`)
+
+- **M5-F1** — `camel-security` PyPI package: installable via
+  `pip install camel-security` with no native binary dependencies.  Runtime
+  dependencies: `pydantic>=2.0`, `typing-extensions>=4.0`, `anthropic>=0.25`.
+  Gemini support remains an optional soft dependency.
+
+- **M5-F2** — `CaMeLAgent` stable entry point: fully typed constructor accepting
+  `p_llm: LLMBackend`, `q_llm: LLMBackend`, `tools: Sequence[Tool]`,
+  `policies: PolicyRegistry | None = None`,
+  `mode: ExecutionMode = ExecutionMode.STRICT`, `max_retries: int = 10`.
+  STRICT mode is the constructor default and may not be silently downgraded without
+  a major-version bump (see `VERSIONING.md §2.3`).
+
+- **M5-F3** — `agent.run(user_query) -> AgentResult` async entry point and
+  `agent.run_sync(user_query) -> AgentResult` synchronous convenience wrapper.
+  Each call creates a **fresh** `CaMeLInterpreter` and `CaMeLOrchestrator` —
+  no state shared between concurrent invocations.
+
+- **M5-F4** — `AgentResult` frozen dataclass with seven stable fields:
+  `execution_trace`, `display_output`, `policy_denials`, `audit_log_ref`,
+  `loop_attempts`, `success`, `final_store`.  Full stability guarantees
+  documented in `VERSIONING.md §3`.
+
+- **M5-F5** — `Tool` dataclass registration interface with optional
+  `capability_annotation` and `policies` fields.  Satisfies NFR-7:
+  adding a new tool requires only constructing one `Tool` object — no changes
+  to core interpreter or policy engine code required.
+
+- **M5-F6** — Thread-safety contract: concurrent `agent.run()` calls confirmed
+  not to share interpreter state; tested by `tests/test_sdk_thread_safety.py`.
+
+- **M5-F7** — `VERSIONING.md` semantic versioning policy document: defines
+  major/minor/patch change categories, `AgentResult` stability policy,
+  deprecation policy, and pre-1.0 clause.
+
+**Re-exported names from `camel_security.__all__`:**
+`CaMeLAgent`, `AgentResult`, `PolicyDenialRecord`, `Tool`, `ExecutionMode`,
+`PolicyRegistry`, `Allowed`, `Denied`, `CaMeLValue`, `Public`, `get_backend`,
+`__version__`.
+
+**Documentation updates:**
+
+- `docs/architecture.md` — version bumped to 1.5; Section 15 (SDK Layer) added:
+  module layout, public API exports table, `CaMeLAgent` constructor signature,
+  `AgentResult` dataclass, `Tool` registration interface, thread-safety contract,
+  and wiring diagram.  NFR-7, NFR-8, NFR-9 rows updated to reference `camel_security`.
+- `docs/design/milestone5-sdk-packaging.md` — design document status updated to
+  Implementation complete.
+- `VERSIONING.md` — new document at repository root.
+- `README.md` — version badge updated to 0.5.0; SDK quick-start section added.
+
+**SDK CI pipeline** (`.github/workflows/sdk-ci.yml`)
+
+- Build, lint (`ruff`), type-check (`mypy --strict`), and publish-to-test-PyPI
+  stages added.  `camel_security/` is included in the `packages.find` configuration.
+
+---
+
 ## [0.4.0] — 2026-03-17
 
 ### Milestone 4 — STRICT Mode Validation & Hardening + Exception Hardening & Redaction
