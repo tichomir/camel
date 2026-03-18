@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 1.7 (Milestone 5 — Provenance Viewer & Chat UI Integration)
+**Version:** 1.8 (Milestone 5 Complete — Sequence Diagrams & Observability)
 **Date:** 2026-03-18
-**Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.0 Final — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -25,6 +25,8 @@
 15. [SDK Layer — camel-security Public API](#15-sdk-layer--camel-security-public-api)
 16. [Module Map (File Tree)](#16-module-map-file-tree)
 17. [Related Documents](#17-related-documents)
+18. [Sequence Diagrams](#18-sequence-diagrams) _(normal flow, policy denial/consent, Q-LLM invocation, P-LLM retry loop)_
+19. [Observability — Metrics & Audit Log Sink](#19-observability--metrics--audit-log-sink)
 
 ---
 
@@ -2195,3 +2197,355 @@ tests/
 | **Policy Authoring Guide** | [docs/policy-authoring-guide.md](policy-authoring-guide.md) |
 | Three-Tier Policy Authorship Guide (detailed) | [docs/policies/three-tier-policy-authorship-guide.md](policies/three-tier-policy-authorship-guide.md) |
 | E2E Scenario Specification | [docs/e2e-scenario-specification.md](e2e-scenario-specification.md) |
+
+---
+
+## 18. Sequence Diagrams
+
+This section provides message-level sequence diagrams for the four primary execution flows in CaMeL.
+Each diagram uses ASCII notation; actors are shown as columns and messages as horizontal arrows.
+
+---
+
+### 18.1 Normal Task Execution Flow
+
+Shows the happy-path execution of a user query from `CaMeLAgent.run()` to a completed
+`AgentResult` with no errors and no policy denials.
+
+```
+User          CaMeLAgent     PLLMWrapper     CaMeLOrchestrator  CaMeLInterpreter  ToolExecutor  CapAnnotator
+ │                │                │                  │                 │                │             │
+ │─ run(query) ──►│                │                  │                 │                │             │
+ │                │─ generate_plan(query, tool_sigs) ─►                 │                │             │
+ │                │                │                  │                 │                │             │
+ │                │                │◄── plan (```python ...) ──────────-│                │             │
+ │                │                │                  │                 │                │             │
+ │                │────────────────────────────────── run(query, plan) ─►               │             │
+ │                │                │                  │                 │                │             │
+ │                │                │                  │─ exec(stmt_1) ─►│                │             │
+ │                │                │                  │                 │─ evaluate_policy(tool, args)│ │
+ │                │                │                  │                 │  → Allowed()   │             │
+ │                │                │                  │                 │─ call(tool_fn, raw_args) ───►│
+ │                │                │                  │                 │                │─ fn(args) ─►│
+ │                │                │                  │                 │                │◄─ result ───│
+ │                │                │                  │                 │                │─ annotate ─►│
+ │                │                │                  │                 │                │◄─ CaMeLValue│
+ │                │                │                  │                 │◄─ CaMeLValue ──│             │
+ │                │                │                  │─ exec(stmt_2) ─►│  [store var]   │             │
+ │                │                │                  │                 │  ... (repeat for each stmt)  │
+ │                │                │                  │                 │                │             │
+ │                │                │                  │◄── ExecutionResult (trace, store, print_outputs)
+ │                │◄────────────── AgentResult ───────│                 │                │             │
+ │◄─ AgentResult ─│                │                  │                 │                │             │
+```
+
+**Key invariant:** PLLMWrapper never receives a value from ToolExecutor.  The dashed isolation
+boundary between PLLMWrapper and CaMeLInterpreter (§4) is maintained throughout.
+
+---
+
+### 18.2 Policy Denial and User Consent Flow
+
+Shows what happens when a policy denies a tool call.  Branches for EVALUATION mode
+(automated testing) and PRODUCTION mode (interactive consent) are shown.
+
+```
+CaMeLInterpreter  PolicyEngine    ConsentHandler  AuditLog    User
+       │                │                │            │          │
+       │─ evaluate(tool, kwargs) ────────►│            │          │
+       │                │                │            │          │
+       │                │  [check all registered policies]        │
+       │                │                │            │          │
+       │◄─ Denied(reason) ──────────────-│            │          │
+       │                │                │            │          │
+       │─ append AuditLogEntry(outcome="Denied", reason) ─────►  │
+       │                │                │            │          │
+ ┌─────┴─────────────────────────────────┐            │          │
+ │ EVALUATION mode                       │            │          │
+ │  raise PolicyViolationError           │            │          │
+ └─────────────────────────────────────-─┘            │          │
+       │                │                │            │          │
+ ┌─────┴─────────────────────────────────┐            │          │
+ │ PRODUCTION mode                       │            │          │
+ │                                       │            │          │
+ │  [check consent_cache for (tool, args_hash)]       │          │
+ │       │                │              │            │          │
+ │  if cache hit (APPROVE_FOR_SESSION):  │            │          │
+ │       │─ append AuditLogEntry(consent_decision="CacheHit") ─► │
+ │       │  proceed to tool call         │            │          │
+ │       │                │              │            │          │
+ │  else:                 │              │            │          │
+ │       │─ handle_consent(tool, summary, reason) ───►│          │
+ │       │                │              │─ [display prompt] ───►│
+ │       │                │              │◄─ decision(APPROVE /  │
+ │       │                │              │    APPROVE_FOR_SESSION │
+ │       │                │              │    / REJECT)  ────────│
+ │       │                │              │            │          │
+ │  if APPROVE / APPROVE_FOR_SESSION:    │            │          │
+ │       │─ append AuditLogEntry(consent_decision="UserApproved")►│
+ │       │  [cache if APPROVE_FOR_SESSION]│           │          │
+ │       │  proceed to tool call         │            │          │
+ │       │                │              │            │          │
+ │  if REJECT:            │              │            │          │
+ │       │─ append AuditLogEntry(consent_decision="UserRejected")►│
+ │       │  raise PolicyViolationError(consent_decision="UserRejected")
+ └───────┴────────────────┴────────────-─┘            │          │
+```
+
+**Non-overridable denials:** When the authoritative tier is PLATFORM and
+`non_overridable=True`, the consent path is bypassed entirely — `can_be_consented`
+is `False` and `PolicyViolationError` is raised immediately (§11.7).
+
+---
+
+### 18.3 Q-LLM Invocation and Structured Output Extraction
+
+Shows the call sequence when the P-LLM-generated plan calls `query_quarantined_llm()`.
+
+```
+CaMeLInterpreter  QLLMWrapper   LLMBackend(Q)   SchemaValidator  AuditLog
+       │                │              │                │            │
+       │─ query_quarantined_llm(       │                │            │
+       │    data, OutputSchema) ──────►│                │            │
+       │                │              │                │            │
+       │                │─ augment_schema(OutputSchema) │            │
+       │                │  → AugmentedSchema with       │            │
+       │                │    have_enough_information: bool            │
+       │                │              │                │            │
+       │                │─ generate_structured(         │            │
+       │                │    [system_msg, user_msg],    │            │
+       │                │    AugmentedSchema) ─────────►│            │
+       │                │              │─ [provider     │            │
+       │                │              │  structured    │            │
+       │                │              │  output call]  │            │
+       │                │              │─ raw_response ─►            │
+       │                │              │                │            │
+       │                │◄─ AugmentedSchema instance ───│            │
+       │                │              │                │            │
+       │                │  [check have_enough_information]           │
+       │                │              │                │            │
+ ┌─────┴────────────────┐              │                │            │
+ │ have_enough_information = False     │                │            │
+ │  raise NotEnoughInformationError    │                │            │
+ │    (lineno=call_site_line)          │                │            │
+ │  → orchestrator strips content,    │                │            │
+ │    forwards only error_type+lineno  │                │            │
+ └─────────────────────-─┘            │                │            │
+       │                │              │                │            │
+ ┌─────┴────────────────┐              │                │            │
+ │ have_enough_information = True      │                │            │
+ │  wrap result as CaMeLValue(         │                │            │
+ │    value=schema_instance,           │                │            │
+ │    sources={"query_quarantined_llm"}│                │            │
+ │    readers=Public)                  │                │            │
+ │◄─ CaMeLValue (tagged untrusted) ───-│                │            │
+ │  [store result; activate M4-F3/F4   │                │            │
+ │   remainder-taint for block]        │                │            │
+ └─────────────────────-─┘            │                │            │
+```
+
+**Isolation guarantee:** The Q-LLM never has access to tool-calling capabilities.
+`LLMBackend.generate_structured()` uses provider-native schema enforcement
+(`tool_choice`, `response_mime_type`, or prompt-based fallback) — ensuring the
+response is always schema-constrained before returning to the interpreter.
+
+---
+
+### 18.4 P-LLM Retry Loop on Error
+
+Shows the outer retry loop when plan execution fails.  The ExceptionRedactor
+classifies the error and the RetryPromptBuilder constructs a safe partial
+re-execution request.
+
+```
+CaMeLOrchestrator  PLLMWrapper  CaMeLInterpreter  ExceptionRedactor  RetryPromptBuilder
+        │                │               │                 │                  │
+        │─ generate_plan(query) ────────►│                 │                  │
+        │                │               │                 │                  │
+        │◄─ plan (code block) ──────────-│                 │                  │
+        │                │               │                 │                  │
+        │─ exec(remaining_stmts) ───────►│                 │                  │
+        │                │               │                 │                  │
+        │                │               │─ [exception raised at line N]      │
+        │                │               │                 │                  │
+        │◄─ exception ──────────────────-│                 │                  │
+        │                │               │                 │                  │
+        │─ classify(exc, interpreter_store) ─────────────►│                  │
+        │                │               │                 │                  │
+        │                │               │                 │─ [M4-F6: check   │
+        │                │               │                 │  dep_graph for   │
+        │                │               │                 │  untrusted upstream]
+        │                │               │                 │                  │
+ ┌──────┴────────────────────────────────┐                 │                  │
+ │ Trusted exception (sources ⊆ TRUSTED) │                 │                  │
+ │◄─ RedactedError(type, lineno, msg) ───────────────────-─│                  │
+ └───────────────────────────────────────┘                 │                  │
+        │                │               │                 │                  │
+ ┌──────┴────────────────────────────────┐                 │                  │
+ │ Untrusted dependency exception        │                 │                  │
+ │◄─ RedactedError(type, lineno, msg=None) ──────────────-─│                  │
+ └───────────────────────────────────────┘                 │                  │
+        │                │               │                 │                  │
+ ┌──────┴────────────────────────────────┐                 │                  │
+ │ NotEnoughInformationError             │                 │                  │
+ │◄─ RedactedError(type, lineno=call_site, msg=None) ─────-│                  │
+ └───────────────────────────────────────┘                 │                  │
+        │                │               │                 │                  │
+        │  [loop_attempts < max_retries? → continue; else → MaxRetriesExceededError]
+        │                │               │                 │                  │
+        │─ build(redacted_err, completed_vars) ───────────────────────────────►
+        │                │               │                 │                  │
+        │◄─ retry_prompt (var names only, no raw values) ─────────────────────│
+        │                │               │                 │                  │
+        │─ generate_plan(retry_prompt) ─►│                 │                  │
+        │                │               │                 │                  │
+        │◄─ regenerated plan ───────────-│                 │                  │
+        │                │               │                 │                  │
+        │─ exec(regenerated_remaining_stmts) ────────────►│                  │
+        │                │               │                 │                  │
+        │  [continues from next statement; completed vars already in store]   │
+```
+
+**Key properties:**
+- `loop_attempts` is bounded at `max_retries` (default: 10) — `MaxRetriesExceededError`
+  terminates the loop.
+- The retry prompt includes only **variable names** (not values) for already-completed
+  variables — the P-LLM isolation invariant is never broken.
+- `[REDACTED]` messages in the audit log preserve the original message length metric
+  (`redacted_message_length`) without leaking content.
+- In STRICT mode, M4-F8 preserves dependency graph annotations across NEIE re-generation
+  and M4-F9 propagates loop-iterable taint into the regenerated plan (§7).
+
+---
+
+## 19. Observability — Metrics & Audit Log Sink
+
+**Module:** `camel/observability/` | Introduced: Milestone 5 (v0.6.0)
+
+CaMeL exposes Prometheus/OpenTelemetry-compatible operational metrics and a
+configurable structured JSON audit log sink.
+
+---
+
+### 19.1 Prometheus / OpenTelemetry Metrics
+
+**Module:** `camel/observability/metrics.py`
+
+Five named metrics are emitted by `CamelMetricsCollector`, all scoped by
+session, tool, and policy labels:
+
+| Metric name | Type | Labels | Description |
+|---|---|---|---|
+| `camel_policy_denial_rate` | Counter | `session_id`, `policy_name`, `tool_name` | Incremented on every policy denial |
+| `camel_qlm_error_rate` | Counter | `session_id`, `tool_name` | Incremented on `NotEnoughInformationError` or Q-LLM backend error |
+| `camel_pllm_retry_count_histogram` | Histogram | `session_id` | Outer-loop retries consumed per task; buckets: 0, 1, 2, 3, 5, 7, 10 |
+| `camel_task_success_rate` | Gauge | `session_id` | Rolling success rate (0.0 – 1.0) across completed tasks |
+| `camel_consent_prompt_rate` | Counter | `session_id`, `tool_name` | Incremented each time a user consent prompt fires |
+
+**Prometheus export:**
+
+```python
+from camel.observability.metrics import get_global_collector, start_metrics_server
+
+collector = get_global_collector()
+
+# Serve Prometheus metrics on GET /metrics
+start_metrics_server(port=9090)
+
+# Or retrieve the exposition text programmatically
+metrics_text = collector.get_metrics_text()
+```
+
+If `prometheus_client` is installed (via `pip install camel-security[observability]`),
+metrics are also registered with the Prometheus client so external scrapers work
+without additional configuration.
+
+**OpenTelemetry push export:**
+
+When `CAMEL_OTEL_ENDPOINT` is set to an OTLP HTTP endpoint (e.g.
+`http://localhost:4318`), metric snapshots are pushed via OTLP/HTTP every
+`otel_push_interval_seconds` seconds (default: 15).
+
+```bash
+export CAMEL_OTEL_ENDPOINT=http://localhost:4318
+```
+
+Requires `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http` from
+the `observability` extras:
+
+```bash
+pip install "camel-security[observability]"
+```
+
+**Thread safety:** All counter/histogram/gauge operations use a `threading.Lock`
+— the collector is safe for concurrent `agent.run()` sessions.
+
+---
+
+### 19.2 Structured JSON Audit Log Sink
+
+**Module:** `camel/observability/audit_sink.py`
+
+The security audit log (`CaMeLInterpreter.audit_log`) is in-memory by default.
+The `AuditSink` layer provides configurable durable routing:
+
+| Sink type | Configuration | Description |
+|---|---|---|
+| `StdoutAuditSink` | Default | Writes newline-delimited JSON to stdout |
+| `FileAuditSink` | `path="audit.jsonl"` | Appends newline-delimited JSON to a file |
+| `HttpAuditSink` | `endpoint="https://..."` | POST each event as JSON to an external aggregator |
+| `NullAuditSink` | — | Discards all events (testing only) |
+
+**JSON event schema (all event classes):**
+
+All seven event classes share a `timestamp` (ISO-8601 UTC) and `event_type` field:
+
+| Event class | `event_type` string | Key fields |
+|---|---|---|
+| `AuditLogEntry` | `"policy_evaluation"` | `tool_name`, `outcome`, `reason`, `consent_decision`, `argument_summary` |
+| `RedactionAuditEvent` | `"exception_redaction"` | `line_number`, `redaction_reason`, `dependency_chain`, `trust_level`, `error_type`, `redacted_message_length`, `m4_f9_applied` |
+| `ForbiddenImportEvent` | `"forbidden_import"` | `module_name`, `lineno` |
+| `ForbiddenNameEvent` | `"forbidden_name"` | `name`, `lineno` |
+| `ConsentDecisionEvent` | `"consent_decision"` | `tool_name`, `decision`, `argument_summary` |
+| `DataToControlFlowEvent` | `"escalation_warning"` | `tool_name`, `lineno`, `source_labels` |
+| `StrictDependencyAdditionEvent` | `"strict_dependency"` | `variable`, `added_deps`, `lineno`, `rule` |
+
+**Example — configuring a file sink:**
+
+```python
+from camel.observability.audit_sink import FileAuditSink, configure_audit_sink
+
+configure_audit_sink(FileAuditSink(path="camel_audit.jsonl"))
+```
+
+**Example — configuring an HTTP sink:**
+
+```python
+from camel.observability.audit_sink import HttpAuditSink, configure_audit_sink
+
+configure_audit_sink(HttpAuditSink(
+    endpoint="https://logs.example.com/camel",
+    headers={"Authorization": "Bearer <token>"},
+))
+```
+
+Error handling: `HttpAuditSink` raises `AuditSinkError` (subclass of `OSError`)
+on HTTP errors — misconfiguration is surfaced immediately rather than swallowed
+silently (NFR-6).
+
+---
+
+### 19.3 Backend Adapter `get_backend_id()` in Metrics
+
+Each `LLMBackend` adapter exposes a stable, credential-free identifier via
+`get_backend_id()`.  This ID is used as a label in audit log entries and
+Prometheus/OpenTelemetry metric samples, enabling per-provider cost and
+reliability analysis:
+
+| Adapter | `get_backend_id()` example |
+|---|---|
+| `ClaudeBackend` | `"anthropic:claude-sonnet-4-6"` |
+| `GeminiBackend` | `"google:gemini-2.5-flash"` |
+| `OpenAIBackend` | `"openai:gpt-4.1"` |
+
+The identifier is stable across restarts and contains no API keys or secrets.
