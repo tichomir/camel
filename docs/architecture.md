@@ -1,8 +1,8 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 1.5 (Milestone 5 — SDK Public API)
+**Version:** 1.6 (Milestone 5 — Policy Testing Harness & Consent UX)
 **Date:** 2026-03-18
-**Source:** PRD v1.4 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
+**Source:** PRD v1.5 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
 
@@ -18,10 +18,10 @@
 8. [Retry Loop Mechanics](#8-retry-loop-mechanics)
 9. [Execution Trace Recorder](#9-execution-trace-recorder)
 10. [Security Model](#10-security-model)
-11. [Policy Engine](#11-policy-engine) _(includes §11.7 Three-Tier Policy Governance — ADR-011)_
+11. [Policy Engine](#11-policy-engine) _(includes §11.7 Three-Tier Policy Governance — ADR-011; §11.8 Developer Testing Tools — ADR-012)_
 12. [Capability Assignment Engine](#12-capability-assignment-engine)
 13. [Reference Policy Library](#13-reference-policy-library)
-14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow)
+14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow) _(includes §14.2 ConsentHandler & ConsentDecision — ADR-012; §14.3 Session Consent Cache)_
 15. [SDK Layer — camel-security Public API](#15-sdk-layer--camel-security-public-api)
 16. [Module Map (File Tree)](#16-module-map-file-tree)
 17. [Related Documents](#17-related-documents)
@@ -1131,6 +1131,129 @@ resolver = PolicyConflictResolver.load_from_env()
 | Tool-Provider `Denied` | `True` | Yes (PRODUCTION mode) |
 | User `Denied` | `True` | Yes (PRODUCTION mode) |
 
+### 11.8 Developer Testing Tools (ADR-012, Milestone 5)
+
+**Module:** `camel/testing/` | **ADR:** [012](adr/012-policy-testing-harness-consent-handler.md)
+
+Three developer-facing utilities ship in `camel/testing/` to enable policy
+authors to test and simulate policies without a live interpreter, LLM, or
+network connection (NFR-9).
+
+#### `CaMeLValueBuilder` — fluent value construction
+
+```python
+# Module: camel/testing/value_builder.py
+
+class CaMeLValueBuilder:
+    def with_value(self, value: Any) -> Self: ...
+    def with_sources(self, *sources: str) -> Self: ...
+    def with_inner_source(self, inner_source: str) -> Self: ...
+    def with_readers(self, *readers: str) -> Self: ...
+    def with_public_readers(self) -> Self: ...
+    def with_no_readers(self) -> Self: ...
+    def with_dependency_chain(self, *dep_values: CaMeLValue) -> Self: ...
+    def build(self) -> CaMeLValue: ...
+
+    @classmethod
+    def trusted(cls, value: Any, source: str = "User literal") -> Self: ...
+    @classmethod
+    def untrusted(cls, value: Any, source: str = "external_tool") -> Self: ...
+    @classmethod
+    def from_tool(cls, value: Any, tool_name: str) -> Self: ...
+```
+
+`with_dependency_chain(*dep_values)` merges `sources` and `readers` from
+upstream `CaMeLValue` dependencies using union semantics — equivalent to the
+propagation rules the interpreter applies during execution.
+
+#### `PolicyTestRunner` — structured policy test execution
+
+```python
+# Module: camel/testing/policy_runner.py
+
+@dataclass(frozen=True)
+class PolicyTestCase:
+    description: str
+    tool_name: str
+    kwargs: dict[str, CaMeLValue]
+    expected_outcome: Literal["Allowed", "Denied"]
+    expected_reason_fragment: str | None = None
+
+@dataclass(frozen=True)
+class PolicyTestResult:
+    test_case: PolicyTestCase
+    passed: bool
+    actual_outcome: SecurityPolicyResult
+    failure_reason: str | None = None
+
+@dataclass(frozen=True)
+class PolicyTestReport:
+    policy_name: str
+    tool_name: str
+    results: tuple[PolicyTestResult, ...]
+    passed: int
+    failed: int
+    total: int
+    coverage_notes: str | None = None
+
+    @property
+    def all_passed(self) -> bool: ...
+
+class PolicyTestRunner:
+    def run(
+        self,
+        policy_fn: PolicyFn,
+        test_cases: Sequence[PolicyTestCase],
+        *,
+        policy_name: str = "",
+    ) -> PolicyTestReport: ...
+```
+
+`PolicyTestRunner.run()` evaluates `policy_fn` against each test case, compares
+the actual outcome to the expected outcome, and returns a `PolicyTestReport`
+with per-case pass/fail detail and aggregate coverage statistics.
+
+#### `PolicySimulator` — dry-run execution
+
+```python
+# Module: camel/testing/simulator.py
+
+@dataclass(frozen=True)
+class SimulatedPolicyTrigger:
+    tool_name: str
+    argument_snapshot: dict[str, str]    # {arg_name: repr(raw)[:80]}
+    policy_name: str
+    outcome: SecurityPolicyResult
+    tier: PolicyTier | None              # None when flat PolicyRegistry used
+
+@dataclass(frozen=True)
+class SimulationReport:
+    code_plan: str
+    triggered_policies: tuple[SimulatedPolicyTrigger, ...]
+    suppressed_tool_calls: tuple[str, ...]
+    would_have_succeeded: bool
+    denial_triggers: tuple[SimulatedPolicyTrigger, ...]
+
+class PolicySimulator:
+    def __init__(
+        self,
+        policy_registry: PolicyRegistry,
+        tool_names: list[str],
+    ) -> None: ...
+
+    def simulate(
+        self,
+        code_plan: str,
+        variable_store: dict[str, CaMeLValue] | None = None,
+    ) -> SimulationReport: ...
+```
+
+`PolicySimulator.simulate()` executes the code plan against the live interpreter
+in `EVALUATION` mode with every tool replaced by a no-op stub that returns
+`CaMeLValue(value=None, sources=frozenset({"CaMeL"}), ...)`.  All policy
+evaluations run; no real tool is called.  The `SimulationReport` lists every
+triggered policy and whether the run `would_have_succeeded`.
+
 ---
 
 ## 12. Capability Assignment Engine
@@ -1366,40 +1489,115 @@ class EnforcementMode(Enum):
 | `EVALUATION` | Raises `PolicyViolationError` immediately; no user interaction.  Used for automated AgentDojo benchmarking and unit tests (NFR-2). |
 | `PRODUCTION` | Invokes `ConsentCallback`; proceeds on approval; raises `PolicyViolationError(consent_decision="UserRejected")` on rejection. |
 
-### 14.2 `ConsentCallback` Protocol
+### 14.2 `ConsentHandler` Protocol and `ConsentDecision` enum (ADR-012, Milestone 5)
+
+**Module:** `camel/consent.py` | **ADR:** [012](adr/012-policy-testing-harness-consent-handler.md)
+
+`ConsentHandler` supersedes the legacy `bool`-returning `ConsentCallback`
+Protocol.  The new interface uses the `ConsentDecision` enum to express a
+richer set of outcomes, including session-level approval caching that
+addresses PRD Risk L4 (user fatigue from repeated policy denials).
+
+#### `ConsentDecision` enum
 
 ```python
-class ConsentCallback(Protocol):
-    def __call__(
-        self,
-        tool_name: str,
-        arg_summary: str,
-        denial_reason: str,
-    ) -> bool:
-        """Return True to approve, False to reject."""
-        ...
+class ConsentDecision(Enum):
+    APPROVE             = "Approve"           # Approve this specific call
+    REJECT              = "Reject"            # Reject this call
+    APPROVE_FOR_SESSION = "ApproveForSession" # Approve + cache for session
 ```
 
-The interpreter supplies:
+#### `ConsentHandler` Protocol
 
-- `tool_name` — registered name of the blocked tool.
-- `arg_summary` — human-readable summary of argument values (raw, not
-  `CaMeLValue` internals).
-- `denial_reason` — the `Denied.reason` string from the failing policy.
+```python
+class ConsentHandler(Protocol):
+    def handle_consent(
+        self,
+        tool_name: str,
+        argument_summary: str,
+        denial_reason: str,
+    ) -> ConsentDecision: ...
+```
 
-### 14.3 Pre-Execution Enforcement Hook
+**Extension points:**
+
+| Deployment context | Recommended approach |
+|---|---|
+| CLI (default) | `CLIConsentHandler` — prints formatted prompt, reads stdin |
+| Web UI | Synchronous wrapper blocking on `threading.Event` set by async HTTP handler |
+| Mobile | Native sync bridge (JNI, `ctypes`, `concurrent.futures.Future`) |
+| Async frameworks | `asyncio.get_event_loop().run_until_complete()` inside `handle_consent`; avoid when event loop is already running — use `ThreadPoolExecutor` bridge instead |
+
+#### `CLIConsentHandler` — default implementation
+
+```python
+class CLIConsentHandler:
+    """Prints a formatted consent prompt to stdout; reads user choice from stdin."""
+    def handle_consent(
+        self,
+        tool_name: str,
+        argument_summary: str,
+        denial_reason: str,
+    ) -> ConsentDecision: ...
+```
+
+**Backward compatibility with `ConsentCallback`:** The interpreter wraps
+legacy `bool`-returning callables via an internal `_LegacyConsentHandlerAdapter`
+(not part of the public API), mapping `True → APPROVE` and `False → REJECT`.
+
+### 14.3 Session-Level Consent Cache (ADR-012)
+
+**Module:** `camel/consent.py`
+
+```python
+@dataclass(frozen=True)
+class ConsentCacheKey:
+    tool_name: str
+    argument_hash: str    # SHA-256 hex digest of canonical arg representation
+
+def compute_consent_key(
+    tool_name: str,
+    kwargs: dict[str, CaMeLValue],
+) -> ConsentCacheKey: ...
+
+class ConsentCache:
+    def get(self, key: ConsentCacheKey) -> ConsentDecision | None: ...
+    def set(self, key: ConsentCacheKey, decision: ConsentDecision) -> None: ...
+    def invalidate(self, key: ConsentCacheKey) -> None: ...
+    def clear(self) -> None: ...
+    def __len__(self) -> int: ...
+```
+
+**Scope:** One `ConsentCache` instance per interpreter session.  Entries expire
+at session end — no wall-clock TTL (TTL would introduce non-determinism into
+policy enforcement, violating NFR-2).
+
+### 14.4 Pre-Execution Enforcement Hook
 
 Before every tool call the interpreter executes:
 
 ```
 1. policy_engine.evaluate(tool_name, kwargs_mapping)
-   → Allowed()    : append AuditLogEntry(outcome="Allowed"), proceed to tool call.
-   → Denied(reason):
-       EVALUATION: append AuditLogEntry(outcome="Denied"), raise PolicyViolationError.
-       PRODUCTION: invoke consent_callback(tool_name, arg_summary, reason)
-           approved  → append AuditLogEntry(consent_decision="UserApproved"), proceed.
-           rejected  → append AuditLogEntry(consent_decision="UserRejected"),
-                       raise PolicyViolationError(consent_decision="UserRejected").
+   → Allowed():
+       append AuditLogEntry(outcome="Allowed"), proceed to tool call.
+   → Denied(reason) — EVALUATION mode:
+       append AuditLogEntry(outcome="Denied", consent_decision=None)
+       raise PolicyViolationError.
+   → Denied(reason) — PRODUCTION mode:
+       key = compute_consent_key(tool_name, kwargs_mapping)
+       if consent_cache.get(key) == APPROVE_FOR_SESSION:
+           append AuditLogEntry(consent_decision="CacheHit"), proceed.
+       else:
+           decision = consent_handler.handle_consent(tool_name, summary, reason)
+           if APPROVE:
+               append AuditLogEntry(consent_decision="UserApproved"), proceed.
+           if APPROVE_FOR_SESSION:
+               consent_cache.set(key, APPROVE_FOR_SESSION)
+               append AuditLogEntry(consent_decision="UserApprovedForSession"),
+               proceed.
+           if REJECT:
+               append AuditLogEntry(consent_decision="UserRejected")
+               raise PolicyViolationError(consent_decision="UserRejected").
 2. Call tool with raw values (CaMeLValue.raw for each argument).
 3. Pass return value through capability annotator → CaMeLValue.
 4. Store result in variable store.
@@ -1407,7 +1605,7 @@ Before every tool call the interpreter executes:
 
 Blocked calls **never proceed** to tool execution without explicit resolution.
 
-### 14.4 `AuditLogEntry` Data Model
+### 14.5 `AuditLogEntry` Data Model (extended — ADR-012)
 
 ```python
 @dataclass(frozen=True)
@@ -1415,17 +1613,31 @@ class AuditLogEntry:
     tool_name:        str
     outcome:          Literal["Allowed", "Denied"]
     reason:           str | None               # Denied.reason, or None when Allowed
+    timestamp:        str                      # ISO-8601 UTC
     consent_decision: Literal[
                           "UserApproved",
+                          "UserApprovedForSession",
                           "UserRejected",
-                          None
-                      ]                        # PRODUCTION mode only; None otherwise
+                          "CacheHit",
+                          None,
+                      ]
+    argument_summary: str | None = None        # Human-readable arg snapshot (≤80 chars/arg)
 ```
+
+`consent_decision` values:
+
+| Value                   | Meaning                                                 |
+|-------------------------|---------------------------------------------------------|
+| `None`                  | `EVALUATION` mode, or policy returned `Allowed`         |
+| `"UserApproved"`        | User approved this specific call                        |
+| `"UserApprovedForSession"` | User approved; decision cached for remainder of session |
+| `"UserRejected"`        | User rejected the call                                  |
+| `"CacheHit"`            | Session cache returned a prior `APPROVE_FOR_SESSION`    |
 
 One entry is appended for every `policy_engine.evaluate()` call regardless of
 outcome — both `Allowed` and `Denied` events are recorded (NFR-6).
 
-### 14.5 Security Audit Log
+### 14.6 Security Audit Log
 
 ```python
 # Read audit entries after execution
@@ -1435,7 +1647,7 @@ entries: list[AuditLogEntry] = interp.audit_log
 `CaMeLInterpreter.audit_log` returns a snapshot in chronological order.  The
 log is in-memory; callers are responsible for persisting it to durable storage.
 
-### 14.6 Interpreter Construction
+### 14.7 Interpreter Construction
 
 ```python
 # Evaluation / test mode (default)
@@ -1445,26 +1657,37 @@ interp = CaMeLInterpreter(
     enforcement_mode=EnforcementMode.EVALUATION,
 )
 
-# Production mode — consent callback required
+# Production mode with ConsentHandler and session cache
+from camel.consent import CLIConsentHandler, ConsentCache
+
 interp = CaMeLInterpreter(
     tools=registry.as_interpreter_tools(),
     policy_engine=policy_registry,
     enforcement_mode=EnforcementMode.PRODUCTION,
-    consent_callback=my_consent_fn,  # ValueError raised at construction if omitted
+    consent_handler=CLIConsentHandler(),   # ValueError raised at construction if omitted
+    consent_cache=ConsentCache(),          # Optional; enables session-level approval caching
+)
+
+# Production mode (legacy ConsentCallback — backward compatible)
+interp = CaMeLInterpreter(
+    tools=registry.as_interpreter_tools(),
+    policy_engine=policy_registry,
+    enforcement_mode=EnforcementMode.PRODUCTION,
+    consent_callback=lambda tool, summary, reason: True,  # bool-returning callable
 )
 ```
 
-### 14.7 NFR Compliance
+### 14.8 NFR Compliance
 
 | NFR | Requirement | Verification |
 |---|---|---|
 | NFR-1 | Interpreter operates in a sandboxed environment: no arbitrary module imports, no timing primitives, builtins restricted to the 16-name approved set defined in `camel/config/allowlist.yaml` (M4-F10 – F14) | `tests/test_interpreter.py` — `ForbiddenImportError` and `ForbiddenNameError` suites; allowlist positive/negative cases |
 | NFR-2 | No LLM in policy evaluation path | `test_e2e_enforcement.py` asserts zero LLM calls during `evaluate()` |
 | NFR-4 | ≤100ms interpreter overhead per tool call (including policy evaluation) | `scripts/benchmark_interpreter.py` |
-| NFR-6 | All policy outcomes, consent decisions, exception redactions, and allowlist violations written to audit log | `test_e2e_enforcement.py` log-completeness assertions; `ForbiddenImportEvent` / `ForbiddenNameEvent` emission tests |
+| NFR-6 | All policy evaluation outcomes (Allowed and Denied), consent decisions (UserApproved, UserApprovedForSession, UserRejected, CacheHit), exception redactions, and allowlist violations written as immutable `AuditLogEntry` records to the security audit log.  Each consent-related entry includes `tool_name`, `outcome`, `reason`, `timestamp`, `consent_decision`, and `argument_summary`. | `test_e2e_enforcement.py` log-completeness assertions; `ForbiddenImportEvent` / `ForbiddenNameEvent` emission tests; ADR-012 consent decision audit trail tests |
 | NFR-7 | Adding a new tool requires only: (a) constructing a `Tool(name, fn)` dataclass, (b) optionally providing a `capability_annotation`, and (c) optionally appending policy functions to `Tool.policies`.  No changes to core interpreter or policy engine code. | `camel_security/tool.py` — `Tool` dataclass design; `camel/tools/registry.py` — `ToolRegistry.register()` |
 | NFR-8 | `CaMeLAgent` is compatible with any LLM backend that satisfies the `LLMBackend` protocol (implements `generate` and `generate_structured`).  Provider switching requires only changing the backend object passed to `CaMeLAgent(p_llm=..., q_llm=...)`. | `tests/test_multi_backend_swap.py`; `tests/test_backend_swap.py` |
-| NFR-9 | Policy engine, capability system, and enforcement hook independently unit-testable | `tests/harness/policy_harness.py`, `tests/test_policy.py` |
+| NFR-9 | Policy engine, capability system, enforcement hook, `PolicyTestRunner`, `CaMeLValueBuilder`, and `PolicySimulator` are all independently unit-testable without a live interpreter, LLM, or network connection. | `tests/harness/policy_harness.py`, `tests/test_policy.py`, `camel/testing/` unit tests |
 
 ---
 

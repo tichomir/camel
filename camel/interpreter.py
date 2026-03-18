@@ -107,6 +107,13 @@ from enum import Enum
 from typing import Any, Literal, Protocol
 
 from camel.config.loader import build_permitted_namespace, get_excluded_timing_names
+from camel.consent import (
+    ConsentAuditEntry,
+    ConsentDecision,
+    ConsentDecisionCache,
+    ConsentHandler,
+    _resolve_consent,
+)
 from camel.dependency_graph import DependencyGraph, _InternalGraph
 from camel.exceptions import (
     DataToControlFlowEscalationError,
@@ -730,12 +737,26 @@ class CaMeLInterpreter:
         ``EnforcementMode.EVALUATION`` (raises ``PolicyViolationError``
         immediately, no UI interaction).  Set to
         ``EnforcementMode.PRODUCTION`` to invoke the ``consent_callback``
-        before raising.
+        or ``consent_handler`` before raising.
     consent_callback:
-        Required when ``enforcement_mode=EnforcementMode.PRODUCTION``.  Must
-        conform to the :class:`ConsentCallback` protocol.  Raises
-        ``ValueError`` at construction time if ``PRODUCTION`` mode is
-        selected but no callback is provided.
+        Legacy bool-returning consent callback.  Used when
+        ``enforcement_mode=EnforcementMode.PRODUCTION`` and
+        ``consent_handler`` is ``None``.  Raises ``ValueError`` at
+        construction time if ``PRODUCTION`` mode is selected but neither
+        ``consent_callback`` nor ``consent_handler`` is provided.
+    consent_handler:
+        Optional :class:`~camel.consent.ConsentHandler` instance.  When
+        provided together with ``enforcement_mode=EnforcementMode.PRODUCTION``,
+        it is used instead of ``consent_callback`` for policy denials.
+        Enables the richer three-action consent UX (Approve / Reject /
+        Approve-for-session) with session-level caching and
+        :class:`~camel.consent.ConsentAuditEntry` audit logging.  Takes
+        precedence over ``consent_callback`` when both are set.
+    consent_cache:
+        Optional :class:`~camel.consent.ConsentDecisionCache` for session-level
+        caching of ``APPROVE_FOR_SESSION`` decisions.  If ``consent_handler``
+        is set and this is ``None``, a fresh default cache is created
+        automatically.
 
     Examples
     --------
@@ -774,6 +795,8 @@ class CaMeLInterpreter:
         enforcement_mode: EnforcementMode = EnforcementMode.EVALUATION,
         consent_callback: ConsentCallback | None = None,
         elevated_consent_callback: ElevatedConsentCallback | None = None,
+        consent_handler: ConsentHandler | None = None,
+        consent_cache: ConsentDecisionCache | None = None,
     ) -> None:
         """Initialise the interpreter.
 
@@ -786,12 +809,18 @@ class CaMeLInterpreter:
           ``builtins`` argument.  The allowlist is the authoritative base;
           extra callables injected via ``builtins`` extend it.
         - ``_mode``, ``_policy_engine``, ``_conflict_resolver``,
-          ``_enforcement_mode``, ``_consent_callback``, and
-          ``_elevated_consent_callback`` are stored as given.
+          ``_enforcement_mode``, ``_consent_callback``,
+          ``_elevated_consent_callback``, ``_consent_handler``, and
+          ``_consent_cache`` are stored as given (with ``_consent_cache``
+          defaulting to a new :class:`~camel.consent.ConsentDecisionCache`
+          when ``consent_handler`` is set but ``consent_cache`` is ``None``).
         - ``ValueError`` is raised if both ``policy_engine`` and
           ``conflict_resolver`` are supplied simultaneously.
         - ``ValueError`` is raised if ``enforcement_mode=PRODUCTION`` and
-          ``consent_callback`` is ``None`` (security defect prevention).
+          neither ``consent_callback`` nor ``consent_handler`` is provided
+          (security defect prevention).
+        - ``_consent_audit_log`` records :class:`~camel.consent.ConsentAuditEntry`
+          entries for every consent decision (including cache hits).
         - ``_last_qllm_result_cv`` is a one-shot signal field set by
           ``_eval_Call`` when a Q-LLM tool returns, and consumed by
           ``_exec_statements`` to update the M4-F3/F4 tainting context.
@@ -809,10 +838,14 @@ class CaMeLInterpreter:
                 "policy_engine and conflict_resolver are mutually exclusive; "
                 "supply at most one."
             )
-        if enforcement_mode is EnforcementMode.PRODUCTION and consent_callback is None:
+        if (
+            enforcement_mode is EnforcementMode.PRODUCTION
+            and consent_callback is None
+            and consent_handler is None
+        ):
             raise ValueError(
-                "consent_callback must be provided when "
-                "enforcement_mode=EnforcementMode.PRODUCTION"
+                "Either consent_callback or consent_handler must be provided "
+                "when enforcement_mode=EnforcementMode.PRODUCTION"
             )
         self._store: dict[str, CaMeLValue] = {}
         self._tools: dict[str, Callable[..., CaMeLValue]] = dict(tools) if tools else {}
@@ -828,6 +861,13 @@ class CaMeLInterpreter:
         self._enforcement_mode = enforcement_mode
         self._consent_callback = consent_callback
         self._elevated_consent_callback = elevated_consent_callback
+        # ConsentHandler-based consent UX (M5 consent flow).
+        self._consent_handler: ConsentHandler | None = consent_handler
+        self._consent_cache: ConsentDecisionCache = (
+            consent_cache if consent_cache is not None else ConsentDecisionCache()
+        )
+        # Consent audit log (NFR-6): one entry per consent decision.
+        self._consent_audit_log: list[ConsentAuditEntry] = []
         # Security audit log (NFR-6): one entry per policy evaluate() call.
         self._audit_log: list[AuditLogEntry] = []
         # M4-F10 / M4-F14 / M4-F15: allowlist violation and escalation events.
@@ -860,6 +900,25 @@ class CaMeLInterpreter:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def consent_audit_log(self) -> list[ConsentAuditEntry]:
+        """Return a shallow copy of the consent decision audit log.
+
+        Each entry is a :class:`~camel.consent.ConsentAuditEntry` recording
+        the outcome of a consent prompt (or a session-cache hit) that occurred
+        during policy-denial handling in ``PRODUCTION`` enforcement mode.
+
+        The log is populated only when ``consent_handler`` is set; it is
+        always empty when using the legacy ``consent_callback`` interface.
+
+        Returns
+        -------
+        list[ConsentAuditEntry]
+            Ordered list of consent decisions, oldest first.  A copy is
+            returned; mutations do not affect the interpreter's internal state.
+        """
+        return list(self._consent_audit_log)
 
     @property
     def store(self) -> dict[str, CaMeLValue]:
@@ -1847,9 +1906,19 @@ class CaMeLInterpreter:
                             # flat registry
                             if self._enforcement_mode is EnforcementMode.PRODUCTION:
                                 arg_summary = _summarise_args(name, kwargs_mapping)
-                                approved = self._consent_callback(  # type: ignore[misc]
-                                    name, arg_summary, denial_reason
-                                )
+                                if self._consent_handler is not None:
+                                    approved = _resolve_consent(
+                                        name,
+                                        arg_summary,
+                                        denial_reason,
+                                        self._consent_handler,
+                                        self._consent_cache,
+                                        self._consent_audit_log,
+                                    )
+                                else:
+                                    approved = self._consent_callback(  # type: ignore[misc]
+                                        name, arg_summary, denial_reason
+                                    )
                                 if approved:
                                     self._audit_log.append(
                                         AuditLogEntry(
@@ -1923,11 +1992,21 @@ class CaMeLInterpreter:
                         if not policy_result.is_allowed():
                             denial_reason = str(policy_result.reason)
                             if self._enforcement_mode is EnforcementMode.PRODUCTION:
-                                # Invoke the consent callback.
+                                # Invoke the consent handler or legacy callback.
                                 arg_summary = _summarise_args(name, kwargs_mapping)
-                                approved = self._consent_callback(  # type: ignore[misc]
-                                    name, arg_summary, denial_reason
-                                )
+                                if self._consent_handler is not None:
+                                    approved = _resolve_consent(
+                                        name,
+                                        arg_summary,
+                                        denial_reason,
+                                        self._consent_handler,
+                                        self._consent_cache,
+                                        self._consent_audit_log,
+                                    )
+                                else:
+                                    approved = self._consent_callback(  # type: ignore[misc]
+                                        name, arg_summary, denial_reason
+                                    )
                                 if approved:
                                     self._audit_log.append(
                                         AuditLogEntry(

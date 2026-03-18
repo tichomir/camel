@@ -107,6 +107,24 @@ Three-tier governance (ADR-011)
 :func:`~camel.llm.backend.get_backend`
     Factory to create a :class:`~camel.llm.LLMBackend` by provider name.
 
+Consent UX (ADR-012)
+~~~~~~~~~~~~~~~~~~~~~
+:class:`ConsentDecision`
+    Enum of consent outcomes: ``APPROVE``, ``REJECT``, ``APPROVE_FOR_SESSION``.
+
+:class:`ConsentAuditEntry`
+    Immutable consent decision record in the interpreter's consent audit log.
+
+:class:`ConsentHandler`
+    Abstract base class for consent prompt handlers — subclass to customise
+    the consent UX for web, mobile, or async workflows.
+
+:class:`DefaultCLIConsentHandler`
+    Production-ready CLI consent handler (stdout prompt, stdin input).
+
+:class:`ConsentDecisionCache`
+    Session-level cache for ``APPROVE_FOR_SESSION`` decisions.
+
 Version
 ~~~~~~~
 :data:`__version__`
@@ -127,6 +145,13 @@ Summary:
   change to security model defaults.
 """
 
+from camel.consent import (
+    ConsentAuditEntry,
+    ConsentDecision,
+    ConsentDecisionCache,
+    ConsentHandler,
+    DefaultCLIConsentHandler,
+)
 from camel.interpreter import ExecutionMode
 from camel.llm.backend import get_backend
 from camel.policy.governance import (
@@ -169,4 +194,10 @@ __all__ = [
     "Public",
     # Backend factory
     "get_backend",
+    # Consent UX (ADR-012)
+    "ConsentDecision",
+    "ConsentAuditEntry",
+    "ConsentHandler",
+    "DefaultCLIConsentHandler",
+    "ConsentDecisionCache",
 ]

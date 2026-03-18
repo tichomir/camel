@@ -195,8 +195,12 @@ for record in result.trace:
 | [API Reference](docs/api/index.md) | M2/M3 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop, Policy Engine, Capabilities |
 | [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine |
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
+| [Policy Authoring Tutorial](docs/policy-authoring-tutorial.md) | Step-by-step guide: `CaMeLValueBuilder`, `PolicyTestRunner`, `PolicySimulator`; worked examples for `send_email` and `write_file` |
+| [Consent Handler Integration Guide](docs/consent-handler-integration.md) | Customising the consent UX: web UI, mobile, asyncio, session cache, `argument_hash` computation |
+| [Security Audit Log Reference](docs/security-audit-log.md) | All audit log streams and schemas: `AuditLogEntry`, `ConsentAuditEntry`, `ForbiddenImportEvent`, `RedactionAuditEvent`, NFR-6 compliance summary |
 | [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, policy configuration, known limitations |
 | [Reference Policy Specification](docs/policies/reference-policy-spec.md) | Authoritative spec for all six reference security policies |
+| [Three-Tier Policy Authorship Guide](docs/policies/three-tier-policy-authorship-guide.md) | Platform / Tool-Provider / User tier model, `non-overridable` flag, conflict resolution |
 | [Exit Criteria Checklist](docs/exit_criteria_checklist.md) | Milestone 1 sign-off checklist with test evidence |
 | [M2 Exit Criteria Report](docs/milestone-2-exit-criteria-report.md) | Milestone 2 sign-off report |
 | [M3 Exit Criteria Checklist](docs/milestone-3-exit-criteria-checklist.md) | Milestone 3 exit criteria mapped to test evidence (16 criteria, ~291 tests) |
@@ -211,6 +215,8 @@ for record in result.trace:
 | [ADR 008 — Isolation Test Harness](docs/adr/008-isolation-test-harness-architecture.md) | Isolation verification test harness architecture |
 | [ADR 009 — Policy Engine Architecture](docs/adr/009-policy-engine-architecture.md) | PolicyRegistry, SecurityPolicyResult sealed type, helper functions |
 | [ADR 010 — Enforcement Hook, Consent Flow & Audit](docs/adr/010-enforcement-hook-consent-audit-harness.md) | Dual-mode enforcement, consent callback, audit log, policy harness |
+| [ADR 011 — Three-Tier Policy Governance](docs/adr/011-three-tier-policy-governance.md) | Three-tier policy model: Platform, Tool-Provider, User |
+| [ADR 012 — Policy Testing Harness & Consent Handler](docs/adr/012-policy-testing-harness-consent-handler.md) | PolicyTestRunner, CaMeLValueBuilder, PolicySimulator, ConsentHandler design |
 | [E2E Scenario Specification](docs/e2e-scenario-specification.md) | End-to-end test scenario inventory |
 
 ---
@@ -253,13 +259,21 @@ pytest tests/test_e2e_scenarios.py            # end-to-end scenarios (no policie
 pytest tests/test_capability_assignment.py    # capability assignment engine
 pytest tests/test_policy.py                   # policy engine & registry
 pytest tests/policies/test_reference_policies.py  # reference policy library
-pytest tests/test_policy_harness.py           # policy testing harness
+pytest tests/test_policy_harness.py           # policy testing harness (AgentDojo scenarios)
+pytest tests/test_policy_testing_harness.py   # PolicyTestRunner, CaMeLValueBuilder, PolicySimulator (M5-F12–F17)
+pytest tests/test_consent_handler.py          # ConsentHandler, ConsentDecisionCache, ConsentAuditEntry (M5-F18–F19)
 pytest tests/test_e2e_enforcement.py          # end-to-end enforcement integration
 pytest tests/test_exception_hardening.py      # exception hardening & redaction (M4-F6–M4-F9, M4-F17)
 pytest tests/test_redaction_completeness.py   # redaction completeness (adversarial suite)
 pytest tests/test_strict_mode.py              # STRICT mode propagation rules
 pytest tests/integration/test_strict_mode_e2e.py  # STRICT mode end-to-end integration
+pytest tests/test_three_tier_policy.py        # three-tier policy governance
+pytest tests/test_policy_conflict_resolver.py # PolicyConflictResolver scenarios
+pytest tests/test_sdk_thread_safety.py        # CaMeLAgent thread-safety (M5-F6)
 ```
+
+For a tutorial on writing and testing your own policies, see the
+[Policy Authoring Tutorial](docs/policy-authoring-tutorial.md).
 
 ---
 
@@ -441,6 +455,40 @@ It achieves this by:
 
 See [Architecture Reference — Security Model](docs/architecture.md#10-security-model) for the full
 threat model, PI-SEC game definition, and trusted/untrusted boundary table.
+
+---
+
+## User Consent UX
+
+When CaMeL runs in `EnforcementMode.PRODUCTION` and a policy denies a tool call,
+the interpreter invokes a `ConsentHandler` before raising `PolicyViolationError`.
+This lets the user approve or reject the blocked action at runtime.
+
+```python
+from camel.interpreter import CaMeLInterpreter, EnforcementMode
+from camel_security.consent import DefaultCLIConsentHandler, ConsentDecisionCache
+
+interp = CaMeLInterpreter(
+    tools=my_tools,
+    policy_engine=my_registry,
+    enforcement_mode=EnforcementMode.PRODUCTION,
+    consent_handler=DefaultCLIConsentHandler(),  # renders CLI prompt
+    consent_cache=ConsentDecisionCache(),         # caches APPROVE_FOR_SESSION decisions
+)
+```
+
+The `ConsentHandler` interface is **pluggable** — subclass it to render a web UI
+dialog, send a mobile push notification, or integrate an async approval workflow.
+
+| Component | Module | Description |
+|---|---|---|
+| `ConsentHandler` ABC | `camel_security.consent` | Extension point for custom consent UX |
+| `DefaultCLIConsentHandler` | `camel_security.consent` | Built-in terminal prompt (A/R/S) |
+| `ConsentDecisionCache` | `camel_security.consent` | Session-level `APPROVE_FOR_SESSION` cache |
+| `ConsentAuditEntry` | `camel_security.consent` | Immutable audit record per consent decision |
+
+See [Consent Handler Integration Guide](docs/consent-handler-integration.md) for
+web UI, mobile, and async extension patterns, plus session cache documentation.
 
 ---
 

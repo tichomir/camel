@@ -9,14 +9,16 @@ CaMeL uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.5.0] — 2026-03-18
 
-### Milestone 5 — SDK Packaging & Public API
+### Milestone 5 — SDK Packaging & Public API + Policy Testing Harness & User Consent UX
 
 This release packages CaMeL as a pip-installable SDK (`camel-security`) with a
 stable, typed, thread-safe public API surface.  Delivers `CaMeLAgent`, `AgentResult`,
 the `Tool` registration interface, complete type annotations, docstrings, semantic
-versioning policy, and the SDK CI pipeline for package publication.
+versioning policy, and the SDK CI pipeline for package publication.  Also delivers
+the production-grade Policy Testing Harness and User Consent UX (M5-F12 through
+M5-F19).
 
-**PRD references:** M5-F1 through M5-F7, NFR-7, NFR-8, NFR-9
+**PRD references:** M5-F1 through M5-F19, NFR-6, NFR-7, NFR-8, NFR-9, Risk L4
 
 #### Added
 
@@ -77,6 +79,101 @@ versioning policy, and the SDK CI pipeline for package publication.
 
 - Build, lint (`ruff`), type-check (`mypy --strict`), and publish-to-test-PyPI
   stages added.  `camel_security/` is included in the `packages.find` configuration.
+
+---
+
+### Milestone 5 — Policy Testing Harness & User Consent UX
+
+This section covers the developer tooling and production consent UX delivered
+as part of Milestone 5 (M5-F12 through M5-F19).
+
+#### Added
+
+**`camel_security.testing` — Policy developer tooling** (`camel_security/testing.py`)
+
+- **M5-F12** — `PolicyTestRunner`: batch-evaluates a `PolicyFn` against a list
+  of `PolicyTestCase` instances.  Returns a `PolicyTestReport` with per-case
+  `PolicyCaseResult` objects and aggregate statistics (`total_cases`, `passed`,
+  `failed`, `denied_cases`, `allowed_cases`, `coverage_percent`).  The policy
+  is wrapped in a temporary single-policy `PolicyRegistry` for each case so the
+  evaluation semantics are identical to production usage.
+
+- **M5-F13** — `CaMeLValueBuilder`: fluent builder for constructing
+  `CaMeLValue` instances in test code without a live interpreter.  Supports
+  `with_sources()`, `with_readers()`, `with_inner_source()`, `with_value()`,
+  and `with_dependency()` chain methods.  `build()` unions explicitly-set and
+  accumulated dependency sources/readers using `Public`-absorption semantics.
+
+- **M5-F14** — `PolicySimulator`: dry-run mode that traverses the full
+  execution loop against a provided pseudo-Python code plan without executing
+  any side-effecting tools.  All registered tools are replaced by no-op stubs
+  returning placeholder `CaMeLValue` instances (`sources={tool_name}`,
+  `readers=Public`).  Returns a `SimulationReport` listing every
+  `SimulatedPolicyEvaluation` recorded during the dry run.  `PolicyViolationError`
+  is caught and recorded without aborting the simulation; partial audit data is
+  always returned.
+
+- **M5-F15** — `PolicyTestCase` dataclass: describes one test scenario for
+  `PolicyTestRunner`.  Fields: `tool_name`, `kwargs: dict[str, CaMeLValue]`,
+  `expected_outcome: Literal["Allowed", "Denied"]`, optional
+  `expected_reason_contains`, optional `case_id`.
+
+- **M5-F16** — `PolicyTestReport` dataclass with `total_cases`, `passed`,
+  `failed`, `denied_cases`, `allowed_cases`, `coverage_percent`, and `results`
+  fields.  `coverage_percent` is `denied_cases / total_cases * 100` — measures
+  negative-path coverage of the test suite.
+
+- **M5-F17** — `SimulationReport` and `SimulatedPolicyEvaluation` dataclasses:
+  `SimulationReport` contains `evaluations`, `denied_tools`, and `allowed_tools`
+  lists.  Each `SimulatedPolicyEvaluation` carries `tool_name`, `args_snapshot`,
+  `result`, and `reason`.
+
+**`camel_security.consent` + `camel.consent` — Production Consent UX**
+(`camel_security/consent.py`, `camel/consent.py`)
+
+- **M5-F18** — `ConsentHandler` ABC: pluggable interface for the user consent
+  UX.  Subclass and implement `handle_consent(tool_name, argument_summary,
+  denial_reason) -> ConsentDecision`.  The default CLI implementation is
+  `DefaultCLIConsentHandler`.  Extension patterns documented in
+  `docs/consent-handler-integration.md`: web UI (blocking HTTP), mobile
+  (threading.Event callback bridge), asyncio (wrapper pattern), and auto-approve
+  (for CI/testing).
+
+- **M5-F18** — `DefaultCLIConsentHandler`: production-ready CLI handler.
+  Renders a formatted banner to stdout showing tool name, argument summary, and
+  denial reason.  Accepts `A` (Approve once), `R` (Reject), `S` (Approve for
+  session).  Repeats on invalid input.
+
+- **M5-F18** — `ConsentDecisionCache`: session-level in-process cache keyed on
+  `(tool_name, SHA-256(argument_summary))`.  Populated only on
+  `APPROVE_FOR_SESSION`; `APPROVE` and `REJECT` decisions are never stored.
+  `lookup()` / `store()` / `clear()` API.  Mitigates user fatigue (Risk L4).
+
+- **M5-F19** — `ConsentAuditEntry` immutable dataclass: appended to
+  `CaMeLInterpreter.consent_audit_log` on every consent prompt, including cache
+  hits.  Fields: `decision: ConsentDecision`, `timestamp: str` (ISO-8601 UTC),
+  `tool_name: str`, `argument_summary: str`, `session_cache_hit: bool`.
+  Extends NFR-6 coverage to include consent decisions.
+
+- **M5-F19** — `_resolve_consent()` internal helper: checks the cache first;
+  on miss, delegates to the `ConsentHandler`; stores `APPROVE_FOR_SESSION`
+  decisions; appends a `ConsentAuditEntry` in both code paths.
+
+**Documentation**
+
+- `docs/policy-authoring-tutorial.md` — new step-by-step policy authoring
+  tutorial covering `CaMeLValueBuilder`, `PolicyTestRunner`, and
+  `PolicySimulator` with complete worked examples for `send_email` and
+  `write_file` policies (including pytest integration).
+- `docs/consent-handler-integration.md` — new guide documenting all
+  `ConsentHandler` extension patterns (web UI, mobile push, asyncio wrapper,
+  auto-approve), `remember_for_session` flag semantics, and `argument_hash`
+  computation.
+- `docs/security-audit-log.md` — new audit log reference documenting all log
+  streams: `AuditLogEntry`, `ConsentAuditEntry`, `ForbiddenImportEvent`,
+  `ForbiddenNameEvent`, `DataToControlFlowAuditEvent`,
+  `StrictDependencyAdditionEvent`, and `RedactionAuditEvent` schemas.
+  Includes NFR-6 compliance summary table.
 
 ---
 

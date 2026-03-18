@@ -1203,3 +1203,25 @@ Deliverables:
 - ✅ Write policy authorship guide and update PRD Sections 6.5 and 7 — Software Architect (◈ Standard, 3 SP)
 
 ---
+### Policy Testing Harness & User Consent UX — M5 | 2026-03-18 | ✅ done | 24 SP
+**Goal:** [Phase: Policy Testing Harness & User Consent UX]
+Build the `PolicyTestRunner`, `CaMeLValueBuilder`, and `PolicySimulator` developer tools so teams can author and validate policies without a live interpreter. In parallel, implement the production-grade user consent UX: pluggable `ConsentHandler`, session-level decision caching, human-readable prompt display, and immutable consent audit logging. Covers M5-F12 through M5-F19, NFR-6, and risk L4.
+
+Deliverables:
+- `PolicyTestRunner` that evaluates a policy function against a list of `PolicyTestCase` instances and produces a structured pass/fail report with coverage statistics
+- `CaMeLValueBuilder` test utility for constructing `CaMeLValue` instances with specified sources, readers, and dependency chains without a live interpreter
+- `PolicySimulator` dry-run mode that traverses the full execution loop without executing side-effecting tools, reporting which policies would trigger and why
+- Production consent prompt displaying tool name, human-readable argument summary, policy denial reason, and Approve/Reject actions
+- Pluggable `ConsentHandler` interface with default CLI implementation and documented integration points for web UI, mobile, and async workflows
+- Session-level consent decision cache with opt-in `remember_for_session` flag keyed on `(tool, argument_hash)`
+- Immutable consent decision entries in the security audit log with decision, timestamp, and argument summary
+- Policy authoring tutorial covering `PolicyTestRunner` and `CaMeLValueBuilder` with worked examples for `send_email` and `write_file` policies
+
+**Delivered:**
+- ✅ Design PolicyTestRunner, CaMeLValueBuilder, PolicySimulator, and ConsentHandler interfaces — Software Architect (◈ Standard, 3 SP)
+- ✅ Implement PolicyTestRunner, CaMeLValueBuilder, and PolicySimulator — Backend Developer (◉ Deep, 8 SP)
+- ✅ Implement ConsentHandler, session cache, and consent audit logging — Backend Developer (◉ Deep, 5 SP)
+- ✅ Write integration test suite for testing harness and consent UX — Qa Engineer (◉ Deep, 5 SP)
+- ✅ Write policy authoring tutorial and update all affected documentation — Software Architect (◈ Standard, 3 SP)
+
+---
