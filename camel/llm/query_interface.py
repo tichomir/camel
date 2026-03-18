@@ -316,7 +316,7 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         if issubclass(augmented, QResponse):
             # Fast path: augmented schema is a QResponse subclass; QLLMWrapper
             # handles validation and NotEnoughInformationError natively.
-            qresponse_schema: type[QResponse] = augmented  # type: ignore[assignment]
+            qresponse_schema: type[QResponse] = augmented
             validated_qresponse = await wrapper.extract(prompt, qresponse_schema)
             # Strip have_enough_information before returning the plain T instance.
             if output_schema is augmented:
@@ -331,8 +331,8 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         from camel.llm.protocols import Message
 
         messages = wrapper._build_messages(prompt, augmented)  # type: ignore[arg-type]
-        raw_result = await backend.structured_complete(  # type: ignore[attr-defined]
-            messages, augmented  # type: ignore[arg-type]
+        raw_result = await backend.structured_complete(  # type: ignore[type-var]
+            messages, augmented
         )
         validated = augmented.model_validate(raw_result)
 
@@ -346,4 +346,4 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         raw = validated.model_dump(exclude={_HEI_FIELD_NAME})
         return output_schema.model_validate(raw)
 
-    return _query  # type: ignore[return-value]
+    return _query

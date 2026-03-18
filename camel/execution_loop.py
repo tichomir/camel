@@ -998,14 +998,14 @@ class CaMeLOrchestrator:
 
         # Register the custom print builtin in the interpreter (M2-F10).
         print_builtin = self._make_print_builtin()
-        self._interpreter._builtins["print"] = print_builtin  # type: ignore[attr-defined]
+        self._interpreter._builtins["print"] = print_builtin
 
         # Wrap interpreter tools with tracing closures (M2-F12).
         wrapped_tools = self._trace_recorder.wrap_tools(
-            dict(self._interpreter._tools),  # type: ignore[attr-defined]
+            dict(self._interpreter._tools),
             self._interpreter,
         )
-        self._interpreter._tools = wrapped_tools  # type: ignore[attr-defined]
+        self._interpreter._tools = wrapped_tools
 
     async def run(
         self,
@@ -1138,8 +1138,8 @@ class CaMeLOrchestrator:
                     # Merge the loop iterable's dep context into the bottom
                     # stack frame so the regenerated plan's first statement
                     # already carries the iterable's taint.
-                    self._interpreter._dep_ctx_stack[0] = (  # type: ignore[attr-defined]
-                        self._interpreter._dep_ctx_stack[0]  # type: ignore[attr-defined]
+                    self._interpreter._dep_ctx_stack[0] = (
+                        self._interpreter._dep_ctx_stack[0]
                         | accepted.loop_iter_deps
                     )
 

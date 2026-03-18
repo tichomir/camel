@@ -3,8 +3,8 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "camel"
-version = "0.3.0"
+name = "camel-security"
+version = "0.5.0"
 description = "CaMeL — Capabilities for Machine Learning: a security layer protecting LLM-based agentic systems from prompt injection attacks."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["camel*"]
+include = ["camel*", "camel_security*"]
 
 [tool.ruff]
 line-length = 100

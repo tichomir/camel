@@ -1,7 +1,7 @@
 # CaMeL — System Architecture Reference
 
-**Version:** 1.4 (Milestone 4 — Complete)
-**Date:** 2026-03-17
+**Version:** 1.5 (Milestone 5 — SDK Public API)
+**Date:** 2026-03-18
 **Source:** PRD v1.4 — *"Defeating Prompt Injections by Design"*, Debenedetti et al., arXiv:2503.18813v2
 
 ---
@@ -22,8 +22,9 @@
 12. [Capability Assignment Engine](#12-capability-assignment-engine)
 13. [Reference Policy Library](#13-reference-policy-library)
 14. [Enforcement Integration & Consent Flow](#14-enforcement-integration--consent-flow)
-15. [Module Map](#15-module-map)
-16. [Related Documents](#16-related-documents)
+15. [SDK Layer — camel-security Public API](#15-sdk-layer--camel-security-public-api)
+16. [Module Map (File Tree)](#16-module-map-file-tree)
+17. [Related Documents](#17-related-documents)
 
 ---
 
@@ -1312,11 +1313,173 @@ interp = CaMeLInterpreter(
 | NFR-2 | No LLM in policy evaluation path | `test_e2e_enforcement.py` asserts zero LLM calls during `evaluate()` |
 | NFR-4 | ≤100ms interpreter overhead per tool call (including policy evaluation) | `scripts/benchmark_interpreter.py` |
 | NFR-6 | All policy outcomes, consent decisions, exception redactions, and allowlist violations written to audit log | `test_e2e_enforcement.py` log-completeness assertions; `ForbiddenImportEvent` / `ForbiddenNameEvent` emission tests |
+| NFR-7 | Adding a new tool requires only: (a) constructing a `Tool(name, fn)` dataclass, (b) optionally providing a `capability_annotation`, and (c) optionally appending policy functions to `Tool.policies`.  No changes to core interpreter or policy engine code. | `camel_security/tool.py` — `Tool` dataclass design; `camel/tools/registry.py` — `ToolRegistry.register()` |
+| NFR-8 | `CaMeLAgent` is compatible with any LLM backend that satisfies the `LLMBackend` protocol (implements `generate` and `generate_structured`).  Provider switching requires only changing the backend object passed to `CaMeLAgent(p_llm=..., q_llm=...)`. | `tests/test_multi_backend_swap.py`; `tests/test_backend_swap.py` |
 | NFR-9 | Policy engine, capability system, and enforcement hook independently unit-testable | `tests/harness/policy_harness.py`, `tests/test_policy.py` |
 
 ---
 
-## 15. Module Map
+## 15. SDK Layer — camel-security Public API
+
+**Package:** `camel_security/` | **Introduced:** Milestone 5 (v0.5.0)
+**Design document:** [docs/design/milestone5-sdk-packaging.md](design/milestone5-sdk-packaging.md)
+
+The `camel-security` package exposes a stable, typed, thread-safe public API
+surface on top of the internal `camel` implementation package.  Users install
+`pip install camel-security` and import from `camel_security`.
+
+### 15.1 Module Layout
+
+```
+camel_security/
+├── __init__.py      # Stable public API exports (camel_security.__all__)
+├── agent.py         # CaMeLAgent, AgentResult, PolicyDenialRecord
+└── tool.py          # Tool dataclass (registration interface)
+```
+
+The `camel` package (internal implementation) continues to be importable
+for advanced users who need lower-level access.
+
+### 15.2 Public API Exports
+
+The following names form the **stable public API** (all in `camel_security.__all__`):
+
+| Name | Module | Description |
+|---|---|---|
+| `CaMeLAgent` | `camel_security.agent` | Main entry point |
+| `AgentResult` | `camel_security.agent` | Frozen return type of `agent.run()` |
+| `PolicyDenialRecord` | `camel_security.agent` | One policy denial event |
+| `Tool` | `camel_security.tool` | Tool registration dataclass |
+| `ExecutionMode` | re-exported from `camel` | `STRICT` / `NORMAL` flag |
+| `PolicyRegistry` | re-exported from `camel.policy` | Policy container |
+| `Allowed` / `Denied` | re-exported from `camel.policy` | Policy result types |
+| `CaMeLValue` | re-exported from `camel` | Capability-tagged value |
+| `Public` | re-exported from `camel` | Open-readers sentinel |
+| `get_backend` | re-exported from `camel.llm` | Backend factory |
+| `__version__` | `camel_security` | Package version string |
+
+### 15.3 CaMeLAgent — Constructor Signature
+
+```python
+class CaMeLAgent:
+    def __init__(
+        self,
+        p_llm: LLMBackend,        # Privileged LLM — generates plans
+        q_llm: LLMBackend,        # Quarantined LLM — structured extraction
+        tools: Sequence[Tool],    # At least one tool required
+        policies: PolicyRegistry | None = None,  # None → empty registry (all-allow)
+        mode: ExecutionMode = ExecutionMode.STRICT,  # Production default
+        max_retries: int = 10,    # Outer-loop retry ceiling (M2-F8)
+    ) -> None: ...
+
+    async def run(
+        self,
+        user_query: str,
+        user_context: UserContext | None = None,
+    ) -> AgentResult: ...
+
+    def run_sync(
+        self,
+        user_query: str,
+        user_context: UserContext | None = None,
+    ) -> AgentResult: ...
+
+    @property
+    def tools(self) -> tuple[Tool, ...]: ...
+
+    @property
+    def mode(self) -> ExecutionMode: ...
+```
+
+### 15.4 AgentResult — Stable Dataclass
+
+```python
+@dataclass(frozen=True)
+class AgentResult:
+    execution_trace: list[TraceRecord]     # One record per successful tool call
+    display_output:  list[str]             # print() outputs from execution plan
+    policy_denials:  list[PolicyDenialRecord]  # Denials in production mode
+    audit_log_ref:   str                   # "camel-audit:<hex_id>" token
+    loop_attempts:   int                   # 0-based outer-loop retry count
+    success:         bool                  # False if MaxRetriesExceededError
+    final_store:     dict[str, Any]        # Interpreter variable store snapshot
+```
+
+All fields have **stability guarantee**: not removed or renamed without a
+major-version bump.  New fields may be added in minor releases (always with
+defaults).  See `VERSIONING.md` for the full policy.
+
+### 15.5 Tool — Registration Interface
+
+```python
+@dataclass
+class Tool:
+    name:                   str                         # Python identifier; unique
+    fn:                     Callable[..., Any]          # The underlying callable
+    description:            str = ""                    # For P-LLM system prompt
+    params:                 str = ""                    # Param signature string
+    return_type:            str = "Any"                 # Return type string
+    capability_annotation:  CapabilityAnnotationFn | None = None
+    policies:               list[PolicyFn] = field(default_factory=list)
+```
+
+**NFR-7 compliance:** Adding a new tool requires constructing one `Tool`
+object — no core code changes.
+
+### 15.6 Thread-Safety Contract
+
+Each `CaMeLAgent.run()` call creates a **fresh** `CaMeLInterpreter` and
+`CaMeLOrchestrator` instance.  The agent holds only immutable references
+after construction:
+
+| Component | Mutability | Thread-safe? |
+|---|---|---|
+| `CaMeLInterpreter` | Created fresh per `run()` | ✅ Yes — no shared instance |
+| `CaMeLOrchestrator` | Created fresh per `run()` | ✅ Yes — no shared instance |
+| `ToolRegistry` | Built once at construction; never mutated | ✅ Yes |
+| `PolicyRegistry` (base) | Read-only after `CaMeLAgent.__init__` | ✅ Yes (callers must not mutate after passing) |
+| `LLMBackend` objects | Shared across concurrent `run()` calls | ⚠️ Depends on provider SDK |
+
+**Implication:** multiple threads or async tasks may call `agent.run()` in
+parallel without external locking, provided the underlying `LLMBackend`
+implementations support concurrent async calls (both `ClaudeBackend` and
+`GeminiBackend` do).
+
+### 15.7 Wiring Diagram
+
+```
+CaMeLAgent.run(user_query)
+    │
+    ├── [per-run] CaMeLInterpreter(
+    │       tools = ToolRegistry.as_interpreter_tools()
+    │               + {"query_quarantined_llm": make_query_quarantined_llm(q_llm)}
+    │       policy_engine = _build_run_policy_registry()
+    │       mode = self._mode  [default: STRICT]
+    │   )
+    │
+    ├── [per-run] PLLMWrapper(backend=p_llm)
+    │
+    ├── [per-run] CaMeLOrchestrator(
+    │       p_llm=PLLMWrapper,
+    │       interpreter=CaMeLInterpreter,
+    │       tool_signatures=[ToolSignature(...)],
+    │   )
+    │
+    └── await orchestrator.run(user_query) → ExecutionResult
+            │
+            └── AgentResult(
+                    execution_trace = result.trace,
+                    display_output  = [str(v.raw) for v in result.print_outputs],
+                    audit_log_ref   = "camel-audit:<run_id>",
+                    loop_attempts   = result.loop_attempts,
+                    success         = True,
+                    final_store     = result.final_store,
+                )
+```
+
+---
+
+## 16. Module Map (File Tree)
 
 ```
 camel/
@@ -1372,6 +1535,12 @@ camel/
         ├── claude.py        ClaudeBackend (Anthropic)
         └── gemini.py        GeminiBackend (Google)
 
+camel_security/                    ← Public SDK (Milestone 5, v0.5.0)
+├── __init__.py          Stable public API: CaMeLAgent, AgentResult,
+│                        Tool, ExecutionMode, PolicyRegistry, …
+├── agent.py             CaMeLAgent, AgentResult, PolicyDenialRecord
+└── tool.py              Tool registration dataclass
+
 tests/
 ├── harness/
 │   ├── isolation_assertions.py  Invariant 1/2/3 assertion helpers
@@ -1395,7 +1564,7 @@ tests/
 
 ---
 
-## 16. Related Documents
+## 17. Related Documents
 
 | Document | Location |
 |---|---|
@@ -1411,6 +1580,8 @@ tests/
 | M4 STRICT Mode Extension Design | [docs/design/milestone4-strict-mode-extension.md](design/milestone4-strict-mode-extension.md) |
 | M4 Exception Hardening Design | [docs/design/milestone4-exception-hardening.md](design/milestone4-exception-hardening.md) |
 | M4 Escalation Detection Design | [docs/design/milestone4-escalation-detection.md](design/milestone4-escalation-detection.md) |
+| **Milestone 5 SDK Packaging Design** | [docs/design/milestone5-sdk-packaging.md](design/milestone5-sdk-packaging.md) |
+| **Semantic Versioning Policy** | [VERSIONING.md](../VERSIONING.md) |
 | ADR 001 — Q-LLM Isolation | [docs/adr/001-q-llm-isolation-contract.md](adr/001-q-llm-isolation-contract.md) |
 | ADR 002 — CaMeLValue | [docs/adr/002-camelvalue-capability-system.md](adr/002-camelvalue-capability-system.md) |
 | ADR 003 — Interpreter | [docs/adr/003-ast-interpreter-architecture.md](adr/003-ast-interpreter-architecture.md) |

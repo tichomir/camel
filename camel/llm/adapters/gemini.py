@@ -81,7 +81,7 @@ class GeminiBackend:
             contents,
             **{**self._default_kwargs, **kwargs},
         )
-        return response.text
+        return str(response.text)
 
     # ------------------------------------------------------------------
     # QlLMBackend protocol (Q-LLM)

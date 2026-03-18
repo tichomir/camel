@@ -206,11 +206,11 @@ def get_backend(provider: str, **kwargs: Any) -> LLMBackend:
     if provider == "claude":
         from camel.llm.adapters.claude import ClaudeBackend  # noqa: PLC0415
 
-        return ClaudeBackend(**kwargs)  # type: ignore[return-value]
+        return ClaudeBackend(**kwargs)
     if provider == "gemini":
         from camel.llm.adapters.gemini import GeminiBackend  # noqa: PLC0415
 
-        return GeminiBackend(**kwargs)  # type: ignore[return-value]
+        return GeminiBackend(**kwargs)
     raise ValueError(
         f"Unknown LLM provider: {provider!r}. "
         "Supported providers: 'claude', 'gemini'."

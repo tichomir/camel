@@ -110,7 +110,7 @@ class ClaudeBackend:
         # Extract the first text block.
         for block in response.content:
             if block.type == "text":
-                return block.text
+                return str(block.text)
         raise ValueError(  # pragma: no cover
             f"Claude returned no text content block. Full response: {response}"
         )
@@ -165,7 +165,7 @@ class ClaudeBackend:
         # Extract the tool_use block.
         for block in response.content:
             if block.type == "tool_use" and block.name == _EXTRACTION_TOOL_NAME:
-                raw: dict[str, Any] = block.input  # type: ignore[assignment]
+                raw: dict[str, Any] = block.input
                 return schema.model_validate(raw)
 
         raise ValueError(  # pragma: no cover
@@ -273,7 +273,7 @@ class ClaudeBackend:
 
             for block in response.content:
                 if block.type == "tool_use" and block.name == _EXTRACTION_TOOL_NAME:
-                    raw: dict[str, Any] = block.input  # type: ignore[assignment]
+                    raw: dict[str, Any] = block.input
                     return schema.model_validate(raw)
 
             raise ValueError(  # pragma: no cover

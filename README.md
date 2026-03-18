@@ -1,7 +1,9 @@
 # CaMeL — Capabilities for Machine Learning
 
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#)
+[![CI](https://github.com/tichomir/camel/actions/workflows/ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/ci.yml)
+[![SDK CI](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml)
+[![Test PyPI](https://img.shields.io/badge/Test%20PyPI-camel--security-blue)](https://test.pypi.org/project/camel-security/)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -224,7 +226,7 @@ pip install camel
 ### Development (from source)
 
 ```bash
-git clone https://github.com/your-org/camel.git
+git clone https://github.com/tichomir/camel.git
 cd camel
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

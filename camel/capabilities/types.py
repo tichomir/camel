@@ -101,7 +101,7 @@ location::
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, TypeAlias
 
 from camel.value import CaMeLValue, Public, Readers, _PublicType
 
@@ -151,7 +151,7 @@ from camel.value import CaMeLValue, Public, Readers, _PublicType
 #:             readers=Public,
 #:         )
 #:
-CapabilityAnnotationFn: type = Callable[[Any, Mapping[str, Any]], CaMeLValue]
+CapabilityAnnotationFn: TypeAlias = Callable[[Any, Mapping[str, Any]], CaMeLValue]
 
 
 # ---------------------------------------------------------------------------

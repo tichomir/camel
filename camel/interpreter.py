@@ -1445,7 +1445,7 @@ class CaMeLInterpreter:
         - All other node types: raise :class:`UnsupportedSyntaxError`.
         """
         # Python ≤ 3.8 compatibility: ast.Index wraps the actual key node.
-        if hasattr(ast, "Index") and isinstance(node, ast.Index):  # type: ignore[attr-defined]
+        if hasattr(ast, "Index") and isinstance(node, ast.Index):
             return self._eval(node.value, ctx_caps)  # type: ignore[attr-defined]
 
         if isinstance(node, ast.Constant):
@@ -2002,7 +2002,7 @@ class CaMeLInterpreter:
         container_cv = self._eval(node.value, ctx_caps)
         slice_node = node.slice
         # Python 3.8: ast.Index wraps the actual expression.
-        if hasattr(ast, "Index") and isinstance(slice_node, ast.Index):  # type: ignore[attr-defined]
+        if hasattr(ast, "Index") and isinstance(slice_node, ast.Index):
             slice_node = slice_node.value  # type: ignore[attr-defined]
         if isinstance(slice_node, ast.Slice):
             raise self._unsupported(slice_node)
@@ -2513,7 +2513,7 @@ class CaMeLInterpreter:
             The AST func expression node, used to extract the candidate name.
         """
         tool_name_candidate: str | None = (
-            func_node.id  # type: ignore[attr-defined]
+            func_node.id
             if isinstance(func_node, ast.Name)
             else None
         )
