@@ -1,29 +1,43 @@
 Metadata-Version: 2.4
 Name: camel-security
-Version: 0.5.0
+Version: 0.6.0
 Summary: CaMeL — Capabilities for Machine Learning: a security layer protecting LLM-based agentic systems from prompt injection attacks.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: pydantic>=2.0
-Requires-Dist: typing-extensions>=4.0
-Requires-Dist: anthropic>=0.25
+Requires-Dist: pydantic<3,>=2.0
+Requires-Dist: typing-extensions<5,>=4.6
+Requires-Dist: anthropic<1,>=0.25
 Provides-Extra: dev
-Requires-Dist: pytest>=8.0; extra == "dev"
-Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
-Requires-Dist: mypy>=1.9; extra == "dev"
-Requires-Dist: ruff>=0.4; extra == "dev"
-Requires-Dist: black>=24.0; extra == "dev"
-Requires-Dist: pre-commit>=3.0; extra == "dev"
-Requires-Dist: interrogate>=1.5; extra == "dev"
+Requires-Dist: pytest<10,>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio<2,>=0.23; extra == "dev"
+Requires-Dist: mypy<2,>=1.9; extra == "dev"
+Requires-Dist: ruff<1,>=0.4; extra == "dev"
+Requires-Dist: pre-commit<5,>=3.0; extra == "dev"
+Requires-Dist: interrogate<2,>=1.5; extra == "dev"
+Requires-Dist: types-PyYAML<7,>=6.0; extra == "dev"
+Provides-Extra: gemini
+Requires-Dist: google-generativeai<1,>=0.7.0; extra == "gemini"
+Provides-Extra: openai
+Requires-Dist: openai<3,>=1.30.0; extra == "openai"
+Provides-Extra: all-backends
+Requires-Dist: anthropic<1,>=0.25; extra == "all-backends"
+Requires-Dist: google-generativeai<1,>=0.7.0; extra == "all-backends"
+Requires-Dist: openai<3,>=1.30.0; extra == "all-backends"
+Provides-Extra: observability
+Requires-Dist: prometheus-client<1,>=0.20; extra == "observability"
+Requires-Dist: opentelemetry-sdk<2,>=1.24; extra == "observability"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2,>=1.24; extra == "observability"
 Dynamic: license-file
 
 # CaMeL — Capabilities for Machine Learning
 
 [![CI](https://github.com/tichomir/camel/actions/workflows/ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/ci.yml)
 [![SDK CI](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml/badge.svg)](https://github.com/tichomir/camel/actions/workflows/sdk-ci.yml)
+[![Lint](https://img.shields.io/badge/lint-ruff%20passing-brightgreen)](#)
+[![Type Check](https://img.shields.io/badge/mypy--strict-passing-brightgreen)](#)
 [![Test PyPI](https://img.shields.io/badge/Test%20PyPI-camel--security-blue)](https://test.pypi.org/project/camel-security/)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-0.6.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](#)
 [![Docstring Coverage](https://img.shields.io/badge/docstring%20coverage-100%25-brightgreen)](#documentation-coverage)
@@ -99,7 +113,13 @@ mechanics, and the security model.
 
 ## Current Status
 
-**Milestone 4 — STRICT Mode Hardening + Exception Hardening & Redaction (v0.4.0)** — released 2026-03-17
+**Milestone 6 — CI & Code Quality Polish (v0.6.0)** — completed 2026-03-18
+
+All lint (`ruff check`, `ruff format`), type-check (`mypy --strict`), and test
+CI gates pass.  This milestone applied no functional changes; it hardened the
+developer toolchain so every future PR is blocked on a clean CI baseline.
+
+**Milestone 5 — Production Readiness & Ecosystem (v0.6.0)** — released 2026-03-18
 
 | Component | Module | Status |
 |---|---|---|
@@ -108,7 +128,7 @@ mechanics, and the security model.
 | Dependency graph (NORMAL + STRICT modes) | `camel.dependency_graph` | ✅ Released |
 | P-LLM wrapper (plan generation, isolation contract) | `camel.llm.p_llm` | ✅ Released |
 | Q-LLM wrapper (schema-validated structured output) | `camel.llm.qllm` | ✅ Released |
-| LLM backend adapters (Claude, Gemini) | `camel.llm.adapters` | ✅ Released |
+| LLM backend adapters (Claude, Gemini, OpenAI) | `camel.llm.adapters` | ✅ Released |
 | Execution loop orchestrator (retry, redaction, trace) | `camel.execution_loop` | ✅ Released |
 | Isolation verification test harness | `tests/harness/` | ✅ Released |
 | Capability assignment engine (tool annotations) | `camel.capabilities` | ✅ Released |
@@ -125,13 +145,24 @@ mechanics, and the security model.
 | STRICT annotation preservation across NEIE re-generation (M4-F8) | `camel.execution_loop` | ✅ Released |
 | Loop-body exception STRICT propagation (M4-F9) | `camel.interpreter` | ✅ Released |
 | Redaction audit log events — `RedactionAuditEvent` (M4-F17) | `camel.execution_loop` | ✅ Released |
+| `camel-security` SDK — `CaMeLAgent`, `AgentResult`, `Tool` | `camel_security` | ✅ Released |
+| Three-tier policy governance — `PolicyConflictResolver` | `camel.policy.governance` | ✅ Released |
+| Policy test harness — `PolicyTestRunner`, `CaMeLValueBuilder`, `PolicySimulator` | `camel_security.testing` | ✅ Released |
+| Consent handler — pluggable `ConsentHandler`, session cache | `camel_security.consent` | ✅ Released |
+| Provenance chain — `agent.get_provenance()`, phishing detector | `camel.provenance` | ✅ Released |
+| Multi-backend LLM adapters validated (Claude, Gemini, OpenAI) | `camel.llm.adapters` | ✅ Released |
+| Prometheus / OpenTelemetry metrics endpoint | `camel.observability.metrics` | ✅ Released |
+| Structured JSON audit log with configurable sink | `camel.observability.audit_sink` | ✅ Released |
+| AgentDojo benchmark — 0 ASR across all backends | `scripts/benchmark_agentdojo.py` | ✅ Released |
+| Lint gate (ruff check + ruff format) — CI enforced | CI / `pyproject.toml` | ✅ Milestone 6 |
+| Type-check gate (mypy --strict) — CI enforced | CI / `pyproject.toml` | ✅ Milestone 6 |
 
 ---
 
 ## Quick Start
 
 ```bash
-pip install camel
+pip install camel-security
 ```
 
 ### Interpreter only (Milestone 1 API)
@@ -210,13 +241,31 @@ for record in result.trace:
 
 ## Documentation
 
+### Getting Started
+
 | Document | Description |
 |---|---|
+| [Demo Guide](DEMO.md) | **Demo walkthrough** — showcasing prompt injection defence, policy enforcement, consent flow, provenance chain, and audit log to stakeholders |
+| [Developer Quickstart](docs/quickstart.md) | **5-minute walkthrough** — SDK install, P-LLM/Q-LLM config, first run, audit log verification |
+| [Tool Onboarding Guide](docs/tool-onboarding.md) | Register a new tool: function signature, capability annotation, per-tool policy, worked example |
+| [Migration Guide](docs/migration-guide.md) | Move from the M4 prototype to the `camel-security` v0.6.0 SDK — all breaking changes with before/after snippets |
+| [Policy Authoring Guide](docs/policy-authoring-guide.md) | Three-tier governance model, `PolicyTestRunner` test harness, `PolicySimulator` walkthrough |
+
+### Reference Documentation
+
+| Document | Description |
+|---|---|
+| [PRD v1.0 Final](docs/PRD.md) | Product Requirements Document — Version 1.0 Final: architecture, security model, phased delivery, NFRs, known limitations, success metrics, open questions |
 | [API Reference](docs/api/index.md) | M2/M3 component API reference: LLM Backend, P-LLM, Q-LLM, Interpreter, Execution Loop, Policy Engine, Capabilities |
-| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine |
+| [Backend Adapter Developer Guide](docs/backend-adapter-developer-guide.md) | Interface contract, error semantics, P-LLM vs Q-LLM role config, credential injection, skeleton adapter example for adding new providers |
+| [Architecture Reference](docs/architecture.md) | Full system architecture, isolation invariants, exception redaction, security model, policy engine, multi-backend adapter layer |
 | [Developer Guide](docs/developer_guide.md) | Supported grammar, CaMeLValue schema, propagation rules, dependency graph API |
+| [Policy Authoring Tutorial](docs/policy-authoring-tutorial.md) | Step-by-step guide: `CaMeLValueBuilder`, `PolicyTestRunner`, `PolicySimulator`; worked examples for `send_email` and `write_file` |
+| [Consent Handler Integration Guide](docs/consent-handler-integration.md) | Customising the consent UX: web UI, mobile, asyncio, session cache, `argument_hash` computation |
+| [Security Audit Log Reference](docs/security-audit-log.md) | All audit log streams and schemas: `AuditLogEntry`, `ConsentAuditEntry`, `ForbiddenImportEvent`, `RedactionAuditEvent`, NFR-6 compliance summary |
 | [Operator Guide](docs/manuals/operator-guide.md) | Installation, environment config, test execution, STRICT/NORMAL mode, policy configuration, known limitations |
 | [Reference Policy Specification](docs/policies/reference-policy-spec.md) | Authoritative spec for all six reference security policies |
+| [Three-Tier Policy Authorship Guide](docs/policies/three-tier-policy-authorship-guide.md) | Platform / Tool-Provider / User tier model, `non-overridable` flag, conflict resolution |
 | [Exit Criteria Checklist](docs/exit_criteria_checklist.md) | Milestone 1 sign-off checklist with test evidence |
 | [M2 Exit Criteria Report](docs/milestone-2-exit-criteria-report.md) | Milestone 2 sign-off report |
 | [M3 Exit Criteria Checklist](docs/milestone-3-exit-criteria-checklist.md) | Milestone 3 exit criteria mapped to test evidence (16 criteria, ~291 tests) |
@@ -231,6 +280,10 @@ for record in result.trace:
 | [ADR 008 — Isolation Test Harness](docs/adr/008-isolation-test-harness-architecture.md) | Isolation verification test harness architecture |
 | [ADR 009 — Policy Engine Architecture](docs/adr/009-policy-engine-architecture.md) | PolicyRegistry, SecurityPolicyResult sealed type, helper functions |
 | [ADR 010 — Enforcement Hook, Consent Flow & Audit](docs/adr/010-enforcement-hook-consent-audit-harness.md) | Dual-mode enforcement, consent callback, audit log, policy harness |
+| [ADR 011 — Three-Tier Policy Governance](docs/adr/011-three-tier-policy-governance.md) | Three-tier policy model: Platform, Tool-Provider, User |
+| [ADR 012 — Policy Testing Harness & Consent Handler](docs/adr/012-policy-testing-harness-consent-handler.md) | PolicyTestRunner, CaMeLValueBuilder, PolicySimulator, ConsentHandler design |
+| [Known Limitations & Risks Register](docs/limitations.md) | Full register of L1–L9 limitations with severity, mitigation status, and open work items |
+| [Open Questions & Future Work Tracker](docs/future-work.md) | FW-1 through FW-7 tracker with status (Open / In Progress / Resolved) and recommended next steps |
 | [E2E Scenario Specification](docs/e2e-scenario-specification.md) | End-to-end test scenario inventory |
 
 ---
@@ -240,7 +293,7 @@ for record in result.trace:
 ### Production
 
 ```bash
-pip install camel
+pip install camel-security
 ```
 
 ### Development (from source)
@@ -273,13 +326,23 @@ pytest tests/test_e2e_scenarios.py            # end-to-end scenarios (no policie
 pytest tests/test_capability_assignment.py    # capability assignment engine
 pytest tests/test_policy.py                   # policy engine & registry
 pytest tests/policies/test_reference_policies.py  # reference policy library
-pytest tests/test_policy_harness.py           # policy testing harness
+pytest tests/test_policy_harness.py           # policy testing harness (AgentDojo scenarios)
+pytest tests/test_policy_testing_harness.py   # PolicyTestRunner, CaMeLValueBuilder, PolicySimulator (M5-F12–F17)
+pytest tests/test_consent_handler.py          # ConsentHandler, ConsentDecisionCache, ConsentAuditEntry (M5-F18–F19)
 pytest tests/test_e2e_enforcement.py          # end-to-end enforcement integration
 pytest tests/test_exception_hardening.py      # exception hardening & redaction (M4-F6–M4-F9, M4-F17)
 pytest tests/test_redaction_completeness.py   # redaction completeness (adversarial suite)
 pytest tests/test_strict_mode.py              # STRICT mode propagation rules
 pytest tests/integration/test_strict_mode_e2e.py  # STRICT mode end-to-end integration
+pytest tests/test_three_tier_policy.py        # three-tier policy governance
+pytest tests/test_policy_conflict_resolver.py # PolicyConflictResolver scenarios
+pytest tests/test_sdk_thread_safety.py        # CaMeLAgent thread-safety (M5-F6)
 ```
+
+For a complete guide to writing and testing your own policies, see the
+[Policy Authoring Guide](docs/policy-authoring-guide.md) (three-tier model,
+test harness, simulator walkthrough).  For a step-by-step worked tutorial, see
+the [Policy Authoring Tutorial](docs/policy-authoring-tutorial.md).
 
 ---
 
@@ -461,6 +524,40 @@ It achieves this by:
 
 See [Architecture Reference — Security Model](docs/architecture.md#10-security-model) for the full
 threat model, PI-SEC game definition, and trusted/untrusted boundary table.
+
+---
+
+## User Consent UX
+
+When CaMeL runs in `EnforcementMode.PRODUCTION` and a policy denies a tool call,
+the interpreter invokes a `ConsentHandler` before raising `PolicyViolationError`.
+This lets the user approve or reject the blocked action at runtime.
+
+```python
+from camel.interpreter import CaMeLInterpreter, EnforcementMode
+from camel_security.consent import DefaultCLIConsentHandler, ConsentDecisionCache
+
+interp = CaMeLInterpreter(
+    tools=my_tools,
+    policy_engine=my_registry,
+    enforcement_mode=EnforcementMode.PRODUCTION,
+    consent_handler=DefaultCLIConsentHandler(),  # renders CLI prompt
+    consent_cache=ConsentDecisionCache(),         # caches APPROVE_FOR_SESSION decisions
+)
+```
+
+The `ConsentHandler` interface is **pluggable** — subclass it to render a web UI
+dialog, send a mobile push notification, or integrate an async approval workflow.
+
+| Component | Module | Description |
+|---|---|---|
+| `ConsentHandler` ABC | `camel_security.consent` | Extension point for custom consent UX |
+| `DefaultCLIConsentHandler` | `camel_security.consent` | Built-in terminal prompt (A/R/S) |
+| `ConsentDecisionCache` | `camel_security.consent` | Session-level `APPROVE_FOR_SESSION` cache |
+| `ConsentAuditEntry` | `camel_security.consent` | Immutable audit record per consent decision |
+
+See [Consent Handler Integration Guide](docs/consent-handler-integration.md) for
+web UI, mobile, and async extension patterns, plus session cache documentation.
 
 ---
 

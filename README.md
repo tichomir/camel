@@ -130,7 +130,14 @@ developer toolchain so every future PR is blocked on a clean CI baseline.
 ## Quick Start
 
 ```bash
+# Core SDK (interpreter, policy engine, capability system — no LLM backend)
 pip install camel-security
+
+# Add LLM backend extras as needed (required for Scenarios A/B in the demo):
+pip install "camel-security[anthropic]"   # Claude (Anthropic)
+pip install "camel-security[openai]"      # GPT-4.1 / o3 / o4-mini (OpenAI)
+pip install "camel-security[gemini]"      # Gemini 2.5 Pro / Flash (Google)
+pip install "camel-security[all-backends]" # all three at once
 ```
 
 ### Interpreter only (Milestone 1 API)
@@ -213,7 +220,7 @@ for record in result.trace:
 
 | Document | Description |
 |---|---|
-| [Demo Guide](docs/demo-guide.md) | **8-scenario demo walkthrough** — showcasing prompt injection defence, policy enforcement, consent flow, provenance chain, and audit log to stakeholders |
+| [Demo Guide](DEMO.md) | **Demo walkthrough** — showcasing prompt injection defence, policy enforcement, consent flow, provenance chain, and audit log to stakeholders |
 | [Developer Quickstart](docs/quickstart.md) | **5-minute walkthrough** — SDK install, P-LLM/Q-LLM config, first run, audit log verification |
 | [Tool Onboarding Guide](docs/tool-onboarding.md) | Register a new tool: function signature, capability annotation, per-tool policy, worked example |
 | [Migration Guide](docs/migration-guide.md) | Move from the M4 prototype to the `camel-security` v0.6.0 SDK — all breaking changes with before/after snippets |
@@ -261,7 +268,14 @@ for record in result.trace:
 ### Production
 
 ```bash
+# Core SDK only (interpreter, policy engine, capability system)
 pip install camel-security
+
+# Include LLM backend(s) you need:
+pip install "camel-security[anthropic]"    # Claude (Anthropic)
+pip install "camel-security[openai]"       # OpenAI (GPT-4.1 / o3 / o4-mini)
+pip install "camel-security[gemini]"       # Google Gemini
+pip install "camel-security[all-backends]" # all three
 ```
 
 ### Development (from source)

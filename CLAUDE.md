@@ -1745,3 +1745,18 @@ This is only documentation, make sure we don't change code anywhere.
 - ✅ Fix: camel/__init__.py public API docstring references outdated version (v0.4.0/Milestone 4) — Qa Engineer (◈ Standard, 3 SP)
 
 ---
+### Milestone: Fixes — Demo & Dependency Cleanup | 2026-03-18 | ✅ done | 14 SP
+**Goal:** When trying to run the demo, as scribed in the DEMO.md file, I am running into issues, which are mainly with the required versions of python modules. There are so many many modules versions required that it will be take forever to install everything. 
+
+Review and possibly tighten the version of modules required in the pyproject.toml
+
+Review both DEMO.md and docs docs/demo-guide.md it is confusing having both.
+
+**Delivered:**
+- ✅ Audit and tighten pyproject.toml dependency version ranges — Backend Developer (◈ Standard, 3 SP)
+- ✅ Consolidate DEMO.md and docs/demo-guide.md into a single authoritative demo document — Software Architect (⚡ Quick, 2 SP)
+- ✅ Validate and update DEMO.md steps against tightened dependencies — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: Python version mismatch blocks DEMO.md setup steps — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: Missing third-party LLM packages (anthropic, google-generativeai, openai) not detected in environment — Qa Engineer (◈ Standard, 3 SP)
+
+---

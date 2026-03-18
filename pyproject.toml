@@ -9,33 +9,55 @@ description = "CaMeL — Capabilities for Machine Learning: a security layer pro
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.0",
-    "typing-extensions>=4.0",
-    "anthropic>=0.25",
+    # Pydantic v2 is required for structured-output schemas; cap at <3 (breaking API changes expected).
+    "pydantic>=2.0,<3",
+    # typing-extensions 4.6 introduced TypeVar defaults needed on 3.11; cap at <5.
+    "typing-extensions>=4.6,<5",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "mypy>=1.9",
-    "ruff>=0.4",
-    "black>=24.0",
-    "pre-commit>=3.0",
-    "interrogate>=1.5",
-    "types-PyYAML>=6.0",
+anthropic = [
+    # Anthropic SDK — still in 0.x pre-1.0 stability; cap at <1 to avoid unknown breaking changes.
+    # Minimum 0.50 required for the Messages API shape used by ClaudeBackend.
+    "anthropic>=0.50,<1",
 ]
-gemini = ["google-generativeai>=0.7.0"]
-openai = ["openai>=1.30.0"]
+dev = [
+    # pytest 8+ is required for the asyncio_mode="auto" setting; cap at <10 to cover 8.x and 9.x.
+    "pytest>=8.0,<10",
+    # pytest-asyncio 1.x was released after 0.23; cap at <2 to cover both series.
+    "pytest-asyncio>=0.23,<2",
+    # mypy 1.9 introduced several strict-mode improvements used in CI; cap at <2.
+    "mypy>=1.9,<2",
+    # ruff is still in 0.x; cap at <1 (API/config changes expected at 1.0).
+    "ruff>=0.4,<1",
+    # pre-commit 4.x was released; cap at <5 to cover both 3.x and 4.x.
+    "pre-commit>=3.0,<5",
+    # interrogate 1.x only; cap at <2.
+    "interrogate>=1.5,<2",
+    # types-PyYAML follows PyYAML 6.x; cap at <7.
+    "types-PyYAML>=6.0,<7",
+]
+gemini = [
+    # google-generativeai is still in 0.x (latest 0.8.x); cap at <1 to avoid breaking 1.0 changes.
+    # Minimum 0.7.0 required for response_mime_type / response_schema structured-output support.
+    "google-generativeai>=0.7.0,<1",
+]
+openai = [
+    # openai SDK 1.x stable series; cap at <2 — the 2.x series has not yet been released.
+    # Minimum 1.30.0 required for the structured-output response_format used by OpenAIBackend.
+    "openai>=1.30.0,<2",
+]
 all-backends = [
-    "anthropic>=0.25",
-    "google-generativeai>=0.7.0",
-    "openai>=1.30.0",
+    "anthropic>=0.50,<1",
+    "google-generativeai>=0.7.0,<1",
+    "openai>=1.30.0,<2",
 ]
 observability = [
-    "prometheus-client>=0.20",
-    "opentelemetry-sdk>=1.24",
-    "opentelemetry-exporter-otlp-proto-http>=1.24",
+    # prometheus-client is still in 0.x; cap at <1.
+    "prometheus-client>=0.20,<1",
+    # opentelemetry 1.x stable series; cap at <2.
+    "opentelemetry-sdk>=1.24,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.24,<2",
 ]
 
 [tool.setuptools.packages.find]
