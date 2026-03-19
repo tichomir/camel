@@ -1833,3 +1833,15 @@ API error 500: {"detail":"git push failed: remote: error: GH013: Repository rule
 - ✅ Fix: CI workflow missing secret-scanning guard job — Devops Engineer (◈ Standard, 3 SP)
 
 ---
+### Sprint: Fix Demo Scenario B Documentation | 2026-03-19 | ✅ done | 11 SP
+**Goal:** #1: Demo B scenario is not updated in Demo documentation
+
+When checking the demo documentation, I found out that Scenario B has not been updated to reflect on the latest changes. If  I create the script that is provided there, and it still passes. So I'm not sure what is wrong with the scenario. Or Camel does not provide the required level of functionality.
+
+**Delivered:**
+- ✅ Investigate and diagnose Demo Scenario B documentation mismatch — Software Architect (◈ Standard, 3 SP)
+- ✅ Update DEMO.md Scenario B to reflect current system behaviour — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Validate updated Scenario B end-to-end and add regression guard — Qa Engineer (◈ Standard, 3 SP)
+- ✅ Fix: DEMO.md missing live-backend expected output and misleading SUCCESS message for Scenario B — Software Architect (◈ Standard, 3 SP)
+
+---
