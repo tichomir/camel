@@ -67,7 +67,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import os
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast, runtime_checkable
 
 from pydantic import BaseModel, Field, create_model
 
@@ -363,7 +363,7 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         raw = validated.model_dump(exclude={_HEI_FIELD_NAME})
         return output_schema.model_validate(raw)
 
-    def _query(prompt: str, output_schema: type[T]) -> CaMeLValue:
+    def _query(prompt: str, output_schema: type[T]) -> T:
         """Synchronous bound implementation of :class:`QueryQLLMCallable`.
 
         The interpreter calls tools synchronously.  When the orchestrator's
@@ -383,10 +383,13 @@ def make_query_quarantined_llm(backend: QlLMBackend) -> QueryQLLMCallable:
         """
         future = _QLLM_EXECUTOR.submit(asyncio.run, _query_async(prompt, output_schema))
         pydantic_result: T = future.result()
-        return wrap(
-            pydantic_result,
-            sources=frozenset({"query_quarantined_llm"}),
-            readers=frozenset(),
+        return cast(
+            T,
+            wrap(
+                pydantic_result,
+                sources=frozenset({"query_quarantined_llm"}),
+                readers=frozenset(),
+            ),
         )
 
     return _query

@@ -383,3 +383,64 @@ the baseline will fail the build.**
 Do **not** use `git commit --no-verify` to skip the pre-commit hooks.  If you
 believe a detection is a false positive, follow the baseline update process
 above instead.
+
+### Always commit `.secrets.baseline` after a scan update
+
+The CI job exits with code 123 (not 1) when the baseline file has been updated
+by the scanner — for example, because line numbers shifted after a code edit —
+but the updated file was not staged.  If you see this error in CI:
+
+```
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Error: Process completed with exit code 123.
+```
+
+Fix it locally before pushing:
+
+```bash
+python3 -m detect_secrets scan --baseline .secrets.baseline
+git add .secrets.baseline
+git commit -m "chore: update .secrets.baseline"
+```
+
+**Rule of thumb:** any time you modify a file that contains token-like strings
+(test fixtures, config, documentation examples), re-run the scan and commit
+the updated baseline in the same PR.
+
+---
+
+## 8. Type-Safety Pitfalls
+
+### `QueryQLLMCallable` protocol conformance
+
+`QueryQLLMCallable` (defined in `camel/llm/query_interface.py`) is a
+`Protocol` with a generic `__call__`:
+
+```python
+class QueryQLLMCallable(Protocol):
+    def __call__(self, prompt: str, output_schema: type[T]) -> T: ...
+```
+
+Any function returned by `make_query_quarantined_llm` **must** be typed to
+return `T` (the caller's schema type), not the concrete `CaMeLValue` wrapper.
+Using `return wrap(...)` directly produces `CaMeLValue` as the return type,
+which mypy strict rejects:
+
+```
+Incompatible return value type
+  (got "Callable[[str, type[T]], CaMeLValue]", expected "QueryQLLMCallable")
+```
+
+The correct pattern is to annotate the inner callable `-> T` and wrap the
+`CaMeLValue` construction in `cast(T, wrap(...))`:
+
+```python
+def _query(prompt: str, output_schema: type[T]) -> T:
+    pydantic_result: T = future.result()
+    return cast(T, wrap(pydantic_result, sources=..., readers=...))
+```
+
+The `cast` is safe at runtime because the interpreter receives a `CaMeLValue`
+(the actual object), while mypy is satisfied that the declared return type
+matches the Protocol.
