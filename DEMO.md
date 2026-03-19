@@ -34,16 +34,15 @@ allowed, blocked, and why.
 | Requirement | Details |
 |---|---|
 | **Python** | **3.11 or later** — run `python3.11 --version` to confirm. `python3 --version` may report an older system Python (e.g. 3.9) which will not work. |
-| **API key** | Scenarios A and B require at least one of: Anthropic (`ANTHROPIC_API_KEY`), Google (`GEMINI_API_KEY`), or OpenAI (`OPENAI_API_KEY`). Scenarios C, 6.1–6.5, and 7 do **not** need a live API key. |
-| **Network** | Outbound HTTPS to the chosen provider's API endpoint (only for Scenarios A and B) |
+| **API key** | Scenario A requires at least one of: Anthropic (`ANTHROPIC_API_KEY`), Google (`GEMINI_API_KEY`), or OpenAI (`OPENAI_API_KEY`). **Scenario B runs with deterministic stubs by default — no API key required.** An API key is only needed if you set `USE_LIVE_BACKENDS=1`. Scenarios C, 6.1–6.5, and 7 do **not** need a live API key. |
+| **Network** | Outbound HTTPS to the chosen provider's API endpoint (only for Scenario A, and Scenario B with `USE_LIVE_BACKENDS=1`) |
 | **Disk** | ~30 MB for the core SDK and its dependencies |
 
-> **Tip for offline demos:** Scenarios C, 6.1 (CaMeLValue propagation), 6.2
-> (STRICT mode if/else), 6.3 (Three-Tier Policy), and 6.5 (Provenance) all
-> use the interpreter directly with mock tools and require **no API key**.
-> Scenarios A and B can also be run without an API key by substituting the
-> backend classes with the recording backend in
-> `tests/harness/recording_backend.py`.
+> **Tip for offline demos:** **Scenario B** uses deterministic stub backends by
+> default and requires **no API key**.  Scenarios C, 6.1 (CaMeLValue
+> propagation), 6.2 (STRICT mode if/else), 6.3 (Three-Tier Policy), and 6.5
+> (Provenance) also require no API key.  Only Scenario A (and Scenario B with
+> `USE_LIVE_BACKENDS=1`) require a live API key.
 
 ---
 
@@ -308,12 +307,14 @@ python3.11 demo_b_injection.py
 
 ### 4.2 Expected output
 
+#### Default run (stub backends — no API key required)
+
 ```
 === RESULT ===
 Status   : DENIED (attack blocked by CaMeL policy)
 Tool     : send_email
 Policy   : send_email_policy
-Reason   : send_email blocked: recipient 'attacker@evil.com' was derived from untrusted data source(s) frozenset({'query_quarantined_llm', 'CaMeL'}). A prompt injection attack may be attempting to redirect email.
+Reason   : send_email blocked: recipient 'attacker@evil.com' was derived from untrusted data source(s) frozenset({'CaMeL', 'query_quarantined_llm'}). A prompt injection attack may be attempting to redirect email.
 ```
 
 > **Note:** The `[TOOL] send_email called` line is **not** printed — the tool
@@ -324,6 +325,35 @@ Reason   : send_email blocked: recipient 'attacker@evil.com' was derived from un
 > contains `"query_quarantined_llm"` — an untrusted source — so `is_trusted()`
 > returns ``False`` and the policy denies the call.  The attack fails regardless
 > of how the injection payload is phrased.
+>
+> **Note on frozenset ordering:** `frozenset` display order (`'CaMeL'` before or after
+> `'query_quarantined_llm'`) is non-deterministic across Python versions and runs.
+> The order of items in the `sources` set does not affect the security decision —
+> only whether `"User literal"` and `"CaMeL"` are the *only* members matters to
+> `is_trusted()`.
+
+#### Live-backend variant expected output (`USE_LIVE_BACKENDS=1`)
+
+When using a live Claude backend, the P-LLM's built-in safety reasoning
+typically refuses to generate a `send_email` call for this query pattern.
+The typical output is:
+
+```
+=== RESULT ===
+Status   : SUCCESS (attack succeeded — this should NOT happen)
+Output   : ["{'subject': ..., 'sender': ..., 'body': '...'}"]
+```
+
+> **This does NOT mean the attack succeeded or that CaMeL failed.**  The
+> P-LLM recognised the "extract address from email body → send email" pattern
+> as a prompt-injection risk and declined to generate a `send_email` call.
+> No `send_email` was attempted; the policy engine was never invoked.
+> The `"SUCCESS"` label means only that the plan executed to completion
+> without raising an exception — it does **not** indicate a policy bypass.
+>
+> Use the default stub mode (no `USE_LIVE_BACKENDS`) to verify CaMeL's
+> policy enforcement deterministically.  See also §8.5a in the Troubleshooting
+> section below.
 
 **What to explain to the audience:**
 
@@ -888,6 +918,27 @@ runs with `policies=None` (no registry) or with the correct policy allowing the 
   v = wrap("x@evil.com", sources=frozenset({"get_last_email"}), readers=set())
   print(is_trusted(v))   # should print False
   ```
+
+### 8.5a Attack shows "SUCCESS" when using live backends (`USE_LIVE_BACKENDS=1`)
+
+The live P-LLM (e.g. `claude-sonnet-4-6`) has built-in safety heuristics that
+recognise the "extract address from email body → send email" pattern as a
+prompt-injection risk.  It refuses to generate a `send_email` call, so the plan
+completes successfully without ever invoking the policy engine.
+`result.success=True` because no exception was raised — **not** because a policy
+was bypassed.
+
+This is **expected model behaviour**, not a CaMeL failure.
+
+To verify CaMeL's policy enforcement, run without `USE_LIVE_BACKENDS`:
+
+```bash
+python3.11 demo_b_injection.py   # uses deterministic stubs — no API key needed
+```
+
+Expected output: `Status   : DENIED (attack blocked by CaMeL policy)`.
+
+---
 
 ### 8.6 STRICT mode not propagating taint in Scenario C
 
