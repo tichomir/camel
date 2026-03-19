@@ -44,6 +44,13 @@ jobs:
         # secret), and new false-positives must be acknowledged locally with
         # `detect-secrets audit .secrets.baseline` before committing the
         # updated baseline.
+        #
+        # CONTRIBUTOR NOTE: If this job fails with exit code 123, the baseline
+        # file has been updated by the scanner (e.g. line numbers shifted) but
+        # was not staged.  Fix it locally:
+        #   python3 -m detect_secrets scan --baseline .secrets.baseline
+        #   git add .secrets.baseline
+        #   git commit -m "chore: update .secrets.baseline"
         run: |
           git ls-files -z \
             | xargs -0 detect-secrets-hook \
