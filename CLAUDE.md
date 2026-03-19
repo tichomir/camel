@@ -1884,3 +1884,115 @@ Let's work on fixing them.
 - ✅ Verify both CI checks pass end-to-end and add regression note — Qa Engineer (⚡ Quick, 2 SP)
 
 ---
+### Fix Ruff Check Errors | 2026-03-19 | ✅ done | 3 SP
+**Goal:** The ruff check errors are still there, you didn't fix them: 
+
+Run ruff check .
+F401 [*] `camel.value.CaMeLValue` imported but unused
+  --> camel/llm/query_interface.py:76:25
+   |
+74 | from camel.llm.exceptions import NotEnoughInformationError
+75 | from camel.llm.schemas import QResponse
+76 | from camel.value import CaMeLValue, wrap
+   |                         ^^^^^^^^^^
+77 |
+78 | if TYPE_CHECKING:
+   |
+help: Remove unused import: `camel.value.CaMeLValue`
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> demo_a_benign.py:3:1
+  |
+1 |   """Scenario A — benign task: read and summarise the last email."""
+2 |
+3 | / import asyncio
+4 | | import os
+5 | |
+6 | | from camel.llm.adapters import ClaudeBackend      # swap for GeminiBackend / OpenAIBackend
+7 | | from camel.observability.audit_sink import AuditSink, AuditSinkConfig, SinkMode
+8 | | from camel.value import CaMeLValue, wrap
+9 | | from camel_security import CaMeLAgent, Tool
+  | |___________________________________________^
+  |
+help: Organize imports
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> demo_b_injection.py:50:1
+   |
+48 |   """
+49 |
+50 | / import asyncio
+51 | | import os
+52 | | from typing import Any
+53 | |
+54 | | from pydantic import BaseModel
+55 | |
+56 | | from camel.policy import Allowed, Denied, is_trusted
+57 | | from camel.value import CaMeLValue, wrap
+58 | | from camel_security import CaMeLAgent, Tool
+59 | | from camel_security.agent import EmailFields
+   | |____________________________________________^
+   |
+help: Organize imports
+
+F401 [*] `camel_security.agent.EmailFields` imported but unused
+  --> demo_b_injection.py:59:34
+   |
+57 | from camel.value import CaMeLValue, wrap
+58 | from camel_security import CaMeLAgent, Tool
+59 | from camel_security.agent import EmailFields
+   |                                  ^^^^^^^^^^^
+   |
+help: Remove unused import: `camel_security.agent.EmailFields`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_demo_b_regression.py:15:1
+   |
+13 |   """
+14 |
+15 | / from __future__ import annotations
+16 | |
+17 | | import asyncio
+18 | | from typing import Any
+19 | |
+20 | | import pytest
+21 | | from pydantic import BaseModel
+22 | |
+23 | | from camel.policy.interfaces import Allowed, Denied, is_trusted
+24 | | from camel.value import CaMeLValue, wrap
+25 | | from camel_security import CaMeLAgent, Tool
+26 | | from camel_security.agent import EmailFields
+   | |____________________________________________^
+   |
+help: Organize imports
+
+F401 [*] `pytest` imported but unused
+  --> tests/test_demo_b_regression.py:20:8
+   |
+18 | from typing import Any
+19 |
+20 | import pytest
+   |        ^^^^^^
+21 | from pydantic import BaseModel
+   |
+help: Remove unused import: `pytest`
+
+F401 [*] `camel_security.agent.EmailFields` imported but unused
+  --> tests/test_demo_b_regression.py:26:34
+   |
+24 | from camel.value import CaMeLValue, wrap
+25 | from camel_security import CaMeLAgent, Tool
+26 | from camel_security.agent import EmailFields
+   |                                  ^^^^^^^^^^^
+   |
+help: Remove unused import: `camel_security.agent.EmailFields`
+
+Found 7 errors.
+[*] 7 fixable with the `--fix` option.
+Error: Process completed with exit code 1.
+
+**Delivered:**
+- ✅ Fix all ruff lint errors across three files — Backend Developer (⚡ Quick, 2 SP)
+- ✅ Verify CI passes end-to-end after lint fixes — Qa Engineer (⚡ Quick, 1 SP)
+
+---
