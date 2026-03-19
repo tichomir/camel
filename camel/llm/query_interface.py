@@ -73,7 +73,7 @@ from pydantic import BaseModel, Field, create_model
 
 from camel.llm.exceptions import NotEnoughInformationError
 from camel.llm.schemas import QResponse
-from camel.value import CaMeLValue, wrap
+from camel.value import wrap
 
 if TYPE_CHECKING:
     from camel.llm.protocols import QlLMBackend

@@ -56,8 +56,6 @@ from pydantic import BaseModel
 from camel.policy import Allowed, Denied, is_trusted
 from camel.value import CaMeLValue, wrap
 from camel_security import CaMeLAgent, Tool
-from camel_security.agent import EmailFields
-
 
 # ── Deterministic P-LLM stub ─────────────────────────────────────────────────
 

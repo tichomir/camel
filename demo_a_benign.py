@@ -3,7 +3,7 @@
 import asyncio
 import os
 
-from camel.llm.adapters import ClaudeBackend      # swap for GeminiBackend / OpenAIBackend
+from camel.llm.adapters import ClaudeBackend  # swap for GeminiBackend / OpenAIBackend
 from camel.observability.audit_sink import AuditSink, AuditSinkConfig, SinkMode
 from camel.value import CaMeLValue, wrap
 from camel_security import CaMeLAgent, Tool
