@@ -1845,3 +1845,42 @@ When checking the demo documentation, I found out that Scenario B has not been u
 - ✅ Fix: DEMO.md missing live-backend expected output and misleading SUCCESS message for Scenario B — Software Architect (◈ Standard, 3 SP)
 
 ---
+### Sprint: Fix CI Issues — mypy strict error & secrets baseline | 2026-03-19 | ✅ done | 7 SP
+**Goal:** #2: Problems with CI in GIT
+
+The following problems have been reported in GIT's CI
+
+Run mypy --strict camel_security/
+camel/llm/query_interface.py:392: error: Incompatible return value type (got "Callable[[str, type[T]], CaMeLValue]", expected "QueryQLLMCallable")  [return-value]
+camel/llm/query_interface.py:392: note: "QueryQLLMCallable.__call__" has type "def [T: BaseModel] __call__(self, prompt: str, output_schema: type[T]) -> T"
+Found 1 error in 1 file (checked 5 source files)
+Error: Process completed with exit code 1.
+
+and
+
+Run git ls-files -z \
+The baseline file was updated.
+Probably to keep line numbers of secrets up-to-date.
+Please `git add .secrets.baseline`, thank you.
+
+
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Your baseline file (.secrets.baseline) is unstaged.
+`git add .secrets.baseline` to fix this.
+Error: Process completed with exit code 123.
+
+Let's work on fixing them.
+
+**Delivered:**
+- ✅ Fix mypy --strict return type error in query_interface.py — Backend Developer (◈ Standard, 3 SP)
+- ✅ Commit updated .secrets.baseline to fix detect-secrets CI failure — Devops Engineer (⚡ Quick, 2 SP)
+- ✅ Verify both CI checks pass end-to-end and add regression note — Qa Engineer (⚡ Quick, 2 SP)
+
+---
